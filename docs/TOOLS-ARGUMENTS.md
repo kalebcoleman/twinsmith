@@ -79,7 +79,7 @@ Listed as `jobs(action="status")`.
 Check a background job in this Kit; with no job_id, list the jobs. run_python(background=true), sim__simulation__run and sim__trajectory__replay return a job_id. Gives state (running, succeeded, failed, cancelled), elapsed_s, progress, the last output and, when finished, the result or error. The list is newest first. Through the MCP server it also takes an Isaac Lab or script job_id (isaaclab__train, run_script, ...), with no bridge needed.
 
 - `job_id` (string, optional): job_id from the call that started the work. Omit to list jobs.
-- `wait_s` (number, optional): Wait up to this many seconds (0-60) for the job to end before answering, instead of polling.
+- `wait_s` (number, optional): Wait up to this many seconds (0-60; a larger value waits 60) for the job to end before answering, instead of polling.
 
 ### `refresh_tools`
 

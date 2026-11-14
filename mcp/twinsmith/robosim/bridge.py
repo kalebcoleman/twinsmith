@@ -163,8 +163,9 @@ class RoboSimBridge:
         server = ledger.get("server")
         return bool(server and _identity(server["pid"]) == server)
 
-    def _command(self, path, ledger, args, timeout=630):
-        argv = [str(self.root / ".venv/bin/python"), "-m", "robosimstudio_real2sim_agent", "--run-dir", str(path), *args, "--json"]
+    def _command(self, path, ledger, args, timeout=630, argv=None):
+        argv = argv or [str(self.root / ".venv/bin/python"), "-m", "robosimstudio_real2sim_agent", "--run-dir", str(path), *args,
+                        "--json"]
         record = {"argv": argv, "started_at": _now()}
         ledger["commands"].append(record)
         number = len(ledger["commands"])
@@ -192,7 +193,7 @@ class RoboSimBridge:
             return reply
         finally:
             record.update(finished_at=_now(), wall_s=round(time.monotonic() - started, 3))
-            if args[0] == "up":
+            if args and args[0] == "up":
                 self._claim_server(path, ledger)
             self._save(path, ledger)
 
@@ -721,6 +722,10 @@ class RoboSimBridge:
         if not reply.get("ok"):
             return reply
         rows = reply.get("anchors") or []
+        if keys and rows and not any(row.get("objects") for row in rows):
+            scored = self._take_scores(path, ledger, take, keys, rows, sequence)
+            if not scored.get("ok"):
+                return dict(reply, ok=False, error=f"The take's masks could not be read: {scored.get('error')}")
         for row in rows:
             row["objects"] = {name: plan.relabel_ratios(reading) for name, reading in (row.get("objects") or {}).items()}
         names = [key.split("=", 1)[0] for key in keys]
@@ -736,6 +741,31 @@ class RoboSimBridge:
         reply["ratio_note"] = "area_ratio = sim pixels / photo pixels; linear_scale_ratio = RSS size_ratio = sqrt(area_ratio)."
         reply["scope"] = plan.engine(ledger["device"])["scope"]
         return reply
+
+    def _take_scores(self, path, ledger, take, keys, rows, sequence):
+        """Fill each anchor's ``objects`` from the take's segmentation and the anchor's photograph.
+
+        RSS's ``compare --take`` at the pin returns only the frame each anchor was held against (its keys outline things
+        on the strip and nothing more), so ``take_scores.py`` runs RSS's own still-compare functions on that frame in
+        RSS's interpreter. Rows that already carry ``objects`` (a later RSS) are left as RSS gave them."""
+        if any("frame" not in row or "file" not in row for row in rows):
+            return {"ok": False, "error": "RSS's take reply has no frame or file per anchor."}
+        request = path / f"take-scores-{sequence}.json"     # one per compare, as timeline-map-N.json
+        request.write_text(json.dumps({"run_dir": str(path), "take": take, "keys": list(keys),
+                                       "anchors": [{"file": row["file"], "frame": row["frame"]} for row in rows]}) + "\n")
+        script = Path(__file__).with_name("take_scores.py")
+        reply = self._command(path, ledger, [], timeout=300,
+                              argv=[str(self.root / ".venv/bin/python"), "-I", str(script), str(request)])
+        scored = reply.get("anchors") if reply.get("ok") else None
+        if not isinstance(scored, list) or len(scored) != len(rows):
+            record = ledger["commands"][-1]
+            stderr = Path(record["stderr"]).read_text(errors="replace").strip()[-500:]
+            if record.get("returncode"):     # the script's own refusal or traceback
+                return {"ok": False, "error": stderr or reply.get("error") or "take_scores.py failed."}
+            return {"ok": False, "error": "take_scores.py gave no reading per anchor." + (f" stderr: {stderr}" if stderr else "")}
+        for row, found in zip(rows, scored):
+            row["objects"] = found.get("objects") or {}
+        return {"ok": True}
 
     @staticmethod
     def _verdict(reply, rows, displacement):

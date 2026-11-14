@@ -1,0 +1,49 @@
+# Publishes twinsmith to PyPI when a v<version> tag is pushed (v0.4.0, v0.5.0rc1), and at no other time.
+#
+# Trusted publishing (OIDC): PyPI trusts this file in kalebcoleman/twinsmith, run in the `pypi`
+# environment. No token is stored anywhere. The one-time PyPI and GitHub setup, and how to bump the
+# version and tag, are in docs/RELEASING.md. The PyPI publisher names this file, release.yml: rename
+# it only together with the publisher.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]*"
+
+permissions: {}
+
+# One run per tag, and never cancel a run that may be uploading.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-dist.yml
+    with:
+      release-tag: ${{ github.ref_name }}
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/twinsmith/
+    permissions:
+      id-token: write  # the OIDC token PyPI exchanges for a short-lived upload token
+    steps:
+      - name: Download the checked files
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      # Pinned to the commit of v1.14.3, which bundles twine 7.0.0; build-dist.yml checks with the
+      # same twine. Update both together (docs/RELEASING.md).
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3

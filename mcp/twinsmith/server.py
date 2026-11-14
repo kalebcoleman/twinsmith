@@ -942,10 +942,12 @@ def _bridge_for(record: Optional[Dict[str, Any]], state: _BridgeState):
 
 
 def _wait_seconds(params: Dict[str, Any]) -> float:
+    """``wait_s`` as a number of seconds, at most ``JOB_WAIT_MAX_S``: a longer ask waits that long rather than failing,
+    so a client that asks for 300 s does not spin on errors. A negative or non-number value is refused."""
     wait = params.get("wait_s", 0) or 0
-    if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not 0 <= wait <= JOB_WAIT_MAX_S:
+    if isinstance(wait, bool) or not isinstance(wait, (int, float)) or not wait >= 0:
         raise ValueError(f"wait_s must be 0..{JOB_WAIT_MAX_S:g} seconds; call again to keep waiting.")
-    return float(wait)
+    return min(float(wait), JOB_WAIT_MAX_S)
 
 
 def _job_call(canonical: str, params: Dict[str, Any], state: _BridgeState) -> Any:
@@ -957,6 +959,9 @@ def _job_call(canonical: str, params: Dict[str, Any], state: _BridgeState) -> An
     job_id = params.get("job_id")
     try:
         wait = _wait_seconds(params) if canonical == "job_status" else 0.0
+        asked = params.get("wait_s") if canonical == "job_status" else None
+        if canonical == "job_status" and "wait_s" in params:
+            params = {**params, "wait_s": wait}       # the simulator gets the wait it may hold
         record = _job_record(job_id)
         if job_id is None:
             return _job_listing(state)
@@ -990,6 +995,12 @@ def _job_call(canonical: str, params: Dict[str, Any], state: _BridgeState) -> An
         if isinstance(error, (ConnectionError, TimeoutError)) or not isinstance(error, (ValueError, FileNotFoundError)):
             raise
         return {"status": "error", "code": "INVALID_VALUE" if "wait_s" in str(error) else "NOT_FOUND", "message": str(error)}
+    if isinstance(asked, (int, float)) and not isinstance(asked, bool) and asked > wait and isinstance(result, dict):
+        # its own key: the job's own note (a cut result, why it failed) stays as it is
+        result = {**result, "wait_s_used": wait}
+        if result.get("state") == "running":
+            result["wait_note"] = (f"wait_s {asked:g} is more than the {JOB_WAIT_MAX_S:g} s a call may wait; waited "
+                                   f"{wait:g} s. Call again to keep waiting.")
     spec = result.get("result", {}).get("encode") if isinstance(result, dict) and isinstance(result.get("result"), dict) else None
     if isinstance(spec, dict) and {"folder", "pattern", "frames", "output", "fps"} <= set(spec):   # a replay's frames
         result = {**result, "result": _encode_replay(result["result"], state, job_id)}

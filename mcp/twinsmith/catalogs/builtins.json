@@ -204,7 +204,7 @@
         },
         "wait_s": {
           "type": "number",
-          "description": "Wait up to this many seconds (0-60) for the job to end before answering, instead of polling."
+          "description": "Wait up to this many seconds (0-60; a larger value waits 60) for the job to end before answering, instead of polling."
         }
       },
       "fields": [
@@ -224,7 +224,7 @@
           "required": false,
           "default": null,
           "has_default": false,
-          "description": "Wait up to this many seconds (0-60) for the job to end before answering, instead of polling."
+          "description": "Wait up to this many seconds (0-60; a larger value waits 60) for the job to end before answering, instead of polling."
         }
       ],
       "namespace": null,

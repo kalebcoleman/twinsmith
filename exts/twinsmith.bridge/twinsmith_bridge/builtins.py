@@ -229,8 +229,8 @@ _JOB_STATUS_DESCRIPTION = (
 _JOB_STATUS_PARAMETERS = {
     "job_id": {"type": "string", "description": "job_id from the call that started the work. Omit to list jobs."},
     "wait_s": {"type": "number",
-               "description": "Wait up to this many seconds (0-60) for the job to end before answering, instead "
-                              "of polling."},
+               "description": "Wait up to this many seconds (0-60; a larger value waits 60) for the job to end "
+                              "before answering, instead of polling."},
 }
 JOB_WAIT_MAX_S = 60.0
 
@@ -241,8 +241,9 @@ def cmd_job_status(bridge, job_id: Optional[str] = None, wait_s: float = 0) -> D
         jobs = bridge.jobs.jobs()
         return {"jobs": [job.describe(full=False) for job in jobs],
                 "running": sum(job.state == "running" for job in jobs)}
-    if isinstance(wait_s, bool) or not isinstance(wait_s, (int, float)) or not 0 <= wait_s <= JOB_WAIT_MAX_S:
+    if isinstance(wait_s, bool) or not isinstance(wait_s, (int, float)) or not wait_s >= 0:
         raise ToolError(f"wait_s must be 0..{JOB_WAIT_MAX_S:g} seconds; call again to keep waiting.", code="INVALID_VALUE")
+    asked, wait_s = wait_s, min(float(wait_s), JOB_WAIT_MAX_S)   # a longer wait is a common ask: wait the most, not fail
     try:
         job = bridge.jobs.get(job_id)
     except JobError as exc:
@@ -251,6 +252,8 @@ def cmd_job_status(bridge, job_id: Optional[str] = None, wait_s: float = 0) -> D
     if wait_s and job.state == "running" and not on_main_loop:
         job.ended.wait(wait_s)
     reply = job.describe()
+    if asked > wait_s:
+        reply["wait_s_used"] = wait_s
     if wait_s and job.state == "running":
         reply["wait_timed_out"] = True
         if on_main_loop:      # the job needs the loop this caller is on: waiting here could only time out
