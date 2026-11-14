@@ -556,8 +556,8 @@
           "parent": "left_inner_finger",
           "position_m": [
             0,
-            0.008,
-            0
+            0.0229,
+            0.04
           ],
           "orientation_wxyz": [
             1,
@@ -570,8 +570,8 @@
           "parent": "right_inner_finger",
           "position_m": [
             0,
-            0.008,
-            0
+            0.0229,
+            0.04
           ],
           "orientation_wxyz": [
             1,
@@ -582,7 +582,7 @@
         }
       ],
       "status": "unconfirmed",
-      "source": "Provisional inward pads in inspected finger frames; gap, contact face and fastening not measured"
+      "source": "On the fingertip gripping face, measured from the pack's RG2 finger mesh: in the inner finger frame the tip block spans z 0.020 to 0.053 m and its inner face is the plane y = 0.0189 m. The pad (8 mm thick, 25 mm long) sits on that face, flush with the tip: centre y = 0.0189 + 0.004, z = 0.040. The real pads' thickness and fastening are not measured."
     }
   },
   "finger_force_sensors": {

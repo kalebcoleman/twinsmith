@@ -99,7 +99,7 @@ def cmd_list(args) -> int:
     print(f"asset root: {listing['root']}" + ("" if listing["exists"] else " (does not exist)"))
     for item in listing["packs"]:
         state = "verified" if item["verified"] else "NOT VERIFIED"
-        print(f"  {item['id']}/{item['version']}: {item['files']} file(s), {item['bytes'] / 1048576:.1f} MB, {state}")
+        print(f"  {item['id']}/{item['version']}: {item['files']} file(s), {_size(item['bytes'])}, {state}")
         for problem in item["problems"][:5]:
             print(f"      {problem}")
     for item in listing["old_format"]:
@@ -123,7 +123,7 @@ def cmd_doctor(args) -> int:
         print(json.dumps(report, indent=2))
         return 0 if report["ok"] else 1
     files, deps = report["files"], report["dependencies"]
-    print(f"{report['pack']}: {files['total']} file(s), {files['bytes'] / 1048576:.1f} MB; "
+    print(f"{report['pack']}: {files['total']} file(s), {_size(files['bytes'])}; "
           + ("every file matches pack.yaml" if files["verified"] else "does NOT verify"))
     if deps["checked"]:
         print(f"dependencies: checked ({deps.get('backend') or 'no parser needed'})"
@@ -152,7 +152,7 @@ def _print_write(report: dict, as_json: bool) -> int:
         for rel in report.get("planned", [])[:20]:
             print(f"  {rel}")
     else:
-        print(f"wrote {report['pack']}: {report['files']} file(s), {report['bytes'] / 1048576:.1f} MB, into {report['pack_dir']}")
+        print(f"wrote {report['pack']}: {report['files']} file(s), {_size(report['bytes'])}, into {report['pack_dir']}")
     for note in report.get("notes", []):
         print(note if note.startswith("note:") else f"note: {note}")
     return 0
@@ -225,7 +225,7 @@ def cmd_build(args) -> int:
         print(json.dumps({**report, "notes": notes}, indent=2))
         return 0
     verb = "would copy" if args.dry_run else "wrote"
-    print(f"{report['files']} file(s) in the closure, {report['bytes'] / 1048576:.1f} MB; {verb} {dest_id}/{dest_version}")
+    print(f"{report['files']} file(s) in the closure, {_size(report['bytes'])}; {verb} {dest_id}/{dest_version}")
     print(f"entry files: {', '.join(report['entries'])}")
     for key in ("unresolved", "remote", "outside", "unreadable"):
         for item in report[key]:
