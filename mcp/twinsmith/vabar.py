@@ -25,6 +25,7 @@ PIN = "64b594ed2e1ae25e431d235de086c7cfd99d9aaf"       # "VABAR 1.0 release"
 REPOSITORY = "https://github.com/BerkeleyAutomation/VABAR"
 ACTIONS = ("status", "list", "run", "bench", "results")
 SOLVERS = ("routine", "graph", "idle")
+PERCEPTION = ("oracle", "vision")
 _TASK = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+")
 _CELL = re.compile(r"[a-z0-9_]+/L[0-9]+")
 _LABEL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}")
@@ -53,17 +54,36 @@ def warmup(co: sibling.Checkout) -> dict:
     return {"ran": (caches[0] / "nv_shadercache/vabar_compiled").is_file(), "warm_cells": cells}
 
 
+def model_sets(co: sibling.Checkout, model: str | None, task=None) -> list[str]:
+    """``--set suites.<suite>.env.GAP_VLM_MODEL=<model>`` for the owner's ``[planning] vlm_model``. A suite's ``env``
+    wins over the environment (upstream's ``apply_env``; ``tool_sort`` pins ``gemini-2.5-flash``), so without this the
+    endpoint would be sent another provider's model name. ``run`` names its task's suite; ``bench`` cells are named by
+    task class, not suite, so it sets every suite in the checkout's ``tasks/``."""
+    if not model:
+        return []
+    if task:
+        suites = [task.split("/")[0]]
+    else:
+        suites = sorted(path.name for path in (co.root / "tasks").glob("*")
+                        if path.is_dir() and not path.name.startswith(("_", ".")) and _LABEL.fullmatch(path.name))
+    value = json.dumps(model)          # a TOML basic string, so upstream never reads it as a number or boolean
+    return [part for suite in suites for part in ("--set", f"suites.{suite}.env.GAP_VLM_MODEL={value}")]
+
+
 def argv(co: sibling.Checkout, action: str, *, task=None, solve="routine", graph=None, episodes=None, cell=None,
-         limit=None, workers=1, out=None, bus_timeout_s=None) -> list[str]:
+         limit=None, workers=1, out=None, bus_timeout_s=None, sets=(), perception=None, record=False) -> list[str]:
     """The command line for one action, from validated values only."""
     base = [str(co.bin("python")), "-m", "vabar"]
     if action == "list":
         return [*base, "list"]
     if action == "run":
-        return [*base, "run", "--task", task, "--solve", solve, *(["--graph", graph] if graph else []),
+        return [*base, "run", *sets, "--task", task, "--solve", solve, *(["--graph", graph] if graph else []),
                 *(["--episodes", episodes] if episodes else []),
-                *(["--bus-timeout", str(bus_timeout_s)] if bus_timeout_s else []), "--out", str(out)]
-    return [*base, "bench", "--cell", cell, "--solve", solve, *(["--limit", str(limit)] if limit else []),
+                *(["--bus-timeout", str(bus_timeout_s)] if bus_timeout_s else []),
+                # vision without the sim.* tools, as upstream advises: a graph then runs on perception alone
+                *({"oracle": ["--perception", "oracle"], "vision": ["--perception", "vision", "--no-privileged"]}
+                  .get(perception, [])), *(["--record"] if record else []), "--out", str(out)]
+    return [*base, "bench", *sets, "--cell", cell, "--solve", solve, *(["--limit", str(limit)] if limit else []),
             "--workers", str(workers), "--out", str(out)]
 
 
@@ -125,7 +145,7 @@ def results(co: sibling.Checkout, run=None) -> dict:
 
 def call(co: sibling.Checkout, action: str, task=None, solve="routine", graph=None, episodes=None, cell=None, limit=None,
          workers: int = 1, print_only: bool = True, name=None, run=None, bus_timeout_s=None, timeout_s: float = 6 * 3600,
-         allow_concurrent_gpu: bool = False) -> dict:
+         allow_concurrent_gpu: bool = False, perception=None, record: bool = False) -> dict:
     info = co.info("python")
     try:
         if action not in ACTIONS:
@@ -171,13 +191,19 @@ def call(co: sibling.Checkout, action: str, task=None, solve="routine", graph=No
                 raise sibling.Refusal("INVALID_VALUE", "limit must be a positive number of instances.")
         if bus_timeout_s is not None and (action != "run" or type(bus_timeout_s) is not int or not 30 <= bus_timeout_s <= 3600):
             raise sibling.Refusal("INVALID_VALUE", "bus_timeout_s is for run only: 30 to 3600 seconds (bench sets its own).")
+        if perception is not None and (action != "run" or solve != "graph" or perception not in PERCEPTION):
+            raise sibling.Refusal("INVALID_VALUE", f"perception is for run with solve=graph: one of {', '.join(PERCEPTION)}.")
+        if type(record) is not bool or (record and action != "run"):
+            raise sibling.Refusal("INVALID_VALUE", "record is true or false, for run only.")
         if action == "run" and solve == "graph" and bus_timeout_s is None:
             bus_timeout_s = CABLE_BUS_TIMEOUT_S if task.split("/")[0] in CABLE_SUITES else GRAPH_BUS_TIMEOUT_S
         if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or not 0 < timeout_s <= 7 * 86400:
             raise sibling.Refusal("INVALID_VALUE", "timeout_s must be more than 0 and at most 7 days in seconds.")
         folder = co.workspace / "runs/vabar" / sibling.run_name(name, action)
+        local = gap.owner_vlm()
         command = argv(co, action, task=task, solve=solve, graph=graph, episodes=episodes, cell=cell, limit=limit,
-                       workers=workers, out=folder, bus_timeout_s=bus_timeout_s)
+                       workers=workers, out=folder, bus_timeout_s=bus_timeout_s, perception=perception, record=record,
+                       sets=model_sets(co, local and local["model"], task if action == "run" else None))
         if action == "bench" and print_only:
             # Upstream's --print resolves the cell's jobs and exits before any warmup, MPS daemon or folder; the GPU is
             # hidden from it anyway. It asks no model, so it gets no key, endpoint or token.
@@ -194,7 +220,6 @@ def call(co: sibling.Checkout, action: str, task=None, solve="routine", graph=No
             return sibling.answer("vabar", action, info, exit_code=0, result={
                 "planned": command, "summary": summary, "jobs": [line for line in done["stdout"].splitlines() if line.strip()],
                 "note": "Nothing ran. Call again with print_only=false (and the same name) to run it as a job; it uses the GPU."})
-        local = gap.owner_vlm()
         env_pass, env, env_warnings = gap.model_env(allowed, local)
         env.update(skills_env)
         sibling.new_run_folder(folder)
@@ -230,6 +255,8 @@ def register(server, *, workspace=None, root=None):
         print_only: Annotated[bool, Field(description="bench: return upstream's resolved jobs (--print, CPU, writes nothing) without running.")] = True,
         name: Annotated[str | None, Field(description="run/bench: run folder name under <workspace>/runs/vabar; default action and time.")] = None,
         bus_timeout_s: Annotated[int | None, Field(description="run: seconds a graph's tool call may wait (--bus-timeout); default for solve=graph 180, cable suites 600, as bench does.", ge=30, le=3600)] = None,
+        perception: Annotated[Literal["oracle", "vision"] | None, Field(description="run with solve=graph: oracle reads the simulator's answer; vision runs SAM 3/GroundingDINO/VLM and withholds the sim.* tools (--no-privileged). Omit for upstream's default.")] = None,
+        record: Annotated[bool, Field(description="run: keep video, ground-truth state and every step under the run folder (--record).")] = False,
         run: Annotated[str | None, Field(description="results: run folder name; omit to list the newest runs.")] = None,
         timeout_s: Annotated[float, Field(description="run/bench: job time limit in seconds.", gt=0, le=604800)] = 21600,
         allow_concurrent_gpu: Annotated[bool, Field(description="run/bench: knowingly start beside another GPU job or a running Isaac Sim.")] = False,
@@ -240,7 +267,7 @@ def register(server, *, workspace=None, root=None):
         """
         arguments = dict(task=task, solve=solve, graph=graph, episodes=episodes, cell=cell, limit=limit, workers=workers,
                          print_only=print_only, name=name, run=run, bus_timeout_s=bus_timeout_s, timeout_s=timeout_s,
-                         allow_concurrent_gpu=allow_concurrent_gpu)
+                         allow_concurrent_gpu=allow_concurrent_gpu, perception=perception, record=record)
         return json.dumps(await asyncio.to_thread(call, co, action, **arguments))
 
     return co

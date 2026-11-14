@@ -219,3 +219,46 @@ def test_list_and_a_planned_bench_never_read_the_endpoint_key(workspace, tmp_pat
     env = calls(co.root)[-1]["env"]
     assert env["GAP_VLM_API_KEY"] == "nvapi-vabar" and env["GAP_VLM_BASE_URL"] == "https://h.example/v1"
     assert "OPENROUTER_API_KEY" not in env
+
+
+def test_the_owners_vlm_model_replaces_a_suites_pinned_model(workspace, tmp_path):
+    (tmp_path / "home/.config/twinsmith").mkdir(parents=True)
+    (tmp_path / "home/.config/twinsmith/config.toml").write_text(
+        '[planning]\nvlm_url = "http://127.0.0.1:8000/v1"\nvlm_model = "Qwen/Qwen3-VL-32B-Instruct-FP8"\n')
+    co = vabar.checkout(workspace=workspace)
+    for suite in ("tool_sort", "gear_mesh", "_shared"):
+        (co.root / "tasks" / suite).mkdir(parents=True)
+    pin = 'env.GAP_VLM_MODEL="Qwen/Qwen3-VL-32B-Instruct-FP8"'
+    started = vabar.call(co, "run", task="tool_sort/level1_1", solve="graph", name="local")
+    assert started["ok"], started
+    assert started["result"]["command"][3:6] == ["run", "--set", f"suites.tool_sort.{pin}"]
+    wait_for(started["result"]["job_id"])
+    env = calls(co.root)[-1]["env"]
+    assert env["GAP_VLM_BASE_URL"] == "http://127.0.0.1:8000/v1" and env["GAP_VLM_MODEL"] == "Qwen/Qwen3-VL-32B-Instruct-FP8"
+    planned = vabar.call(co, "bench", cell="tool_sorting/L1")["result"]["planned"]
+    assert planned[3:8] == ["bench", "--set", f"suites.gear_mesh.{pin}", "--set", f"suites.tool_sort.{pin}"]
+
+
+def test_no_vlm_model_leaves_the_suites_pin_alone(workspace, tmp_path):
+    (tmp_path / "home/.config/twinsmith").mkdir(parents=True)
+    (tmp_path / "home/.config/twinsmith/config.toml").write_text('[planning]\nvlm_url = "http://127.0.0.1:8000/v1"\n')
+    co = vabar.checkout(workspace=workspace)
+    started = vabar.call(co, "run", task="tool_sort/level1_1", name="nomodel")
+    assert "--set" not in started["result"]["command"]
+    wait_for(started["result"]["job_id"])
+    assert vabar.model_sets(co, "8", task="tool_sort/x") == ["--set", 'suites.tool_sort.env.GAP_VLM_MODEL="8"']
+
+
+def test_a_graph_run_can_ask_for_vision_perception_and_a_recording(workspace):
+    co = vabar.checkout(workspace=workspace)
+    started = vabar.call(co, "run", task="tool_sort/level1_1", solve="graph", graph="gap_perception_loop",
+                         perception="vision", record=True, name="vision")
+    assert started["ok"], started
+    assert started["result"]["command"][-6:-2] == ["--perception", "vision", "--no-privileged", "--record"]
+    wait_for(started["result"]["job_id"])
+    oracle = vabar.call(co, "run", task="tool_sort/level1_1", solve="graph", perception="oracle", name="oracle")
+    assert oracle["result"]["command"][-4:-2] == ["--perception", "oracle"]
+    wait_for(oracle["result"]["job_id"])
+    assert vabar.call(co, "run", task="a/b", perception="vision")["code"] == "INVALID_VALUE"        # routine
+    assert vabar.call(co, "run", task="a/b", solve="graph", perception="lidar")["code"] == "INVALID_VALUE"
+    assert vabar.call(co, "bench", cell="tool_hanging/L1", record=True)["code"] == "INVALID_VALUE"
