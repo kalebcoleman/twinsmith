@@ -55,6 +55,7 @@ A project's `twinsmith.json` is a different file, read for asset packs and the I
 | `DISPLAY` | `:0` | host | X11 display for the screen and desktop-input tools. Match your session. |
 | `TWINSMITH_KIKIT` | `<workspace>/tools/kikit/.venv/bin/kikit` | host | The KiKit command `hardware` runs for `fab`. See [HARDWARE.md](HARDWARE.md). |
 | `TWINSMITH_BLENDER` | `blender` on `PATH` | host | The Blender `hardware` runs for `render`. See [HARDWARE.md](HARDWARE.md). |
+| `TWINSMITH_SOLIDCRAFT` | `solidcraft-cli` on `PATH`, else `<workspace>/tools/solidcraft/current/bin/solidcraft-cli` | host | The SolidCraft command line `hardware` runs for `part`. See [HARDWARE.md](HARDWARE.md). |
 | `TWINSMITH_ROBOSIM_ROOT` | `<workspace>/tools/robosimstudio` | host | The RoboSimStudio checkout the `robosim` tool runs. See [ROBOSIM.md](ROBOSIM.md). |
 | `TWINSMITH_GAP_ROOT` | `<workspace>/tools/graph-as-policy` | host | The Graph-as-Policy checkout the `gap` tool runs; the skill library is the `open-robot-skills` folder beside it. See [PLANNING-EVAL.md](PLANNING-EVAL.md). |
 | `TWINSMITH_VABAR_ROOT` | `<workspace>/tools/vabar` | host | The VABAR checkout the `vabar` tool runs. See [PLANNING-EVAL.md](PLANNING-EVAL.md). |

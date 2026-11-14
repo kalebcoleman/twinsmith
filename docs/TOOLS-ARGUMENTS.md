@@ -1705,17 +1705,20 @@ Toolset `cad` is off until you select it with `+cad`. Reference: [HARDWARE.md](H
 
 ### `hardware`
 
-PCB and enclosure outputs from tools beside twinsmith; no simulator. status: versions, pins, gaps. check: KiCad ERC and DRC counts (the board's own schematic). fab: check, then KiKit JLCPCB/PCBWay files, board.step and board.glb in a new folder; never uploads or orders. render: a Blender job that uses the GPU (follow with jobs). Inputs in approved folders only.
+PCB and enclosure outputs from tools beside twinsmith; no simulator. status: versions, pins, gaps. check: KiCad ERC and DRC counts (the board's own schematic). fab: check, then KiKit JLCPCB/PCBWay files, board.step and board.glb in a new folder; never uploads or orders. render: a Blender job that uses the GPU (follow with jobs). part: rebuild a SolidCraft design with parameters; STEP, STL (mm), part.usda (m), measurements, preview. Inputs in approved folders only.
 
-- `action` (Literal['status', 'check', 'fab', 'render'], required): Action to perform.
+- `action` (Literal['status', 'check', 'fab', 'render', 'part'], required): Action to perform.
 - `board` (str | None, default `None`): check/fab: absolute .kicad_pcb path inside an approved folder.
 - `vendor` (Literal['jlcpcb', 'pcbway'], default `'jlcpcb'`): fab: which fab house's file set KiKit writes. Nothing is sent to it.
 - `inputs` (list[str] | None, default `None`): render: absolute .glb, .gltf or .stl paths (GLB in metres, STL in millimetres).
-- `name` (str | None, default `None`): fab/render: new folder name under <workspace>/runs/hardware; default a timestamp.
+- `name` (str | None, default `None`): fab/render/part: new folder name under <workspace>/runs/hardware; default a timestamp.
 - `width` (int, default `1600`): render: image width in pixels.
 - `height` (int, default `1200`): render: image height in pixels.
 - `samples` (int, default `128`): render: Cycles samples per pixel.
 - `allow_concurrent_gpu` (bool, default `False`): render: knowingly start next to another GPU job or a running simulator.
+- `design` (str | None, default `None`): part: absolute SolidCraft .sc path inside an approved folder.
+- `parameters` (dict[str, float] | None, default `None`): part: user parameters to set first, {name: number in its unit}.
+- `output` (str | None, default `None`): part: new absolute folder inside an approved folder, instead of runs/hardware/<name>.
 
 <a id="real2sim"></a>
 

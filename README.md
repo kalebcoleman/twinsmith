@@ -81,6 +81,11 @@ and names the next call. Call it once; the answer does not need repeating before
 the timeline stopped, and returns the new `session_id`, `stage_id`, the paths it made and the next steps. Add a robot by
 name (`robot="franka"`) or a whole scene (`environment="warehouse"`). More prompts are in [Examples](docs/EXAMPLES.md).
 
+**6. From CAD to the twin (optional).** With [SolidCraft](docs/HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)
+installed (`scripts/install_solidcraft.sh --register`) and `+cad,+assets,+sim` on, ask: *"Design a parametric bracket in
+solidcraft and save it to the cad folder, then build it with hardware action=part into the twin folder, make CoACD
+collisions, validate it for Newton and set it on the work cell's bench."*
+
 If a step fails, see [troubleshooting the first connection](docs/LINUX-SETUP.md#troubleshooting-the-first-connection).
 
 ## Tool groups

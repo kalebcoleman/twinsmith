@@ -296,3 +296,39 @@ def split(src: Path, out_dir: Path, *, collision: dict | None = None, prims=None
     return dict(output=str(top_path), render=str(render_path), collision=str(collision_path),
                 collision_schemas_removed=removed, shapes=shapes,
                 meters_per_unit=UsdGeom.GetStageMetersPerUnit(composed))
+
+
+def from_stl(src: Path, dest: Path, *, scale: float = 0.001) -> dict:
+    """Write an STL as a USD file in metres, Z up: one ``Xform`` (the default prim, named after the file) holding one
+    triangle mesh scaled by *scale* (0.001: millimetres, as CAD exports them). No collision or physics: ``split`` or
+    ``hulls`` add the collision shapes, the import adds mass."""
+    import re
+
+    import trimesh
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, Vt
+
+    if dest.exists() or dest.is_symlink():
+        raise FileExistsError(f"{dest} exists; outputs are never overwritten")
+    mesh = trimesh.load(str(src), file_type="stl", force="mesh", process=True)
+    points = np.asarray(mesh.vertices, dtype=np.float64) * float(scale)
+    faces = np.asarray(mesh.faces, dtype=np.int64)
+    if not len(faces):
+        raise ValueError(f"{src} holds no triangles")
+    stage = Usd.Stage.CreateNew(str(dest))
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdPhysics.SetStageKilogramsPerUnit(stage, 1.0)
+    name = re.sub(r"[^A-Za-z0-9_]", "_", src.stem) or "part"
+    root = UsdGeom.Xform.Define(stage, Sdf.Path("/" + (name if not name[0].isdigit() else "_" + name)))
+    stage.SetDefaultPrim(root.GetPrim())
+    geom = UsdGeom.Mesh.Define(stage, root.GetPath().AppendChild("mesh"))
+    geom.CreatePointsAttr(Vt.Vec3fArray.FromNumpy(points.astype(np.float32)))
+    geom.CreateFaceVertexCountsAttr(Vt.IntArray([3] * len(faces)))
+    geom.CreateFaceVertexIndicesAttr(Vt.IntArray(faces.reshape(-1).tolist()))
+    geom.CreateSubdivisionSchemeAttr(UsdGeom.Tokens.none)
+    low, high = points.min(axis=0), points.max(axis=0)
+    geom.CreateExtentAttr(Vt.Vec3fArray([Gf.Vec3f(*map(float, low)), Gf.Vec3f(*map(float, high))]))
+    stage.GetRootLayer().Save()
+    return dict(output=str(dest), prim=str(root.GetPath()), triangles=int(len(faces)), watertight=bool(mesh.is_watertight),
+                bounds_m=[[round(float(x), 6) for x in low], [round(float(x), 6) for x in high]],
+                size_m=[round(float(x), 6) for x in high - low], meters_per_unit=1.0, up_axis="Z")
