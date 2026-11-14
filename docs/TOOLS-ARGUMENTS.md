@@ -1655,7 +1655,7 @@ Rewrite the sha256 values of an existing pack.yaml to match its files, and show 
 
 Listed as `assets__pack(action="pull")`.
 
-Download pack versions from the owner's sources file (~/.config/twinsmith/pack-sources.toml): each entry names a Hugging Face repository, a pinned commit and a folder. The folder is downloaded with the owner's read token file (never shown) into a hidden staging folder in the asset root, checked against its pack.yaml (every file hashed, nothing extra, no symlink) and moved into place only if it verifies. A version already present is compared by pack.yaml and never replaced. A vendor entry is reported, not downloaded. Needs the hub extra. NO_ACCESS means the repository is missing or the token cannot read it.
+Download pack versions pinned in the owner's ~/.config/twinsmith/pack-sources.toml (a Hugging Face repository, commit and folder each), with the owner's read token file (never shown). Each lands in a hidden staging folder in the asset root, is checked against its pack.yaml (every file hashed, nothing extra, no symlink) and moves into place only if it verifies. A version already present is compared by pack.yaml, never replaced. Vendor entries are reported, not downloaded. Needs the hub extra. NO_ACCESS: the repository is missing or the token cannot read it.
 
 - `pack` (string, optional): Pack as "<pack id>/<version>". Give this or all.
 - `all` (boolean, default `false`): Pull every entry of the sources file.

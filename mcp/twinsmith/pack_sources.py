@@ -253,6 +253,10 @@ def write(sources: Sources) -> None:
 
 
 def hub_module():
+    import logging
+
+    for name in ("httpx", "httpx2", "huggingface_hub"):   # request lines are noise here; failures come back as errors
+        logging.getLogger(name).setLevel(logging.WARNING)
     try:
         import huggingface_hub
     except ImportError:
@@ -355,7 +359,8 @@ def pull_one(root: Path, src: Source, token, token_path: Path, hub) -> dict:
         return dict(outcome="up_to_date", **where, files=local["files"], bytes=local["bytes"], pack_dir=str(folder))
 
     new_version(root, src.pack_id, src.version)      # refuses a symlinked pack folder
-    with Staging(root, src.pack_id, src.version) as staging:
+    notes: list = []                                  # returned, never printed: stdout is the protocol for a tool
+    with Staging(root, src.pack_id, src.version, notes) as staging:
         download = staging.base / ".download"
         try:
             hub.snapshot_download(repo_id=src.repo, repo_type=src.repo_type, revision=src.revision,
@@ -373,7 +378,8 @@ def pull_one(root: Path, src: Source, token, token_path: Path, hub) -> dict:
             raise PackError(f"{src.ref} from {src.repo} does not verify, so nothing was written: "
                             + "; ".join(report["problems"][:5]), "NOT_VERIFIED", **where)
         staging.commit()
-    return dict(outcome="pulled", **where, files=report["files"], bytes=report["bytes"], pack_dir=str(folder))
+    return dict(outcome="pulled", **where, files=report["files"], bytes=report["bytes"], pack_dir=str(folder),
+                **({"notes": notes} if notes else {}))
 
 
 def pull(root: Path, pack: str | None = None, all_packs: bool = False, home: Path | None = None, hub=None,

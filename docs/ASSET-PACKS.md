@@ -268,9 +268,10 @@ repositories only), never the `HF_TOKEN` of the environment.
 
 ```bash
 twinsmith assets pull --all
-#   jenga/v1: pulled, 3 file(s), 0.0 MB, verified (<hf-user>/twinsmith-assets @ 1a2b3c4d5e6f)
+#   jenga/v1: pulled, 1 file(s), 0.0 MB, verified (<hf-user>/twinsmith-assets @ 61c1bcd47fdf)
 #   realsense-d400-cad/v1: vendor download, not fetched: https://dev.realsenseai.com/download/41950 (...)
-#   ur5e-workcell/v2: up to date, 37 file(s), 74.6 MB, verified (...)
+#   ur5e-workcell/v2: pulled, 16 file(s), 74.9 MB, verified (<hf-user>/twinsmith-assets @ 91acc31360a1)
+# run it again: each pack is "up to date" and nothing is downloaded
 ```
 
 **push** uploads a version that verifies (`twinsmith assets push my-robot/v2`) and writes its new commit into the sources

@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -351,6 +352,17 @@ def test_pull_all_into_a_clean_root_is_byte_identical_and_then_up_to_date(home, 
     assert {item["outcome"] for item in again["results"] if item["pack"] != "cad/v1"} == {"up_to_date"}
     assert len([c for c in hub.calls if c[0] == "snapshot"]) == 2
     assert READ_TOKEN not in json.dumps([report, again])
+
+
+def test_pull_prints_nothing_so_the_tool_path_keeps_stdout_for_the_protocol(home, tmp_path, published, capsys):
+    _, hub = published
+    secret(home, "hf_token", READ_TOKEN)
+    root = tmp_path / "clean"
+    root.mkdir(mode=0o777)
+    (root / "robot").mkdir(mode=0o777)
+    os.chmod(root / "robot", 0o777)                 # private_dirs would note fixing this
+    pack_sources.pull(root, "robot/v1", home=home, hub=hub)
+    assert capsys.readouterr().out == ""
 
 
 def test_pull_refuses_a_tampered_pack_and_leaves_nothing(home, tmp_path, published):
