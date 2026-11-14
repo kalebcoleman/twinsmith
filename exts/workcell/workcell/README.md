@@ -371,10 +371,9 @@ It also refuses a bench without its own collision layer, as in pack `v1`.
   1.57 rad step on four joints at once overshoots (wrist 1 reached 13 rad/s): Newton does not apply the pack's 180 deg/s joint
   velocity limit, so send interpolated targets.
 - Tower (`task="jenga_tower"`): 3.9 mm of settling in the first second at the top block, then 0.12 mm over the next 9 s.
-- Wrist camera: its picture follows the arm, with one defect. The first `sim__camera(action="capture", adopt=true)` of the
-  wrist camera taken after the arm has moved draws the robot where physics has it but looks from the camera's pose at build
-  time, and reports a fresh render with no warning. The next capture, after any physics step, is right. Until that is fixed,
-  capture once before moving, or discard the first image.
+- Wrist camera: its picture follows the arm. A camera first captured after the arm had moved used to look from its pose at
+  build time (the robot drawn where physics had it), with no warning: a paused capture now publishes Newton's poses to the
+  renderer first. Checked live: the first capture after a tool-down move shows the bench from above.
 - Not done: PhysX, a grasp on the 14 mm side, a tower pull, and any comparison with the real gripper.
 
 ## Authoring/BOM smoke
