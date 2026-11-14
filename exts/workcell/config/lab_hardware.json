@@ -649,20 +649,20 @@
     },
     "clipping_range_m": {
       "value": [
-        0.01,
+        0.02,
         10.0
       ],
       "status": "unconfirmed",
-      "source": "Render setting, not a D415 property: the RG2 body is nearer than the renderer's default 0.1 m near plane and would be drawn cut open. The real colour sensor has no near cut-off; its depth stream starts at about 0.3 m."
+      "source": "Render setting, not a D415 property. The near plane must lie between the camera's own body proxy (11.5 mm deep around the optical origin, or the view is black) and the RG2 body (nearer than the renderer's default 0.1 m, which draws it cut open). The real colour sensor has no near cut-off; its depth stream starts at about 0.3 m."
     },
     "offset_in_tool0_m": {
       "value": [
-        0.012,
-        0.038,
+        0.0,
+        0.11,
         -0.005
       ],
       "status": "unconfirmed",
-      "source": "The lab's own value, moved to the side Kaleb reports. Max's localizer_bridge.py (the node the real pipeline runs) has the camera at (-0.012,-0.038,-0.005) in the end-effector frame, 38 mm from the tool axis; at Max's home pose that is the side away from the robot base. Kaleb, 2026-11-14: the camera is on the other side, towards the underside, on the gripper close to the wrist. So the same mount turned 180 degrees about the tool axis: with the tool pointing forward and wrist_3 at 0, tool0 +y points down. The RG2 is in the image, as in the lab. Not measured since the move: measure on the real bracket."
+      "source": "Kaleb, 2026-11-14: an ideal placeholder in the general area, on the underside of the wrist, until the real bracket CAD and setup arrive; the bracket holds the camera out from the wrist and angles it. Design pose, not a measurement: 0.11 m from the tool axis, far enough that the Bota, Quick Changer and wrist are outside the image, which they were not at the 0.038 m of Max's localizer_bridge.py. With the tool pointing forward and wrist_3 at 0, tool0 +y points down. Centred on the gripper's plane (x = 0)."
     },
     "offset_in_tool0_alternatives_m": {
       "value": {
@@ -687,12 +687,12 @@
     },
     "rotation_in_tool0_deg": {
       "value": [
-        0.0,
+        -5.0,
         0.0,
         180.0
       ],
       "status": "unconfirmed",
-      "source": "Max's localizer_bridge.py uses the identity (the optical frame equals the end-effector frame: z forward along the tool axis, y down), with no tilt. Extrinsic XYZ degrees; the 180 about Z (the tool axis) turns the camera with its mount to the underside, which keeps the gripper toward the bottom of the image as in Max's mount. If the real image shows the gripper at the top, set Z to 0. The USD camera looks along -Z, so the builder adds Rx(180) internally."
+      "source": "Design value, not a measurement. Extrinsic XYZ degrees: -5 about X tilts the view 5 degrees toward the tool axis, so the fingertips are in the lower part of the image while the arm stays out of it; then 180 about Z (the tool axis) puts the camera on the underside with the gripper toward the bottom of the image. The USD camera looks along -Z, so the builder adds Rx(180) internally."
     },
     "mount_position": {
       "value": "under the wrist",
@@ -844,71 +844,6 @@
       "source": "Design height: the beam underside rests on the release plate stacked over the shelf and camera (asset_layout.overhead_release / overhead_shelf mount_pose); overhead rails stay above the 850 mm reach. Not a lab measurement."
     }
   },
-  "jenga": {
-    "block_size_m": {
-      "value": [
-        0.072,
-        0.024,
-        0.014
-      ],
-      "status": "confirmed",
-      "source": "Kaleb work-cell requirement: 72 x 24 x 14 mm; verify physical tolerance separately."
-    },
-    "block_mass_kg": {
-      "value": 0.015,
-      "status": "unconfirmed",
-      "source": "Kaleb (~15 g); the fmb4 USDs author no mass (density default would give 24 g). Weigh a block."
-    },
-    "tower_layers_built": {
-      "value": 18,
-      "status": "confirmed",
-      "source": "Complete 54-block Jenga tower, Kaleb phase-1 scope."
-    },
-    "tower_xy_m": {
-      "value": [
-        0.7,
-        -0.1333
-      ],
-      "status": "unconfirmed",
-      "source": "projects/jenga-rl layout.py (TOWER_XY, tower y)."
-    },
-    "static_friction": {
-      "value": 0.3,
-      "status": "unconfirmed",
-      "source": "jenga-rl block material (0.30 static / 0.25 dynamic); calibration pending."
-    },
-    "dynamic_friction": {
-      "value": 0.25,
-      "status": "unconfirmed",
-      "source": "As above."
-    },
-    "variation_profile": {
-      "value": "measured_pending",
-      "status": "unconfirmed",
-      "source": "Provisional variation preset, not measured calibration. Replace with a measured profile name or null for nominal dimensions and scalar mass/friction."
-    },
-    "variation_seed": {
-      "value": 42,
-      "status": "unconfirmed",
-      "source": "Arbitrary reproducibility seed, not a measured hardware parameter; overwrite freely or override at build time."
-    },
-    "variation_profiles": {
-      "value": {
-        "measured_pending": {
-          "mass_kg": {"distribution": "uniform", "min": 0.014, "max": 0.016},
-          "static_friction": {"distribution": "uniform", "min": 0.28, "max": 0.34},
-          "dynamic_friction": {"distribution": "uniform", "min": 0.22, "max": 0.27},
-          "size_tolerance_m": [
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002},
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002},
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002}
-          ]
-        }
-      },
-      "status": "unconfirmed",
-      "source": "All distribution values and bounds are provisional engineering inputs, not measurements. Replace this value object after weighing blocks and measuring friction and dimensions."
-    }
-  },
   "documentation": {
     "bom_csv": {
       "value": "../workcell/bom.csv",
@@ -1001,14 +936,14 @@
   },
   "pack": {
     "id": {
-      "value": "ur5e-jenga-workcell",
+      "value": "ur5e-workcell",
       "status": "confirmed",
-      "source": "Kaleb versioned external asset-pack decision."
+      "source": "Kaleb, 2026-11-14: the base cell is the robot, gripper stack, wrist camera, bench and mounting hardware only; task objects are separate packs. Built from ur5e-jenga-workcell/v2 by scripts/workcell_split_packs.py."
     },
     "version": {
-      "value": "v2",
+      "value": "v1",
       "status": "confirmed",
-      "source": "Kaleb versioned external asset-pack decision; v2 (2026-11-13) is v1 with a bench collision layer and the RG2 in the arm's articulation, built by scripts/workcell_pack_v2.py."
+      "source": "ur5e-jenga-workcell/v2 without its Jenga block (now the jenga pack): the same robot, RG2 in the arm's articulation, and bench collision layer."
     }
   },
   "assets": {
@@ -1069,11 +1004,6 @@
     },
     "overhead_shelf": {
       "value": "overhead_shelf",
-      "status": "confirmed",
-      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
-    },
-    "jenga_block": {
-      "value": "jenga_block",
       "status": "confirmed",
       "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
     },

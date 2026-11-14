@@ -28,7 +28,8 @@ def main():
 from workcell.scene import Workcell
 from pxr import UsdPhysics, UsdGeom, PhysxSchema
 workcell = Workcell()
-report = await workcell.quick_start(config_path={args.config!r}, mode={args.mode!r}, discard_changes={args.discard_changes!r})
+report = await workcell.quick_start(config_path={args.config!r}, mode={args.mode!r}, discard_changes={args.discard_changes!r},
+                                    task="jenga_tower")
 stage = omni.usd.get_context().get_stage()
 assert report["state"] == "ready" and report["backend"] in ("physx", "newton") and report["timeline"] == "stopped"
 if report["backend"] == "newton":

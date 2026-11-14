@@ -15,6 +15,7 @@ MCP_TOOL_REGISTRY = {
             "config_path": {"type": "string", "description": "Optional hardware configuration path."},
             "mode": {"type": "string", "enum": ["physics", "mirror_real"], "default": "physics", "description": "Physics mode, or zero-gravity mirror mode."},
             "discard_changes": {"type": "boolean", "default": False, "description": "Allow replacement of an unsaved stage."},
+            "task": {"type": "string", "description": "Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block) or an absolute task file. Omitted: the base cell only, with no objects."},
             "environment": {"type": "string", "enum": ["none", "simple_room"], "default": "none",
                             "description": "A room around the cell: simple_room references NVIDIA's Simple Room from the Isaac Sim assets server (needs network), floor level with the bench feet."},
         },

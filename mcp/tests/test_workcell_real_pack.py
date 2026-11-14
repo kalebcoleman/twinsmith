@@ -77,11 +77,9 @@ def _vertices_in_frame(stage, frame, roots):
     return np.vstack(chunks)
 
 
-def test_wrist_view_shows_the_gripper_as_the_lab_camera_does(cell):
-    config, stage, report, *_ = cell
-    section = config["wrist_camera"]
-    points = _vertices_in_frame(stage, report["tool0_path"], [report["gripper_path"]])
-    assert len(points) > 100_000
+def _in_wrist_image(stage, report, section, roots):
+    """Optical-frame coordinates of the vertices of ``roots`` that fall inside the wrist camera's colour image."""
+    points = _vertices_in_frame(stage, report["tool0_path"], roots)
     # The columns of R are the optical axes in tool0; optical coordinates are R^T (p - offset).
     quaternion = cameras._euler_xyz_deg_to_quat(section["rotation_in_tool0_deg"])
     rotation = np.array([cameras._rotate_vector(quaternion, axis) for axis in np.eye(3).tolist()]).T
@@ -89,8 +87,18 @@ def test_wrist_view_shows_the_gripper_as_the_lab_camera_does(cell):
     optical = optical[optical[:, 2] > section["clipping_range_m"][0]]  # nearer than the clip plane is not drawn
     inside = ((np.degrees(np.arctan2(np.abs(optical[:, 0]), optical[:, 2])) < section["color_fov_deg"][0] / 2)
               & (np.degrees(np.arctan2(np.abs(optical[:, 1]), optical[:, 2])) < section["color_fov_deg"][1] / 2))
-    assert inside.any(), "the RG2 is out of the wrist frame, unlike the lab mount 38 mm from the tool axis"
-    assert optical[inside][:, 1].min() > 0, "the gripper should be in the lower half of the image"
+    return optical[inside]
+
+
+def test_wrist_view_shows_the_fingers_and_not_the_arm(cell):
+    config, stage, report, *_ = cell
+    section = config["wrist_camera"]
+    arm = _in_wrist_image(stage, report, section, [
+        f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"])
+    assert not len(arm), f"{len(arm)} Bota/Quick Changer/wrist vertices fall in the wrist image"
+    gripper = _in_wrist_image(stage, report, section, [report["gripper_path"]])
+    assert len(gripper), "the RG2 fingers are out of the wrist image"
+    assert gripper[:, 1].min() > 0, "the gripper should be in the lower half of the image"
 
 
 def test_wrist_camera_prim_carries_the_configured_rotation_once(cell):

@@ -23,7 +23,7 @@ missing prices are not zero, and no complete workcell total is available.
 | `overhead_mount` | Removable 80/20 1515 camera gantry | 1 | set | Quote required | Planned three-member gantry, not slab; two posts and cross-member, cantilever and real attachments unresolved; not purchased |
 | `overhead_release` | Thorlabs KB3X3 kinematic quick-release base | 1 | each | $117.27 | To buy; camera-only release, not load-bearing gantry base; installed attachment unconfirmed |
 | `overhead_shelf` | Printed overhead camera shelf | 1 | each | Quote required | Proposed proxy; dimensions, manufacture and attachment unconfirmed |
-| `jenga_block` | Wooden Jenga block, nominal 72 x 24 x 14 mm | 54 | each | Quote required | Nominal size confirmed; tolerances, chamfers, mass and friction unconfirmed |
+| `jenga_block` (task pack `jenga_tower`, not the base cell; `push_block` uses 1) | Wooden Jenga block, nominal 72 x 24 x 14 mm | 54 | each | Quote required | Nominal size confirmed; tolerances, chamfers, mass and friction unconfirmed |
 
 Price provenance is retained in the CSV's `price_source` fields for the D415 and KB3X3.
 A stock-profile rate is not a price for the assembled overhead gantry; its cut list and

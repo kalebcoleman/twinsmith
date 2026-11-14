@@ -1,12 +1,11 @@
-"""Pack-backed workcell assembly, independent of the retired work cell mixins."""
+"""Pack-backed workcell assembly: the base cell, and optionally one task pack loaded on top of it."""
 
 import copy
 import math
 from pathlib import Path
 
 ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2", "finger_pad",
-         "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf",
-         "jenga_block", "materials")
+         "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf", "materials")
 
 
 # What a Newton build has not shown yet. PhysX is the work cell's qualified engine; see the README's Newton section.
@@ -46,14 +45,11 @@ def _bom_rows(config, config_path=None):
     path = config.get("documentation", {}).get("bom_csv", "../workcell/bom.csv")
     rows = bom.load_bom(selected.parent / path)
     bom.verify_config_assets(config, rows)
-    quantity = next(row["quantity"] for row in rows if row["asset_id"] == config["assets"]["jenga_block"])
-    if quantity != config["jenga"]["tower_layers_built"] * 3:
-        raise ValueError("Jenga layer count must match the selected BOM block quantity")
     return rows
 
 
 def _preflight(config_path, mode):
-    from . import asset_pack, hardware_config, jenga as tower
+    from . import asset_pack, hardware_config
 
     if mode not in ("physics", "mirror_real"):
         raise ValueError("mode must be physics or mirror_real")
@@ -69,15 +65,6 @@ def _preflight(config_path, mode):
             or not math.isfinite(float(scale)) or scale <= 0
             or not math.isfinite(float(top)) or world["tabletop_z_m"] != 0):
         raise ValueError("invalid bench offset, scale, asset tabletop height, or tabletop_z_m")
-    jenga = config["jenga"]
-    if list(jenga["block_size_m"]) != [0.072, 0.024, 0.014]:
-        raise ValueError("jenga block dimensions must be 72 x 24 x 14 mm")
-    if type(jenga["tower_layers_built"]) is not int or not 1 <= jenga["tower_layers_built"] <= 18:
-        raise ValueError("jenga tower_layers_built must be 1..18")
-    if not math.isfinite(float(jenga["block_mass_kg"])) or jenga["block_mass_kg"] <= 0:
-        raise ValueError("jenga block mass must be positive")
-    if len(jenga["tower_xy_m"]) != 2 or not all(math.isfinite(float(value)) for value in jenga["tower_xy_m"]):
-        raise ValueError("invalid jenga tower position")
     if "bench_top" in config:
         check_bench_top(config["bench_top"])
     if "contact" in config:
@@ -85,7 +72,6 @@ def _preflight(config_path, mode):
     if "inertials" in config:
         from .robot import check_inertials
         check_inertials(config["inertials"])
-    tower.realize(config)
     _bom_rows(config, config_path)
     pack = asset_pack.resolve_pack(config)
     pack.verify_dependencies()
@@ -237,8 +223,7 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
 
     materials = UsdGeom.Scope.Define(stage, "/World/Materials")
     materials.GetPrim().GetReferences().AddReference(str(assets["materials"]))
-    for role, name, section in (("jenga_block", "Wood", "jenga"),
-                                ("finger_pad", "BlackPad", "finger_pads")):
+    for role, name, section in (("finger_pad", "BlackPad", "finger_pads"),):
         material = UsdShade.Material.Get(stage, f"/World/Materials/{name}")
         if not material:
             raise ValueError(f"Pack materials must define {name}")
@@ -252,8 +237,7 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
                 if prim.IsA(UsdGeom.Gprim) or str(prim.GetPath()) == part["prim_path"]:
                     binding = UsdShade.MaterialBindingAPI.Apply(prim)
                     binding.Bind(material)
-                    if role != "jenga_block":
-                        binding.Bind(material, materialPurpose="physics")
+                    binding.Bind(material, materialPurpose="physics")
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
     from .environment import ROOT
@@ -352,7 +336,8 @@ class Workcell:
     def status(self):
         return copy.deepcopy(self._report)
 
-    async def quick_start(self, config_path=None, mode="physics", discard_changes=False, environment="none"):
+    async def quick_start(self, config_path=None, mode="physics", discard_changes=False, environment="none", task=None):
+        """Build the base cell; ``task`` (a name in ``tasks/`` or an absolute task file) loads its objects on top."""
         if type(discard_changes) is not bool:
             raise ValueError("discard_changes must be a boolean")
         from . import environment as rooms
@@ -360,6 +345,13 @@ class Workcell:
             raise ValueError(f"environment must be one of {list(rooms.NAMES)}, not {environment!r}")
         config, raw, pack, assets = _preflight(config_path, mode)
         rows = _bom_rows(config, config_path)
+        loaded = None
+        if task is not None:                        # checked in full before the stage is replaced
+            from . import tasks
+            loaded = tasks.load(task)
+            loaded["pack"].verify_dependencies()
+            config, rows = tasks.merged(config, loaded), rows + loaded["rows"]
+            assets = {**assets, "jenga_block": loaded["asset"]}
         engine = _engine(config, mode)
         room_url = rooms.resolve(environment)       # checked (reachable) before the stage is replaced
         import omni.usd
@@ -405,9 +397,9 @@ class Workcell:
             robot_report = robot.build_robot(stage, pack, config)
             _configure_robot_gravity(stage, robot_report["assembly_path"], mode == "mirror_real")
             camera_report = cameras.build_cameras(stage, assets, config, robot_report)
-            block_report = jenga.build(stage, assets["jenga_block"], config)
+            block_report = jenga.build(stage, assets["jenga_block"], config) if loaded else None
             parts = ([{"prim_path": "/World/Bench", "asset_id": config["assets"]["bench"], "bom_id": "bench"}]
-                     + robot_report["parts"] + camera_report["parts"] + block_report["parts"])
+                     + robot_report["parts"] + camera_report["parts"] + (block_report["parts"] if loaded else []))
             missing = {row["asset_id"] for row in scene_rows(config, rows)} - {part["asset_id"] for part in parts}
             if missing:
                 raise ValueError(f"Physical assets missing from BOM part mappings: {sorted(missing)}")
@@ -427,14 +419,18 @@ class Workcell:
             self._report = {"state": "ready", "mode": mode, "backend": engine, "timeline": "stopped",
                             "gravity_m_s2": -9.81, "robot_gravity_disabled": mode == "mirror_real", "tabletop_z_m": 0.0,
                             "pack": copy.deepcopy(pack.manifest), "robot": robot_report,
-                            "cameras": camera_report["cameras"], "jenga": block_report, "parts": parts,
+                            "cameras": camera_report["cameras"], "parts": parts,
+                            "task": {"name": loaded["name"], "file": loaded["path"],
+                                     "pack": {key: loaded["pack"].manifest[key] for key in ("id", "version")}}
+                            if loaded else None,
+                            **({"jenga": block_report} if loaded else {}),
                             "bom_audit": audit, **({"newton": newton_report} if newton_report else {}),
                             **({"bench_top": top_report} if top_report else {}),
                             **({"environment": room_report} if room_report else {}),
                             **({"contact": contact_report} if contact_report else {}),
                             "limitations": [line for line in robot_report["limitations"]
                                             if not (engine == "newton" and "drives are preserved" in line)]
-                            + camera_report["limitations"] + block_report["limitations"]
+                            + camera_report["limitations"] + (block_report["limitations"] if loaded else [])
                             + (NEWTON_LIMITATIONS if engine == "newton" else [])}
             self._runtime = (stage, config, assets, rows)
         except Exception as exc:
@@ -445,6 +441,9 @@ class Workcell:
     def build_jenga(self, profile=None, seed=None):
         if self._runtime is None or self._report["state"] != "ready":
             raise RuntimeError("Build the workcell before rebuilding its tower")
+        if "jenga" not in self._report:
+            raise RuntimeError("The cell has no task objects; build it with a Jenga task first, "
+                               "for example quick_start with task='jenga_tower'")
         import omni.usd
         import omni.timeline
         stage, config, assets, rows = self._runtime

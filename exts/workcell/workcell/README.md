@@ -11,7 +11,21 @@ The work cell is one UR5e on a Vention bench with a Bota Rokubi, OnRobot Quick C
 standard OnRobot RG2, black finger pads and one camera: a D415 on the wrist. That camera is the
 cell's only sensor for perception and real-to-sim. A second, overhead D415 on a removable gantry is
 a proposal that is not bought and is not built (`overhead_camera.enabled` is `false` in the
-config; `true` builds it). The Jenga tower is 54 blocks of nominal 72 x 24 x 14 mm dimensions.
+config; `true` builds it).
+
+The base cell holds no task objects. What a task adds is a **task pack** loaded on top of it:
+
+| File | What it is |
+|---|---|
+| `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v1` |
+| `exts/workcell/workcell/bom.csv` | The base cell's BOM |
+| `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
+| `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
+
+`workcell__cell(action="quick_start")` builds the base cell alone; `task="jenga_tower"` or `task="push_block"` (or an
+absolute task file) loads that task's objects on top, and the parts audit then checks the cell's BOM rows plus the
+task's. A cell configuration that holds task objects is refused. `scripts/workcell_split_packs.py` writes the two packs
+from `ur5e-jenga-workcell/v2`; the sections below that name `ur5e-jenga-workcell` describe that source pack.
 
 Machine-readable data:
 
@@ -31,7 +45,7 @@ default: add `+sim`):
 | `workcell__cell` | `quick_start`, `status`, `shutdown` | Build a stopped pack-backed scene, read its report, or release workcell state without clearing the stage |
 | `workcell__robot` | `status`, `wrench` | Read the robot build report, or the simulated Bota F/T sensor with the weight it carries |
 | `workcell__perception` | `status` | Read camera configuration, not captured sensor data |
-| `workcell__jenga` | `build`, `status` | Replace the tower on a stopped timeline or read its build report |
+| `workcell__jenga` | `build`, `status` | With the `jenga_tower` task loaded: replace the tower on a stopped timeline or read its build report |
 
 `quick_start` accepts `config_path`, `mode` (`physics` or `mirror_real`),
 `discard_changes` and `environment` (`none` or `simple_room`), and answers with a summary;
@@ -89,7 +103,7 @@ physical part must map to one of these rows.
 | Scene | `bench` 1 |
 | Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1, `finger_pad` 2 |
 | Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
-| Jenga | `jenga_block` 54 |
+| Jenga (task packs, not the cell) | `jenga_block` 54 for `jenga_tower`, 1 for `push_block` |
 
 Both cameras use the single `d415` logical asset; the BOM records two physical units. The
 two finger pads use the single `finger_pad` logical asset. A partial tower may instantiate
@@ -229,11 +243,11 @@ The current candidate contains:
   dimensions, the pack scales member thickness with the post span, and the real attachment
   details are unconfirmed, so this does not establish mounting feasibility. The KB3X3 is a
   camera-only release, not a load-bearing gantry base. Printed mounts and shelf remain proxies.
-- The wrist D415 is on the underside of the wrist, 38 mm from the tool axis, looking along it with no
-  tilt: Max's `localizer_bridge.py` offset, turned 180 degrees about the tool axis to the side Kaleb
-  reports (2026-11-14). The RG2 body fills the lower part of the image, as that offset implies for
-  the lab camera. The pose has not been measured since the camera was moved. Its near clip is
-  0.01 m so the RG2 is not drawn cut open.
+- The wrist D415 is on the underside of the wrist, held 0.11 m out from the tool axis and angled 5 degrees toward
+  it: an ideal placeholder (Kaleb, 2026-11-14) until the real bracket CAD arrives, not a measurement. From there the
+  Bota, Quick Changer and wrist are outside the image and the RG2 fingers are in its lower half; a test projects
+  the pack's meshes through the camera to check both. Max's `localizer_bridge.py` has the camera 38 mm from the
+  axis, where the Quick Changer fills the lower image. The near clip is 0.02 m, past the camera's own body proxy.
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads
@@ -260,8 +274,8 @@ configuration or a design envelope and are not vendor drawings.
 | RG2 maximum opening | 0.110 m | `confirmed` |
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
 | D415 body | 0.099 x 0.020 x 0.023 m | `unconfirmed` |
-| Wrist camera offset | 0.012, 0.038, -0.005 m in tool0 (Max's localizer offset, turned to the underside) | `unconfirmed` |
-| Wrist camera rotation | 0, 0, 180 degrees (extrinsic XYZ): no tilt, turned about the tool axis with the mount | `unconfirmed` |
+| Wrist camera offset | 0, 0.11, -0.005 m in tool0 (placeholder design pose on the underside) | `unconfirmed` |
+| Wrist camera rotation | -5, 0, 180 degrees (extrinsic XYZ): 5 degrees toward the tool axis, turned about it to the underside | `unconfirmed` |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |

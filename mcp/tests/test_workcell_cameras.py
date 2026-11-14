@@ -303,7 +303,11 @@ def test_shipped_config_has_the_wrist_camera_only_on_the_underside():
     wrist = values["wrist_camera"]
     assert wrist["offset_in_tool0_m"][1] > 0        # tool0 +y is down with the tool forward and wrist_3 at 0
     forward = cameras._rotate_vector(cameras._euler_xyz_deg_to_quat(wrist["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
-    assert forward[2] > 0.98                         # looks along the tool axis
+    assert forward[2] > 0.98 and forward[1] <= 0     # looks along the tool axis, angled toward it if at all
+    assert 0.06 <= wrist["offset_in_tool0_m"][1] <= 0.15         # held out from the wrist by a bracket, not on the flange
+    assert wrist["resolution"] == [1280, 720] and wrist["color_fov_deg"] == [69.4, 42.5]
+    # The near plane clears the camera's own body proxy, or the camera renders the inside of its box.
+    assert wrist["body_size_m"][2] / 2 < wrist["clipping_range_m"][0] <= 0.03
 
 
 def test_topics_capture_and_fiducials_are_declared_not_verified(config, tmp_path):
