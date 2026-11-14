@@ -356,6 +356,23 @@ It also refuses a bench without its own collision layer, as in pack `v1`.
 - Not qualified on Newton: the cameras and `mirror_real`. The Bota force/torque read passes the static check on both
   engines (`scripts/workcell_static_wrench.py`).
 
+**Gripping on Newton (2026-11-14, same build, `task="push_block"`, through the MCP tools; one run each).**
+- The finger pads were mounted at the finger joint, inside the finger's collision shape, so a part touched the bare finger
+  (friction 0.5), never a pad. They now sit on the fingertip gripping face (`finger_pads.mounts`, from the pack's finger mesh).
+- The RG2 has two driven joints, `finger_joint` and `right_outer_knuckle_joint`: command both to the same value, or only one
+  finger moves. Fully open (0.34 rad) the pad faces are about 80 mm apart and the bare fingertips 96 mm, not the RG2's 110 mm;
+  the pad thickness (8 mm) is a proxy. The fingertips move on an arc and drop as they close, so approach with the pads a few
+  millimetres wider than the part, or the tips press on the bench and the 1 N m drive stalls. A full stroke takes about 3 s.
+- Grasp: pads 30 mm apart over the 24 mm side of a block lying flat, closed with both joints at their lower limit. Each pad
+  pressed with 22 N, the block was lifted 0.10 m and held for 3 s with 0.09 mm of slip, and the Bota force rose by 0.1471 N
+  for a 0.1472 N block. Each pad sank 1.3 mm into the block (MuJoCo's soft contact), so a width read from the joints is about
+  2.5 mm small.
+- Arm: a ramped joint move (3 s) and Cartesian moves through `sim__arm(action="ik")` end within 1 mrad and about 1 mm. A
+  1.57 rad step on four joints at once overshoots (wrist 1 reached 13 rad/s): Newton does not apply the pack's 180 deg/s joint
+  velocity limit, so send interpolated targets.
+- Tower (`task="jenga_tower"`): 3.9 mm of settling in the first second at the top block, then 0.12 mm over the next 9 s.
+- Not done: PhysX, a grasp on the 14 mm side, a tower pull, and any comparison with the real gripper.
+
 ## Authoring/BOM smoke
 
 The cell builds on the session's engine (`run.sh --physics-backend physx|newton`). Run the smoke only against an explicitly
