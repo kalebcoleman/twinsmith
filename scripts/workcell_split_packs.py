@@ -38,7 +38,7 @@ def main() -> int:
     written = {}
     for pack_id, records, extra in (
             ("ur5e-workcell", cell, dict(qualification=f"{origin} without its task object (the Jenga block)",
-                                         derived_from=origin, mimic=manifest.get("mimic"))),
+                                         derived_from=origin, **{key: manifest[key] for key in ("mimic",) if key in manifest})),
             ("jenga", block, dict(qualification="task pack: the Jenga block alone", derived_from=origin))):
         if (root / pack_id / "v1" / "pack.yaml").is_file():
             written[pack_id] = "exists, left alone"

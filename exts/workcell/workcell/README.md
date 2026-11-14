@@ -49,7 +49,8 @@ default: add `+sim`):
 | `workcell__jenga` | `build`, `status` | With the `jenga_tower` task loaded: replace the tower on a stopped timeline or read its build report |
 
 `quick_start` accepts `config_path`, `mode` (`physics` or `mirror_real`),
-`discard_changes` and `environment` (`none` or `simple_room`), and answers with a summary;
+`discard_changes`, `task` (a task name or an absolute task file) and `environment` (`none` or
+`simple_room`), and answers with a summary;
 `workcell__cell(action="status")` returns the full report. `simple_room` references NVIDIA's
 Simple Room from the Isaac Sim assets server (checked before the stage is replaced) with its
 ground level with the bench feet; room parts inside the bench are deactivated, every room
@@ -234,8 +235,8 @@ The current candidate contains:
 - Genuine UR5e, Vention bench, OnRobot Quick Changer and OnRobot RG2 meshes, flattened from
   preserved local vendor CAD. Their MDL materials were replaced with preview materials, so
   appearance is not vendor-accurate.
-- No genuine Bota Rokubi, D415, wrist bracket or gantry CAD is available. These are
-  dimensioned, unconfirmed proxies.
+- No genuine Bota Rokubi or gantry CAD is available: these are dimensioned, unconfirmed proxies. The D415 body is
+  the vendor's mesh; the wrist bracket is a FreeCAD placeholder design, not the lab's bracket.
 - With `overhead_camera.enabled` (off in the shipped config), the overhead support is the pack's three-member gantry (two posts and a cross-member).
   The posts stand on the bench top panel (inside its measured footprint, x up to 0.9436 m,
   y -0.811..-0.091 m), outside the arm's reach, and the camera hangs under the
@@ -381,7 +382,7 @@ home-PC qualification before claiming a runtime pass.
   pack; those structural results do not establish a PhysX or render pass.
 - The integrated baseline includes a BOM contract and stage-mapping audit with CPU
   fixtures. No real-stage BOM audit, PhysX smoke or render pass is claimed here.
-- No genuine Bota, D415 or mount CAD is available; those parts remain unconfirmed proxies.
+- No genuine Bota or mount CAD is available; those parts remain unconfirmed proxies or placeholder designs. The D415 body is the vendor's mesh.
 - The old-store unreferenced report must wait until the pack loads, PhysX smoke passes,
   renders are reviewed and the BOM audit passes on the real stage. It is intentionally not
   produced here.

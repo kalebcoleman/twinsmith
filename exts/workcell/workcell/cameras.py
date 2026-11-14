@@ -48,7 +48,6 @@ SCHEMA = 1
 OVERHEAD_ASSET_ROLES = ("overhead_mount", "overhead_release", "overhead_shelf")
 REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", *OVERHEAD_ASSET_ROLES)
 D415_BODY_SIZE_M = (0.099, 0.020, 0.023)
-WRIST_BRACKET_SIZE_M = (0.030, 0.060, 0.012)
 DEFAULT_APERTURE_MM = 36.0
 DEFAULT_CLIPPING_RANGE_M = (0.1, 10.0)
 USD_CAMERA_ROTATION = (0.0, 1.0, 0.0, 0.0)  # Rx(180 deg), wxyz
@@ -59,7 +58,7 @@ REQUIRED_CONFIG_PATHS = (
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
     "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
-    "wrist_camera.body_size_m", "wrist_camera.bracket_size_m",
+    "wrist_camera.body_size_m",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
     "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
@@ -643,17 +642,15 @@ def _physics_block(tool0):
 def _asset_conventions(config):
     section = config.get("wrist_camera") or {}
     body = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    bracket = _vector(section.get("bracket_size_m"), 3, "wrist_camera.bracket_size_m") or list(WRIST_BRACKET_SIZE_M)
     shelf = _vector((config.get("overhead_mount") or {}).get("printed_shelf_size_m"), 3,
                     "overhead_mount.printed_shelf_size_m") or [0.1, 0.06, 0.008]
     return {
-        "d415": {"kind": "unconfirmed dimensioned proxy", "dimensions_m": body,
-                 "default_prim": "centred Xform at the body geometric centre",
-                 "axes": "D415 optical frame: +X right, +Y down, +Z forward",
-                 "origin": "body centre; the render camera applies Rx(180 deg) for USD",
+        "d415": {"kind": "pack geometry; the pack manifest records its fidelity", "dimensions_m": body,
+                 "axes": "D415 colour optical frame: +X right, +Y down, +Z forward",
+                 "origin": "the colour sensor; the render camera applies Rx(180 deg) for USD",
                  "forbidden_substitute": "D455/rsd455"},
-        "wrist_mount": {"kind": "centred proxy box", "dimensions_m": bracket,
-                        "axes": "optical frame", "placement": "centre between tool0 and the camera optical origin"},
+        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_camera_assets.py)",
+                        "axes": "tool0", "placement": "on tool0, unscaled"},
         "overhead_mount": {"kind": "unconfirmed open gantry proxy", "dimensions_m": [1.0, 1.0, 1.0],
                            "scale": "extrusion thickness x post span x height, centred at the post midpoint",
                            "axes": "world / Z-up"},
