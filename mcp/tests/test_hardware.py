@@ -192,7 +192,8 @@ def test_status_with_nothing_installed_names_the_missing_pieces(tmp_path, monkey
     monkeypatch.setattr(sibling, "run", lambda argv, **options: started.append(argv))
     done = hardware.Hardware(workspace=tmp_path / "workspace", roots=[]).call("status")
     assert done["ok"] and done["result"]["setup"] == "docs/HARDWARE.md"
-    assert set(done["result"]["missing"]) == {"kicad-cli", "kikit", "freecadcmd", "blender", "java", "freerouting", "pio"}
+    assert set(done["result"]["missing"]) == {"kicad-cli", "kikit", "freecadcmd", "blender", "java", "freerouting", "pio",
+                                               "solidcraft-cli"}
     assert not any(done["result"]["kicad_library_tables"].values())
     assert started == []
 

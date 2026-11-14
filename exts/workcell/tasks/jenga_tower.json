@@ -1,0 +1,119 @@
+{
+  "schema": 1,
+  "description": "Task pack: the 54-block Jenga tower on the bench. Loaded on top of the base cell with quick_start task=jenga_tower.",
+  "pack": {
+    "id": {
+      "value": "jenga",
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: task assets are packs of their own, loaded on top of the base cell. Built by scripts/workcell_split_packs.py."
+    },
+    "version": {
+      "value": "v1",
+      "status": "confirmed",
+      "source": "The 72 x 24 x 14 mm block from ur5e-jenga-workcell/v2, unchanged."
+    }
+  },
+  "assets": {
+    "jenga_block": {
+      "value": "jenga_block",
+      "status": "confirmed",
+      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
+    }
+  },
+  "jenga": {
+    "block_size_m": {
+      "value": [
+        0.072,
+        0.024,
+        0.014
+      ],
+      "status": "confirmed",
+      "source": "Kaleb work-cell requirement: 72 x 24 x 14 mm; verify physical tolerance separately."
+    },
+    "block_mass_kg": {
+      "value": 0.015,
+      "status": "unconfirmed",
+      "source": "Kaleb (~15 g); the fmb4 USDs author no mass (density default would give 24 g). Weigh a block."
+    },
+    "tower_layers_built": {
+      "value": 18,
+      "status": "confirmed",
+      "source": "Complete 54-block Jenga tower, Kaleb phase-1 scope."
+    },
+    "tower_xy_m": {
+      "value": [
+        0.7,
+        -0.1333
+      ],
+      "status": "unconfirmed",
+      "source": "projects/jenga-rl layout.py (TOWER_XY, tower y)."
+    },
+    "static_friction": {
+      "value": 0.3,
+      "status": "unconfirmed",
+      "source": "jenga-rl block material (0.30 static / 0.25 dynamic); calibration pending."
+    },
+    "dynamic_friction": {
+      "value": 0.25,
+      "status": "unconfirmed",
+      "source": "As above."
+    },
+    "variation_profile": {
+      "value": "measured_pending",
+      "status": "unconfirmed",
+      "source": "Provisional variation preset, not measured calibration. Replace with a measured profile name or null for nominal dimensions and scalar mass/friction."
+    },
+    "variation_seed": {
+      "value": 42,
+      "status": "unconfirmed",
+      "source": "Arbitrary reproducibility seed, not a measured hardware parameter; overwrite freely or override at build time."
+    },
+    "variation_profiles": {
+      "value": {
+        "measured_pending": {
+          "mass_kg": {
+            "distribution": "uniform",
+            "min": 0.014,
+            "max": 0.016
+          },
+          "static_friction": {
+            "distribution": "uniform",
+            "min": 0.28,
+            "max": 0.34
+          },
+          "dynamic_friction": {
+            "distribution": "uniform",
+            "min": 0.22,
+            "max": 0.27
+          },
+          "size_tolerance_m": [
+            {
+              "distribution": "uniform",
+              "min": -0.0002,
+              "max": 0.0002
+            },
+            {
+              "distribution": "uniform",
+              "min": -0.0002,
+              "max": 0.0002
+            },
+            {
+              "distribution": "uniform",
+              "min": -0.0002,
+              "max": 0.0002
+            }
+          ]
+        }
+      },
+      "status": "unconfirmed",
+      "source": "All distribution values and bounds are provisional engineering inputs, not measurements. Replace this value object after weighing blocks and measuring friction and dimensions."
+    }
+  },
+  "documentation": {
+    "bom_csv": {
+      "value": "jenga_tower.bom.csv",
+      "status": "confirmed",
+      "source": "BOM rows this task adds to the cell, next to this file."
+    }
+  }
+}

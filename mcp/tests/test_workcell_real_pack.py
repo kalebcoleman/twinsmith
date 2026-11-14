@@ -32,9 +32,9 @@ hardware_config, asset_pack, robot, cameras = (
     _load(name) for name in ("hardware_config", "asset_pack", "robot", "cameras"))
 
 
-@pytest.fixture(scope="module")
-def cell():
+def _cell(overhead):
     config, _ = hardware_config.load_config()
+    config["overhead_camera"]["enabled"] = overhead
     try:
         pack = asset_pack.resolve_pack(config)
     except asset_pack.PackError as error:
@@ -48,6 +48,18 @@ def cell():
     assets = {role: pack.asset(config["assets"][role]) for role in config["assets"]}
     camera_report = cameras.build_cameras(stage, assets, config, report)
     return config, stage, report, camera_report, pack
+
+
+@pytest.fixture(scope="module")
+def cell():
+    """The shipped cell: wrist camera only."""
+    return _cell(False)
+
+
+@pytest.fixture(scope="module")
+def overhead_cell():
+    """The cell with the proposed overhead camera and gantry switched on."""
+    return _cell(True)
 
 
 def _vertices_in_frame(stage, frame, roots):
@@ -65,34 +77,39 @@ def _vertices_in_frame(stage, frame, roots):
     return np.vstack(chunks)
 
 
-def test_wrist_view_is_clear_of_the_gripper_stack(cell):
+def _in_wrist_image(stage, report, section, roots):
+    """Optical-frame coordinates of the vertices of ``roots`` that fall inside the wrist camera's colour image."""
+    points = _vertices_in_frame(stage, report["tool0_path"], roots)
+    # The columns of R are the optical axes in tool0; optical coordinates are R^T (p - offset).
+    quaternion = cameras._euler_xyz_deg_to_quat(section["rotation_in_tool0_deg"])
+    rotation = np.array([cameras._rotate_vector(quaternion, axis) for axis in np.eye(3).tolist()]).T
+    optical = (points - np.array(section["offset_in_tool0_m"])) @ rotation
+    optical = optical[optical[:, 2] > section["clipping_range_m"][0]]  # nearer than the clip plane is not drawn
+    inside = ((np.degrees(np.arctan2(np.abs(optical[:, 0]), optical[:, 2])) < section["color_fov_deg"][0] / 2)
+              & (np.degrees(np.arctan2(np.abs(optical[:, 1]), optical[:, 2])) < section["color_fov_deg"][1] / 2))
+    return optical[inside]
+
+
+def test_wrist_view_shows_the_fingers_and_not_the_arm(cell):
     config, stage, report, *_ = cell
     section = config["wrist_camera"]
-    assert section["rotation_in_tool0_deg"][1:] == [0.0, 0.0]
-    tilt = math.radians(section["rotation_in_tool0_deg"][0])
-    margin = 3.0  # degrees beyond the colour field of view that must also stay clear
-    points = _vertices_in_frame(stage, report["tool0_path"], [
-        report["gripper_path"], f"{report['assembly_path']}/quick_changer", report["bota_body_path"]])
-    assert len(points) > 100_000
-    # Rx(tilt) rotates the optical frame; optical coordinates are R^T (p - offset).
-    rotation = np.array([[1, 0, 0], [0, math.cos(tilt), -math.sin(tilt)], [0, math.sin(tilt), math.cos(tilt)]])
-    optical = (points - np.array(section["offset_in_tool0_m"])) @ rotation
-    ahead = optical[:, 2] > cameras.DEFAULT_CLIPPING_RANGE_M[0]  # nearer than the clip plane is not drawn
-    angle_x = np.degrees(np.arctan2(np.abs(optical[ahead, 0]), optical[ahead, 2]))
-    angle_y = np.degrees(np.arctan2(np.abs(optical[ahead, 1]), optical[ahead, 2]))
-    half_x, half_y = section["color_fov_deg"][0] / 2 + margin, section["color_fov_deg"][1] / 2 + margin
-    inside = (angle_x < half_x) & (angle_y < half_y)
-    assert not inside.any(), f"{int(inside.sum())} RG2/Quick Changer/Bota vertices fall in the wrist frame"
+    arm = _in_wrist_image(stage, report, section, [
+        f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"])
+    assert not len(arm), f"{len(arm)} Bota/Quick Changer/wrist vertices fall in the wrist image"
+    gripper = _in_wrist_image(stage, report, section, [report["gripper_path"]])
+    assert len(gripper), "the RG2 fingers are out of the wrist image"
+    assert gripper[:, 1].min() > 0, "the gripper should be in the lower half of the image"
 
 
-def test_wrist_camera_prim_carries_the_configured_tilt_once(cell):
+def test_wrist_camera_prim_carries_the_configured_rotation_once(cell):
     config, stage, report, camera_report, _ = cell
     cache = UsdGeom.XformCache()
     camera = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(camera_report["cameras"]["wrist"]["prim_path"]))
     tool0 = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["tool0_path"]))
     view = tool0.GetInverse().TransformDir(camera.TransformDir(Gf.Vec3d(0, 0, -1)))
-    tilt = math.degrees(math.atan2(-view[1], view[2]))
-    assert tilt == pytest.approx(config["wrist_camera"]["rotation_in_tool0_deg"][0], abs=1e-6)
+    expected = cameras._rotate_vector(
+        cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
+    assert list(view) == pytest.approx(expected, abs=1e-6)
 
 
 def _bounds(stage, path):
@@ -101,12 +118,21 @@ def _bounds(stage, path):
     return np.array(box.GetMin()), np.array(box.GetMax())
 
 
-def test_overhead_camera_is_attached_to_the_gantry_through_its_release_stack(cell):
-    config, stage, _, camera_report, _ = cell
+def test_the_shipped_cell_has_no_overhead_camera(cell):
+    _, stage, _, camera_report, _ = cell
+    assert camera_report["cameras"]["overhead"]["status"] == "disabled"
+    assert not stage.GetPrimAtPath(cameras.OVERHEAD_ROOT)
+    assert [str(prim.GetPath()) for prim in stage.Traverse() if prim.IsA(UsdGeom.Camera)] == [
+        camera_report["cameras"]["wrist"]["prim_path"]]
+
+
+def test_overhead_camera_is_attached_to_the_gantry_through_its_release_stack(overhead_cell):
+    config, stage, _, camera_report, _ = overhead_cell
     root = cameras.OVERHEAD_ROOT
     body, shelf, release, mount = (_bounds(stage, f"{root}/{name}") for name in ("body", "shelf", "release", "mount"))
     tolerance = 0.002
-    assert abs(body[1][2] - shelf[0][2]) <= tolerance      # camera back face meets the shelf
+    # The shelf offset was set for the old 23 mm box proxy; the vendor D415 body leaves a 3.3 mm gap (not built today).
+    assert abs(body[1][2] - shelf[0][2]) <= 0.004          # camera back face meets the shelf
     assert abs(shelf[1][2] - release[0][2]) <= tolerance   # shelf meets the release plate
     beam = [_bounds(stage, f"{root}/mount/TopBeam")]
     assert abs(beam[0][0][2] - release[1][2]) <= tolerance  # release meets the beam underside
@@ -120,8 +146,8 @@ def test_overhead_camera_is_attached_to_the_gantry_through_its_release_stack(cel
 PANEL = "imported_PANEL_B2F52AEB2A0D_804849_271/Mesh_91"
 
 
-def test_gantry_posts_stand_on_the_bench_top_panel(cell):
-    config, stage, _, _, pack = cell
+def test_gantry_posts_stand_on_the_bench_top_panel(overhead_cell):
+    config, stage, _, _, pack = overhead_cell
     root = cameras.OVERHEAD_ROOT
     bench = Usd.Stage.Open(str(pack.asset(config["assets"]["bench"])))
     panel = next((prim for prim in bench.Traverse() if str(prim.GetPath()).endswith(PANEL)), None)

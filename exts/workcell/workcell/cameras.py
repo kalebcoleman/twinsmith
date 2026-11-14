@@ -1,4 +1,4 @@
-"""Work-cell cameras: a wrist and an overhead D415, built from pack geometry.
+"""Work-cell cameras: a wrist D415 and, when ``overhead_camera.enabled``, an overhead one, built from pack geometry.
 
 Plain functions, no work cell mixin. ``build_cameras`` is the entry point the workcell
 scene calls; ``plan_cameras`` is the same plan without USD authoring, so host
@@ -45,9 +45,9 @@ except ImportError:  # loaded by file path in host tests
 
 
 SCHEMA = 1
-REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf")
+OVERHEAD_ASSET_ROLES = ("overhead_mount", "overhead_release", "overhead_shelf")
+REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", *OVERHEAD_ASSET_ROLES)
 D415_BODY_SIZE_M = (0.099, 0.020, 0.023)
-WRIST_BRACKET_SIZE_M = (0.030, 0.060, 0.012)
 DEFAULT_APERTURE_MM = 36.0
 DEFAULT_CLIPPING_RANGE_M = (0.1, 10.0)
 USD_CAMERA_ROTATION = (0.0, 1.0, 0.0, 0.0)  # Rx(180 deg), wxyz
@@ -58,8 +58,8 @@ REQUIRED_CONFIG_PATHS = (
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
     "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
-    "wrist_camera.body_size_m", "wrist_camera.bracket_size_m",
-    "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
+    "wrist_camera.body_size_m",
+    "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
     "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
     "overhead_mount.height_m", "overhead_mount.removable", "overhead_mount.printed_shelf_size_m",
@@ -71,7 +71,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def build_cameras(stage, assets, config, robot_report, *, author=None, config_path=None):
-    """Author the wrist and overhead D415 cameras and return a JSON report.
+    """Author the wrist D415 camera, and the overhead one when enabled, and return a JSON report.
 
     ``assets`` exposes ``asset(logical_id) -> absolute Path``; the workcell scene
     may pass its resolved ``{role: Path}`` mapping instead. ``config`` is the
@@ -121,8 +121,9 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
     parts = wrist_parts + overhead_parts
     roots = [root for root in (wrist_root, overhead_root) if root]
 
-    built = [camera for camera in (wrist, overhead) if camera["status"] == "built"]
-    if len(built) == 2 and len(parts) == 6:
+    wanted = [camera for camera in (wrist, overhead) if camera["status"] != "disabled"]
+    built = [camera for camera in wanted if camera["status"] == "built"]
+    if len(built) == len(wanted) and len(parts) == (6 if overhead in wanted else 2):
         status = "ok"
     elif built:
         status = "partial"
@@ -274,22 +275,12 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     usd = _usd_block(cam_path, root, [0.0, 0.0, 0.0], list(USD_CAMERA_ROTATION))
 
     body_size = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    bracket_size = _vector(section.get("bracket_size_m"), 3, "wrist_camera.bracket_size_m") or list(WRIST_BRACKET_SIZE_M)
-    # In the wrist root frame, tool0 sits at -R^T * offset; centre the proxy bracket between them.
-    bridge = [-0.5 * value for value in _rotate_vector(_quat_conjugate(optical_q), offset)]
-    # The pack bracket is a unit proxy; stretch it along its long axis so it spans the
-    # lateral gap between the tool axis and the camera instead of leaving the camera floating.
-    gap = math.hypot(offset[0], offset[1])
-    stretch = max(1.0, gap / bracket_size[1])
-    if stretch > 1.0:
-        limitations.append(
-            f"Wrist bracket proxy is stretched x{stretch:.2f} along its long axis to span the "
-            f"{gap:.3f} m lateral tool0 offset; confirm the real bracket CAD before lab use.")
-
+    # The bracket asset is modelled in tool0 coordinates, so it is placed on tool0: in the wrist root frame, which
+    # carries the optical pose, that is the inverse of that pose.
+    inverse = _quat_conjugate(optical_q)
     parts = []
     bracket = _part(config, assets, assets_cfg, "wrist_mount", f"{root}/bracket", root,
-                    bridge, optical_q, "printed wrist bracket", limitations,
-                    scale=[1.0, stretch, 1.0] if stretch > 1.0 else None)
+                    _rotate_vector(inverse, [-value for value in offset]), inverse, "wrist camera bracket", limitations)
     if bracket:
         parts.append(bracket)
     body = _part(config, assets, assets_cfg, "d415", f"{root}/body", root,
@@ -327,15 +318,26 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "physics": _physics_block(tool0),
     }
     limitations.append(
-        "Wrist body geometry is centred on the optical origin; the pack declares no body-to-optical datum, "
-        "and the bracket proxy is bridged from the configured tool0 offset, so overlap is possible.")
+        "The D415 body asset is in the colour optical frame and the bracket asset in tool0; a bracket fits "
+        "only the camera pose it was modelled for (scripts/workcell_camera_assets.py).")
     root_entry = {"name": "wrist_mount", "prim_path": root, "parent": tool0,
                   "translation_m": list(offset), "quaternion_wxyz": list(optical_q)}
     return camera, parts, root_entry
 
 
+def overhead_enabled(config):
+    enabled = (config.get("overhead_camera") or {}).get("enabled")
+    if type(enabled) is not bool:
+        raise ValueError("overhead_camera.enabled must be true or false")
+    return enabled
+
+
 def _plan_overhead(config, assets, assets_cfg, limitations):
     section = config.get("overhead_camera") or {}
+    if not overhead_enabled(config):
+        return {"status": "disabled", "prim_path": None, "root_path": None, "geometry_status": "not built",
+                "reason": "overhead_camera.enabled is false: the cell has the wrist camera only, "
+                          "with no overhead camera, gantry, release plate or shelf."}, [], None
     position = _vector(section.get("position_m"), 3, "overhead_camera.position_m")
     target = _vector(section.get("look_at_m"), 3, "overhead_camera.look_at_m")
     up_hint = _vector(section.get("up_hint"), 3, "overhead_camera.up_hint") or [1.0, 0.0, 0.0]
@@ -640,17 +642,15 @@ def _physics_block(tool0):
 def _asset_conventions(config):
     section = config.get("wrist_camera") or {}
     body = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    bracket = _vector(section.get("bracket_size_m"), 3, "wrist_camera.bracket_size_m") or list(WRIST_BRACKET_SIZE_M)
     shelf = _vector((config.get("overhead_mount") or {}).get("printed_shelf_size_m"), 3,
                     "overhead_mount.printed_shelf_size_m") or [0.1, 0.06, 0.008]
     return {
-        "d415": {"kind": "unconfirmed dimensioned proxy", "dimensions_m": body,
-                 "default_prim": "centred Xform at the body geometric centre",
-                 "axes": "D415 optical frame: +X right, +Y down, +Z forward",
-                 "origin": "body centre; the render camera applies Rx(180 deg) for USD",
+        "d415": {"kind": "pack geometry; the pack manifest records its fidelity", "dimensions_m": body,
+                 "axes": "D415 colour optical frame: +X right, +Y down, +Z forward",
+                 "origin": "the colour sensor; the render camera applies Rx(180 deg) for USD",
                  "forbidden_substitute": "D455/rsd455"},
-        "wrist_mount": {"kind": "centred proxy box", "dimensions_m": bracket,
-                        "axes": "optical frame", "placement": "centre between tool0 and the camera optical origin"},
+        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_camera_assets.py)",
+                        "axes": "tool0", "placement": "on tool0, unscaled"},
         "overhead_mount": {"kind": "unconfirmed open gantry proxy", "dimensions_m": [1.0, 1.0, 1.0],
                            "scale": "extrusion thickness x post span x height, centred at the post midpoint",
                            "axes": "world / Z-up"},

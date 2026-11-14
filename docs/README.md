@@ -11,6 +11,7 @@ over both.
 | Page | Use it for |
 |---|---|
 | [Linux setup](LINUX-SETUP.md) | Prerequisites, install paths, build selection, the workspace folder and what is auto-detected, first-connection troubleshooting |
+| [Rebuild from a clean machine](REBUILD.md) | The whole order for a new machine, what Git does not hold, the two GPU tiers, and `scripts/verify_setup.py` |
 | [MCP server](MCP-SERVER.md) | Client configuration (Claude Code and Desktop, Codex, OpenCode, Antigravity), limiting what a client can reach |
 | [Toolsets](TOOLSETS.md) | The toolsets, how to switch them (config file, environment, command line), the size of each profile |
 | [Environment variables](ENVIRONMENT.md) | Every setting, its default and which process reads it |

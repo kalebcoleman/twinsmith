@@ -54,8 +54,9 @@ def test_quick_start_returns_a_summary_and_status_the_full_report():
         return report
 
     commands.workcell = types.SimpleNamespace(quick_start=quick_start, status=lambda: report)
-    summary = asyncio.run(commands._cmd_workcell_quick_start("c.json", "physics", True, "simple_room"))
-    assert calls == [{"config_path": "c.json", "mode": "physics", "discard_changes": True, "environment": "simple_room"}]
+    summary = asyncio.run(commands._cmd_workcell_quick_start("c.json", "physics", True, "simple_room", "push_block"))
+    assert calls == [{"config_path": "c.json", "mode": "physics", "discard_changes": True, "environment": "simple_room",
+                      "task": "push_block"}]
     assert len(json.dumps(summary)) < len(json.dumps(report)) / 4
     assert summary["state"] == "ready" and summary["backend"] == "newton"
     assert summary["pack"] == {"id": "ur5e-jenga-workcell", "version": "v2", "qualification": "candidate"}

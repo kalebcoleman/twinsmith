@@ -143,12 +143,13 @@ def verify_manifest(manifest, rows=None, root=None, expected_id=None, expected_v
                 raise BomError(f"Pack file {path!r} needs {key}")
         if type(entry.get("redistributable")) is not bool:
             raise BomError(f"Pack file {path!r} needs a boolean redistributable flag")
-        asset_id = entry.get("asset_id") or pure.parent.name
-        if not isinstance(asset_id, str) or not ID_PATTERN.match(asset_id):
-            raise BomError(f"Pack file {path!r} has an invalid logical asset_id")
-        if asset_id in asset_ids:
-            raise BomError(f"Duplicate pack asset_id {asset_id!r}")
-        asset_ids.append(asset_id)
+        if "asset_id" in entry:     # a file without one is a layer of the asset beside it (a bench collision layer)
+            asset_id = entry["asset_id"]
+            if not isinstance(asset_id, str) or not ID_PATTERN.match(asset_id):
+                raise BomError(f"Pack file {path!r} has an invalid logical asset_id")
+            if asset_id in asset_ids:
+                raise BomError(f"Duplicate pack asset_id {asset_id!r}")
+            asset_ids.append(asset_id)
         if root is not None:
             target = root / path
             if not target.is_file():

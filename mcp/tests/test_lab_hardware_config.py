@@ -26,10 +26,15 @@ def test_bad_width_commands_do_not_actuate(command):
         hardware.parse_width_command(command)
 
 
-def test_default_cell_has_provenance_and_full_size_tower():
+TOWER = ROOT / "exts/workcell/tasks/jenga_tower.json"
+
+
+def test_default_cell_has_provenance_and_no_task_objects():
     cfg, raw = hardware.load_config()
-    assert cfg["jenga"]["block_size_m"] == [0.072, 0.024, 0.014]
-    assert cfg["jenga"]["tower_layers_built"] == 18
+    assert "jenga" not in cfg and "jenga_block" not in cfg["assets"]
+    tower, _ = hardware.read_values(TOWER)
+    assert tower["jenga"]["block_size_m"] == [0.072, 0.024, 0.014]
+    assert tower["jenga"]["tower_layers_built"] == 18
     assert cfg["gravity"]["mode"] == "physics"
     assert raw["wrist_camera"]["offset_in_tool0_m"]["status"] == "unconfirmed"
 
@@ -52,14 +57,15 @@ def test_camera_intrinsics_match_configured_fov():
 
 
 def test_variation_defaults_are_explicitly_unconfirmed_and_realizable():
-    cfg, raw = hardware.load_config()
+    robot_cfg, _ = hardware.load_config()
+    cfg, raw = hardware.read_values(TOWER)
     for field in ("variation_profiles", "variation_profile", "variation_seed"):
         assert raw["jenga"][field]["status"] == "unconfirmed"
         assert raw["jenga"][field]["source"]
     assert cfg["jenga"]["variation_profile"] == "measured_pending"
     assert cfg["jenga"]["variation_seed"] == 42
     assert "layers" not in cfg["jenga"]
-    assert "base_plate_thickness_m" not in cfg["robot"]
+    assert "base_plate_thickness_m" not in robot_cfg["robot"]
     spec = importlib.util.spec_from_file_location(
         "config_jenga", ROOT / "exts/workcell/workcell/jenga.py")
     jenga = importlib.util.module_from_spec(spec)

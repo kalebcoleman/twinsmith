@@ -37,7 +37,7 @@ default. A tool is one of three kinds:
 | Isaac Lab jobs | `mcp/twinsmith/isaaclab/` | Train, evaluate, play and record in separate processes the host starts. |
 | RoboSimStudio bridge | `mcp/twinsmith/robosim/` | Runs RoboSimStudio in its own Python environment from one grouped tool. |
 | System identification | `mcp/twinsmith/sysid.py`, `sysid_driver.py` | Fits model parameters with `mujoco.sysid` in its own environment; the driver is the only file that imports MuJoCo. |
-| Hardware | `mcp/twinsmith/hardware.py` | Runs `kicad-cli`, KiKit and Blender beside twinsmith. |
+| Hardware | `mcp/twinsmith/hardware.py` | Runs `kicad-cli`, KiKit, `solidcraft-cli` and Blender beside twinsmith. |
 | Planning and evaluation | `mcp/twinsmith/gap.py`, `mcp/twinsmith/vabar.py` | Run Graph-as-Policy and VABAR from their own pinned checkouts. |
 | Tools beside twinsmith | `mcp/twinsmith/sibling.py` | What `hardware`, `robosim`, `gap` and `vabar` share: a scrubbed environment, bounded runs, jobs, and a pinned checkout's commit. |
 | Launch and checks | `run.sh`, `install.sh`, `scripts/` | Start Isaac Sim with the extensions, install the host, run checks. |
@@ -194,8 +194,9 @@ system identification in its own environment as a job and writes under `<workspa
 
 `hardware` is one tool, registered by the `cad` toolset (off by default). Authoring a board, an enclosure or a scene in
 Blender stays in the servers beside twinsmith; `hardware` only runs the deterministic steps (`kicad-cli` checks, KiKit fab
-files, a headless Blender render) on files in an approved folder, and writes each result to a new folder under
-`<workspace>/runs/hardware/`. See [HARDWARE.md](HARDWARE.md).
+files, a SolidCraft part rebuilt from its parameters, a headless Blender render) on files in an approved folder, and writes
+each result to a new folder under `<workspace>/runs/hardware/` (a part may go to a new folder inside an approved one, so the
+`assets` tools can take it from there). See [HARDWARE.md](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell).
 
 ## Graph-as-Policy and VABAR
 
@@ -252,7 +253,7 @@ A group is a toolset: one switch, one row in the README. Every group is off by d
 | `computer` | explicit only | The desktop and its processes: `screenshot`, `screen_recording`, `windows`, `join_videos`, `doctor`, `computer` (mouse and keyboard), `simulators` (start and stop managed Isaac Sim processes) | Native |
 | `sim` | off | Everything for Isaac Sim and Isaac Lab: the stage, prims, physics, joints, sensors, code in Kit, Kit's log and UI, simulator-side ROS 2, the UR5e Jenga work cell (`workcell__*`), Isaac Lab jobs (`isaaclab__*`, `run_script`), and the tools a project's own Kit extension registers | Native |
 | `assets` | off | Import, packs, mesh preparation, validation | Native |
-| `cad` | off (on in the owner's configuration) | `hardware`: checks, fabrication files and renders around the CAD servers beside twinsmith | Wrapped |
+| `cad` | off (on in the owner's configuration) | `hardware`: checks, fabrication files, SolidCraft parts and renders around the CAD servers beside twinsmith | Wrapped |
 | `real2sim` | off | `robosim` (RoboSimStudio runs) and `sysid` (system identification) | Wrapped |
 | `planning` | off | `gap` (Graph-as-Policy) | Wrapped |
 | `eval` | off | `vabar` (VABAR) | Wrapped |
@@ -261,8 +262,15 @@ A group is a toolset: one switch, one row in the README. Every group is off by d
 `tools.toolsets` in `config.toml`, or `--toolsets`); `toolsets(action="enable")` refuses it and the `all` profile leaves it
 out. It moves the mouse, types into windows, sees the screen and starts GPU processes, so an agent never turns it on itself.
 
-`cad` holds no authoring: FreeCAD, KiCad and Blender run as separate MCP servers beside twinsmith. Its one tool checks and
-packages what they produce; importing their meshes into a scene stays a format on `assets__import_path`.
+`cad` holds no authoring: FreeCAD, KiCad, SolidCraft and Blender run as separate MCP servers beside twinsmith. Its one tool
+checks and packages what they produce; importing their meshes into a scene stays a format on `assets__import_path`.
+
+SolidCraft shows the split. Its own MCP server (22 tools) is where a part is designed, and twinsmith does not re-wrap it:
+a second copy of those tools would track a fast-moving upstream for nothing. What twinsmith owns is the step after the
+design is saved: `hardware(action="part")` runs `solidcraft-cli run` with typed parameter values (no free-form command, no
+MCP session), so a variant is rebuilt the same way every time, measured and handed to the `assets` tools as STEP, STL and a
+USD in metres. The binary is found like the other `hardware` programs (`TWINSMITH_SOLIDCRAFT`, then `PATH`, then
+`<workspace>/tools/solidcraft/current`); without it, `status` lists it as missing and `part` answers `TOOL_MISSING`.
 
 Profiles: `default` is `core` alone and `all` is every group except `computer`. Old toolset names are not aliases: a
 configuration that names one stops the server at startup with the list of valid names. [TOOLSETS.md](TOOLSETS.md#renamed-toolsets)
@@ -314,7 +322,7 @@ Gaussian splats come that way.
 | **Native** (code in this repository) | Computer use, scene and physics tools, asset import, packs, mesh preparation, validation rules, the bridge lease | Stable patterns; small; worth owning |
 | **Wrapped** (pinned sibling checkout, its own environment, its own command line) | RoboSimStudio, Graph-as-Policy with its skill library, VABAR, MuJoCo system identification | Young and fast-moving; an import would chain this repository to their dependencies |
 | **Service** (separate process, reached over loopback) | FoundationPose; any other model with a restrictive licence | Research-only or custom licences must not touch an MIT repository |
-| **Beside** (another MCP server in the client's configuration) | FreeCAD, build123d or agentcad, Blender, NVIDIA's documentation servers | Mature servers; twinsmith only receives their output as files |
+| **Beside** (another MCP server in the client's configuration) | FreeCAD, SolidCraft, build123d or agentcad, Blender, NVIDIA's documentation servers | Mature servers; twinsmith only receives their output as files (SolidCraft's through `hardware(action="part")`) |
 | **Library, in the `mesh` extra** | CoACD (MIT), fast-simplification (MIT), trimesh (MIT) | Used as dependencies, not copied |
 | **Library, in the `hub` extra** | `huggingface_hub` (Apache-2.0), for pack pull and push | Used as a dependency; imported only by `pack_sources.py` |
 | **Not used** | ROS control servers such as ros-mcp-server; MoveIt servers | They give an agent publish, service and action tools. twinsmith does not wrap them and none is installed on any of the owner's machines. See [safety](#safety-boundaries) |

@@ -7,8 +7,9 @@ DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config/lab_hardware.json
 STATUSES = {"confirmed", "unconfirmed"}
 
 
-def load_config(path=None):
-    raw = json.loads(Path(path or DEFAULT_CONFIG).read_text())
+def read_values(path):
+    """A provenance file flattened to its values: every leaf is {value, status, source}. Returns (values, raw)."""
+    raw = json.loads(Path(path).read_text())
     values = {}
     for section, fields in raw.items():
         if not isinstance(fields, dict):
@@ -18,19 +19,24 @@ def load_config(path=None):
             if not isinstance(record, dict) or set(record) != {"value", "status", "source"} or record["status"] not in STATUSES or not record["source"]:
                 raise ValueError(f"Missing provenance for {section}.{key}")
             values[section][key] = record["value"]
+    return values, raw
+
+
+def load_config(path=None):
+    """The base cell: robot, gripper stack, wrist camera, bench and mounting hardware. No task objects."""
+    values, raw = read_values(path or DEFAULT_CONFIG)
+    if "jenga" in values or "jenga_block" in values.get("assets", {}):
+        raise ValueError("The cell configuration must not hold task objects; the Jenga tower is a task (tasks/jenga_tower.json)")
     order = values["stack"]["order"]
     if sorted(order) != ["bota", "quick_changer", "rg2"] or order[-1] != "rg2":
         raise ValueError("stack.order must contain bota, quick_changer, rg2 once, with rg2 last")
     if values["gravity"]["mode"] not in ("physics", "mirror_real"):
         raise ValueError("gravity.mode must be physics or mirror_real")
     for section, key in (("bota", "length_m"), ("bota", "mass_kg"), ("quick_changer", "standoff_m"),
-                         ("jenga", "block_mass_kg"), ("world", "bench_height_m")):
+                         ("world", "bench_height_m")):
         value = values[section][key]
         if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             raise ValueError(f"{section}.{key} must be finite and positive")
-    layers = values["jenga"]["tower_layers_built"]
-    if type(layers) is not int or not 1 <= layers <= 18:
-        raise ValueError("tower_layers_built must be an integer from 1 to 18")
     if values["overhead_mount"]["type"] != "gantry":
         raise ValueError("Only the gantry mount is implemented; clamp is a BOM alternative")
     return values, raw

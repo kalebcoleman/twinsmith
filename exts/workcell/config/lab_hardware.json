@@ -644,17 +644,25 @@
         1280,
         720
       ],
+      "status": "confirmed",
+      "source": "Max's merged_localization.py opens the wrist D415 colour stream at 1280x720 (c_width, c_height) and builds its camera matrix from this size and the 69.4 x 42.5 degree field of view, with the principal point at the image centre. The real unit's factory intrinsics are not recorded here."
+    },
+    "clipping_range_m": {
+      "value": [
+        0.02,
+        10.0
+      ],
       "status": "unconfirmed",
-      "source": "Placeholder: RGB and aligned depth at 1280x720. Set to the profile the real pipeline uses."
+      "source": "Render setting, not a D415 property. The near plane must lie between the camera's own body proxy (11.5 mm deep around the optical origin, or the view is black) and the RG2 body (nearer than the renderer's default 0.1 m, which draws it cut open). The real colour sensor has no near cut-off; its depth stream starts at about 0.3 m."
     },
     "offset_in_tool0_m": {
       "value": [
-        -0.012,
-        -0.09,
+        0.0,
+        0.11,
         -0.005
       ],
       "status": "unconfirmed",
-      "source": "Design pose, not a lab measurement. Max's localizer_bridge.py gives (-0.012,-0.038,-0.005), but there the RG2 fingers and body fill the D415 frustum (projecting the pack's RG2, Quick Changer and Bota vertices through the camera). y is moved to -0.09 and the camera tilted (rotation_in_tool0_deg) so no gripper-stack vertex lies inside the colour frustum plus a 3 degree margin; x and z keep Max's values. Re-measure on the real bracket. Max's camera_model.py has z=-0.010; Aldrin hard-codes a D455 at wrist_3 (0.045,-0.05,0.07), a different camera and mount."
+      "source": "Kaleb, 2026-11-14: an ideal placeholder in the general area, on the underside of the wrist, until the real bracket CAD and setup arrive; the bracket holds the camera out from the wrist and angles it. Design pose, not a measurement: 0.11 m from the tool axis, far enough that the Bota, Quick Changer and wrist are outside the image, which they were not at the 0.038 m of Max's localizer_bridge.py. With the tool pointing forward and wrist_3 at 0, tool0 +y points down. Centred on the gripper's plane (x = 0)."
     },
     "offset_in_tool0_alternatives_m": {
       "value": {
@@ -679,26 +687,17 @@
     },
     "rotation_in_tool0_deg": {
       "value": [
-        8.0,
+        -12.0,
         0.0,
-        0.0
+        180.0
       ],
       "status": "unconfirmed",
-      "source": "Design tilt, not a lab measurement: 8 degrees about the optical X axis tilts the view away from the tool axis (toward the offset side) so the RG2 fingertips stay out of the frustum (3.7 degrees clear of its edge); the tool axis enters the view about 0.4 m ahead of tool0. Max's code uses identity (camera OPTICAL frame, z forward, y down, equals tool0). Extrinsic XYZ degrees. The USD camera looks along -Z, so the builder adds Rx(180) internally."
+      "source": "Kaleb, 2026-11-14: show more of the hand. Design value, not a measurement. Extrinsic XYZ degrees: -12 about X tilts the view 12 degrees toward the tool axis, which puts the fingertips about 70 percent of the way down the image with the lower end of the RG2 body below them, while the Bota, Quick Changer and wrist stay out of it; then 180 about Z (the tool axis) puts the camera on the underside with the gripper toward the bottom of the image. The USD camera looks along -Z, so the builder adds Rx(180) internally."
     },
     "mount_position": {
-      "value": "under the arm",
-      "status": "unconfirmed",
-      "source": "Kaleb says it is now mounted UNDER the arm. Neither Max's tool0 offset (y=-38 mm) nor Aldrin's wrist_3 pose is documented as under-arm: the bracket CAD from Max is pending. Re-measure offset and rotation after the move."
-    },
-    "bracket_size_m": {
-      "value": [
-        0.03,
-        0.06,
-        0.012
-      ],
-      "status": "unconfirmed",
-      "source": "Placeholder: Printed bracket stand-in until Max's CAD arrives."
+      "value": "under the wrist",
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: the wrist camera is on the underside. Its measured offset and rotation are still pending (the bracket CAD from Max has not arrived)."
     },
     "bracket_mass_kg": {
       "value": 0.02,
@@ -722,6 +721,11 @@
     }
   },
   "overhead_camera": {
+    "enabled": {
+      "value": false,
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: wrist camera only for now. The overhead D415 and its gantry are not bought, so the cell is built without them; set true to build the proposed overhead camera."
+    },
     "model": {
       "value": "Intel RealSense D415",
       "status": "unconfirmed",
@@ -831,71 +835,6 @@
       "source": "Design height: the beam underside rests on the release plate stacked over the shelf and camera (asset_layout.overhead_release / overhead_shelf mount_pose); overhead rails stay above the 850 mm reach. Not a lab measurement."
     }
   },
-  "jenga": {
-    "block_size_m": {
-      "value": [
-        0.072,
-        0.024,
-        0.014
-      ],
-      "status": "confirmed",
-      "source": "Kaleb work-cell requirement: 72 x 24 x 14 mm; verify physical tolerance separately."
-    },
-    "block_mass_kg": {
-      "value": 0.015,
-      "status": "unconfirmed",
-      "source": "Kaleb (~15 g); the fmb4 USDs author no mass (density default would give 24 g). Weigh a block."
-    },
-    "tower_layers_built": {
-      "value": 18,
-      "status": "confirmed",
-      "source": "Complete 54-block Jenga tower, Kaleb phase-1 scope."
-    },
-    "tower_xy_m": {
-      "value": [
-        0.7,
-        -0.1333
-      ],
-      "status": "unconfirmed",
-      "source": "projects/jenga-rl layout.py (TOWER_XY, tower y)."
-    },
-    "static_friction": {
-      "value": 0.3,
-      "status": "unconfirmed",
-      "source": "jenga-rl block material (0.30 static / 0.25 dynamic); calibration pending."
-    },
-    "dynamic_friction": {
-      "value": 0.25,
-      "status": "unconfirmed",
-      "source": "As above."
-    },
-    "variation_profile": {
-      "value": "measured_pending",
-      "status": "unconfirmed",
-      "source": "Provisional variation preset, not measured calibration. Replace with a measured profile name or null for nominal dimensions and scalar mass/friction."
-    },
-    "variation_seed": {
-      "value": 42,
-      "status": "unconfirmed",
-      "source": "Arbitrary reproducibility seed, not a measured hardware parameter; overwrite freely or override at build time."
-    },
-    "variation_profiles": {
-      "value": {
-        "measured_pending": {
-          "mass_kg": {"distribution": "uniform", "min": 0.014, "max": 0.016},
-          "static_friction": {"distribution": "uniform", "min": 0.28, "max": 0.34},
-          "dynamic_friction": {"distribution": "uniform", "min": 0.22, "max": 0.27},
-          "size_tolerance_m": [
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002},
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002},
-            {"distribution": "uniform", "min": -0.0002, "max": 0.0002}
-          ]
-        }
-      },
-      "status": "unconfirmed",
-      "source": "All distribution values and bounds are provisional engineering inputs, not measurements. Replace this value object after weighing blocks and measuring friction and dimensions."
-    }
-  },
   "documentation": {
     "bom_csv": {
       "value": "../workcell/bom.csv",
@@ -920,14 +859,14 @@
   },
   "lighting": {
     "key_intensity": {
-      "value": 2500.0,
+      "value": 800.0,
       "status": "unconfirmed",
-      "source": "Placeholder: Demo lighting preset."
+      "source": "Placeholder demo preset, not the lab's lighting: a soft dome with a weak key light, so the arm casts no hard shadow into the wrist view."
     },
     "dome_intensity": {
-      "value": 600.0,
+      "value": 1100.0,
       "status": "unconfirmed",
-      "source": "Placeholder: Demo lighting preset."
+      "source": "Placeholder demo preset, not the lab's lighting: a soft dome with a weak key light, so the arm casts no hard shadow into the wrist view."
     }
   },
   "interfaces": {
@@ -988,14 +927,14 @@
   },
   "pack": {
     "id": {
-      "value": "ur5e-jenga-workcell",
+      "value": "ur5e-workcell",
       "status": "confirmed",
-      "source": "Kaleb versioned external asset-pack decision."
+      "source": "Kaleb, 2026-11-14: the base cell is the robot, gripper stack, wrist camera, bench and mounting hardware only; task objects are separate packs. Built from ur5e-jenga-workcell/v2 by scripts/workcell_split_packs.py."
     },
     "version": {
       "value": "v2",
       "status": "confirmed",
-      "source": "Kaleb versioned external asset-pack decision; v2 (2026-11-13) is v1 with a bench collision layer and the RG2 in the arm's articulation, built by scripts/workcell_pack_v2.py."
+      "source": "v1 (ur5e-jenga-workcell/v2 without its Jenga block) with RealSense's own D415 mesh and a FreeCAD wrist bracket in place of the box proxies, built by scripts/workcell_camera_assets.py."
     }
   },
   "assets": {
@@ -1056,11 +995,6 @@
     },
     "overhead_shelf": {
       "value": "overhead_shelf",
-      "status": "confirmed",
-      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
-    },
-    "jenga_block": {
-      "value": "jenga_block",
       "status": "confirmed",
       "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
     },

@@ -64,6 +64,7 @@ def config():
     values = copy.deepcopy(values)
     values["pack"] = {"id": "ur5e-jenga-workcell", "version": "v1"}
     values["assets"] = {role: role for role in cameras.REQUIRED_ASSET_ROLES}
+    values["overhead_camera"]["enabled"] = True     # the shipped config is wrist-only; these tests cover both cameras
     return values
 
 
@@ -150,7 +151,7 @@ def test_wrist_offset_and_optical_to_usd_conversion(config, tmp_path):
     assert camera["optical"]["translation_m"] == pytest.approx([-0.1, -0.2, -0.3])
     bracket = next(part for part in build(shifted, tmp_path)["parts"]
                    if part["role"] == "wrist_mount")
-    assert bracket["local"]["translation_m"] == pytest.approx([0.05, 0.1, 0.15])
+    assert bracket["local"]["translation_m"] == pytest.approx([0.1, 0.2, 0.3])      # tool0, seen from the wrist root
 
 
 def test_overhead_look_at_pose_and_reach_clearance(config, tmp_path):
@@ -221,8 +222,11 @@ def test_parts_carry_asset_id_and_bom_tag(config, tmp_path):
         [posts[0][0], (posts[0][1] + posts[1][1]) / 2, height / 2])
     bracket = next(part for part in parts if part["role"] == "wrist_mount")
     offset = config["wrist_camera"]["offset_in_tool0_m"]
-    assert bracket["local"]["scale"][1] > 1.0  # stretched to span the tool0-to-camera gap
-    assert bracket["local"]["translation_m"][0] == pytest.approx(0.5 * -offset[0] * 1.0, abs=0.02)
+    # The bracket is modelled in tool0, so it sits on tool0: the inverse of the wrist root's pose, unscaled.
+    assert "scale" not in bracket["local"]
+    inverse = cameras._quat_conjugate(cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_tool0_deg"]))
+    assert bracket["local"]["quaternion_wxyz"] == pytest.approx(inverse)
+    assert bracket["local"]["translation_m"] == pytest.approx(cameras._rotate_vector(inverse, [-v for v in offset]))
     assert str(tmp_path) not in json.dumps(report)
 
 
@@ -279,6 +283,35 @@ def test_missing_pose_marks_the_camera_unavailable(config, tmp_path):
     assert "position" in report["cameras"]["overhead"]["reason"]
 
 
+def test_overhead_camera_is_left_out_when_disabled(config, tmp_path):
+    config["overhead_camera"]["enabled"] = False
+    report = build(config, tmp_path)
+    assert report["status"] == "ok"
+    assert report["cameras"]["wrist"]["status"] == "built"
+    overhead = report["cameras"]["overhead"]
+    assert overhead["status"] == "disabled" and overhead["prim_path"] is None and "wrist camera only" in overhead["reason"]
+    assert {part["role"] for part in report["parts"]} == {"d415", "wrist_mount"}
+    assert [root["name"] for root in report["roots"]] == ["wrist_mount"]
+    config["overhead_mount"]["type"] = "clamp"      # the unused mount is not checked
+    assert build(config, tmp_path)["status"] == "ok"
+    config["overhead_camera"]["enabled"] = "no"
+    with pytest.raises(ValueError, match="overhead_camera.enabled"):
+        build(config, tmp_path)
+
+
+def test_shipped_config_has_the_wrist_camera_only_on_the_underside():
+    values, _ = hardware.load_config()
+    assert values["overhead_camera"]["enabled"] is False
+    wrist = values["wrist_camera"]
+    assert wrist["offset_in_tool0_m"][1] > 0        # tool0 +y is down with the tool forward and wrist_3 at 0
+    forward = cameras._rotate_vector(cameras._euler_xyz_deg_to_quat(wrist["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
+    assert forward[2] > 0.94 and forward[1] <= 0     # within 20 degrees of the tool axis, angled toward it if at all
+    assert 0.06 <= wrist["offset_in_tool0_m"][1] <= 0.15         # held out from the wrist by a bracket, not on the flange
+    assert wrist["resolution"] == [1280, 720] and wrist["color_fov_deg"] == [69.4, 42.5]
+    # The near plane clears the camera's own body proxy, or the camera renders the inside of its box.
+    assert wrist["body_size_m"][2] / 2 < wrist["clipping_range_m"][0] <= 0.03
+
+
 def test_topics_capture_and_fiducials_are_declared_not_verified(config, tmp_path):
     report = build(config, tmp_path)
     for key in ("wrist", "overhead"):
@@ -304,8 +337,7 @@ def test_d415_is_the_unconfirmed_proxy_and_never_d455(config, tmp_path):
     assert convention["forbidden_substitute"] == "D455/rsd455"
     assert report["cameras"]["wrist"]["body_geometry"]["verified"] is False
     assert "unconfirmed dimensioned proxy" in json.dumps(report)
-    assert report["asset_conventions"]["wrist_mount"]["dimensions_m"] == pytest.approx(
-        [0.030, 0.060, 0.012])
+    assert report["asset_conventions"]["wrist_mount"]["axes"] == "tool0"
 
 
 def test_repository_internal_old_cache_and_d455_paths_are_refused(config, tmp_path):

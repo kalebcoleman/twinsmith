@@ -12,7 +12,9 @@ _LOADER = importlib.util.spec_from_file_location("workcell_asset_pack", WORKCELL
 asset_pack = importlib.util.module_from_spec(_LOADER)
 _LOADER.loader.exec_module(asset_pack)
 ASSET_ROOT = asset_pack.default_root()    # the work cell's own order: the variable, then <workspace>/assets
-PRIVATE_PACK = ASSET_ROOT / "ur5e-jenga-workcell/v1"
+PRIVATE_PACK = ASSET_ROOT / "ur5e-workcell/v1"
+TASK_PACK = ASSET_ROOT / "jenga/v1"
+TASKS = ROOT / "exts/workcell/tasks"
 SPEC = importlib.util.spec_from_file_location(
     "workcell_bom", ROOT / "exts/workcell/workcell/bom.py")
 bom = importlib.util.module_from_spec(SPEC)
@@ -23,6 +25,12 @@ EXPECTED_IDS = {
     "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf",
     "jenga_block",
 }
+CELL_IDS = EXPECTED_IDS - {"jenga_block"}       # the base cell holds no task objects
+
+
+def cell_and_tower_rows():
+    """The BOM of the cell with the Jenga tower task loaded on top: the cell's rows and the task's."""
+    return bom.load_bom() + bom.load_bom(TASKS / "jenga_tower.bom.csv")
 
 
 class Attribute:
@@ -111,7 +119,9 @@ def cell():
 
 
 def test_bom_contract_and_price_policy():
-    rows = bom.load_bom()
+    assert {row["bom_id"] for row in bom.load_bom()} == CELL_IDS
+    assert [(row["bom_id"], row["quantity"]) for row in bom.load_bom(TASKS / "push_block.bom.csv")] == [("jenga_block", 1)]
+    rows = cell_and_tower_rows()
     assert {row["bom_id"] for row in rows} == EXPECTED_IDS
     assert {row["asset_id"] for row in rows} == EXPECTED_IDS
     quantities = {row["bom_id"]: row["quantity"] for row in rows}
@@ -139,7 +149,7 @@ def test_docs_name_the_pack_contract_and_neutral_paths():
 
 
 def test_audit_accepts_every_report_part_and_stage_prim():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     report = bom.audit_parts(parts, rows, stage)
     assert report["ok"] and report["errors"] == []
@@ -150,7 +160,7 @@ def test_audit_accepts_every_report_part_and_stage_prim():
 
 
 def test_audit_accepts_a_mesh_under_any_mapped_ancestor():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     stage.add("/World/RobotAssembly/robot/extra_detail", kind="Mesh")
     stage.add("/World/Jenga/Block_01/vendor/mesh", kind="Mesh")
@@ -158,7 +168,7 @@ def test_audit_accepts_a_mesh_under_any_mapped_ancestor():
 
 
 def test_audit_catches_unmapped_mesh_and_collider():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     stage.add("/World/Unmapped/debris", kind="Mesh")
     stage.add("/World/Unmapped/fixture", kind="Xform", apis=("PhysicsCollisionAPI",))
@@ -172,7 +182,7 @@ def test_audit_catches_unmapped_mesh_and_collider():
 
 def test_audit_leaves_out_the_room_around_the_cell():
     """A room (quick_start environment) is not work-cell hardware: its meshes and colliders are not audited."""
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     stage.add("/World/Environment/simple_room/Floor/mesh", kind="Mesh")
     stage.add("/World/Environment/simple_room/GroundPlane/CollisionPlane", kind="Plane", apis=("PhysicsCollisionAPI",))
@@ -182,7 +192,7 @@ def test_audit_leaves_out_the_room_around_the_cell():
 
 
 def test_audit_catches_unknown_bom_id_and_asset_mismatch():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     unknown = parts + [part("/World/Extra", "rg2", "rg2_ft")]
     report = bom.audit_parts(unknown, rows, stage)
@@ -194,7 +204,7 @@ def test_audit_catches_unknown_bom_id_and_asset_mismatch():
 
 
 def test_audit_catches_missing_prim_and_stage_attribute_drift():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     del stage.prims["/World/Cameras/wrist_mount"]
     report = bom.audit_parts(parts, rows, stage)
@@ -206,7 +216,7 @@ def test_audit_catches_missing_prim_and_stage_attribute_drift():
 
 
 def test_audit_requires_a_mapping_for_every_bom_row():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     parts, stage = cell()
     parts = [item for item in parts if item["bom_id"] != "overhead_release"]
     for path in [path for path in stage.prims if path.startswith("/World/Cameras/overhead_release")]:
@@ -217,7 +227,7 @@ def test_audit_requires_a_mapping_for_every_bom_row():
 
 
 def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     files = []
     for row in rows:
         asset_id = row["asset_id"]
@@ -232,14 +242,17 @@ def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
     materials = tmp_path / "materials/materials.usda"
     materials.parent.mkdir()
     materials.write_bytes(b"materials")
-    files.append({"path": "materials/materials.usda",
-                  "sha256": hashlib.sha256(materials.read_bytes()).hexdigest(),
-                  "source": "fixture", "license": "private test fixture",
-                  "redistributable": False})
+    layer = tmp_path / "bench/bench_collision.usdc"       # a second file of one asset carries no asset_id of its own
+    layer.write_bytes(b"layer")
+    for path, extra in ((materials, {"asset_id": "materials"}), (layer, {})):
+        files.append({"path": path.relative_to(tmp_path).as_posix(), **extra,
+                      "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                      "source": "fixture", "license": "private test fixture",
+                      "redistributable": False})
     manifest = {"id": "ur5e-jenga-workcell", "version": "v1", "files": files}
     report = bom.verify_manifest(manifest, rows=rows, root=tmp_path,
                                  expected_id="ur5e-jenga-workcell", expected_version="v1")
-    assert report["hashes_verified"] and report["files"] == 14
+    assert report["hashes_verified"] and report["files"] == 15
     assert report["asset_ids"] == sorted(EXPECTED_IDS | {"materials"})
     (tmp_path / "robot/robot.usdc").write_bytes(b"changed")
     with pytest.raises(bom.BomError, match="hash changed"):
@@ -260,14 +273,17 @@ def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
                     reason="private workcell pack is not installed")
 def test_installed_private_pack_matches_bom_and_hashes():
     report = bom.verify_manifest(PRIVATE_PACK / "pack.yaml", rows=bom.load_bom(),
-                                 root=PRIVATE_PACK, expected_id="ur5e-jenga-workcell",
+                                 root=PRIVATE_PACK, expected_id="ur5e-workcell",
                                  expected_version="v1")
-    assert report["hashes_verified"] and report["files"] == 14
-    assert "materials" in report["asset_ids"]
+    assert report["hashes_verified"] and report["files"] == 15
+    assert "materials" in report["asset_ids"] and "jenga_block" not in report["asset_ids"]
+    task = bom.verify_manifest(TASK_PACK / "pack.yaml", rows=bom.load_bom(TASKS / "jenga_tower.bom.csv"),
+                               root=TASK_PACK, expected_id="jenga", expected_version="v1")
+    assert task["hashes_verified"] and task["asset_ids"] == ["jenga_block"]
 
 
 def test_config_roles_use_logical_bom_asset_ids():
-    rows = bom.load_bom()
+    rows = cell_and_tower_rows()
     config = {"assets": {row["bom_id"]: row["asset_id"] for row in rows}}
     config["assets"]["materials"] = "materials"
     assert bom.verify_config_assets(config, rows) == EXPECTED_IDS

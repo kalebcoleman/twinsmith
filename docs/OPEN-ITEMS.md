@@ -38,7 +38,7 @@ version.
 
 ### Work cell on Newton
 
-The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side:
+The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side (the cell now uses `ur5e-workcell/v2`, the same robot, gripper and bench without the Jenga block, which is the task pack `jenga/v1`):
 - a box collision layer for the bench;
 - the RG2 in the arm's articulation, with mimic fingers and no zero-force drives.
 
@@ -69,7 +69,7 @@ Still open:
 - [x] The static check at rest (flange wrench equals the weight below the sensor) on both engines: `scripts/workcell_static_wrench.py`
   passes on PhysX and Newton in two poses (2026-11-13, pack v2: 15.009 N against 15.009 N; torques agree across engines). It
   checks the modelled masses, not the real ones: those still need weighing.
-- [ ] Renders (cell, wrist, overhead) on Newton.
+- [ ] Renders (cell, wrist) on Newton, kept in the repository. The overhead camera is not built (`overhead_camera.enabled`).
 
 ### Work cell realism
 

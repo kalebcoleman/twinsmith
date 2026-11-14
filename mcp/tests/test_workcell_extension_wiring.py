@@ -27,7 +27,8 @@ def test_workcell_forwarding_and_reports():
                                         shutdown=lambda: {"stage_preserved": True})
     summary = asyncio.run(commands._cmd_workcell_quick_start("config.json", "mirror_real", True))
     assert summary["state"] == "ready" and "full_report" in summary     # a summary; status has the whole report
-    assert calls == [{"config_path": "config.json", "mode": "mirror_real", "discard_changes": True, "environment": "none"}]
+    assert calls == [{"config_path": "config.json", "mode": "mirror_real", "discard_changes": True, "environment": "none",
+                      "task": None}]
     assert commands._cmd_workcell_status() == report
     assert commands._cmd_robot_status()["robot"] == report["robot"]
     assert commands._cmd_perception_status()["cameras"] == report["cameras"]

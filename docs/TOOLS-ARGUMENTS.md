@@ -1479,6 +1479,7 @@ Build a stopped workcell from an external asset pack, on PhysX or Newton (Newton
 - `config_path` (string, optional): Optional hardware configuration path.
 - `mode` (physics|mirror_real, default `"physics"`): Physics mode, or zero-gravity mirror mode.
 - `discard_changes` (boolean, default `false`): Allow replacement of an unsaved stage.
+- `task` (string, optional): Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block) or an absolute task file. Omitted: the base cell only, with no objects.
 - `environment` (none|simple_room, default `"none"`): A room around the cell: simple_room references NVIDIA's Simple Room from the Isaac Sim assets server (needs network), floor level with the bench feet.
 
 ### `workcell__workcell_shutdown`
@@ -1725,17 +1726,20 @@ Toolset `cad` is off until you select it with `+cad`. Reference: [HARDWARE.md](H
 
 ### `hardware`
 
-PCB and enclosure outputs from tools beside twinsmith; no simulator. status: versions, pins, gaps. check: KiCad ERC and DRC counts (the board's own schematic). fab: check, then KiKit JLCPCB/PCBWay files, board.step and board.glb in a new folder; never uploads or orders. render: a Blender job that uses the GPU (follow with jobs). Inputs in approved folders only.
+PCB and enclosure outputs from tools beside twinsmith; no simulator. status: versions, pins, gaps. check: KiCad ERC and DRC counts (the board's own schematic). fab: check, then KiKit JLCPCB/PCBWay files, board.step and board.glb in a new folder; never uploads or orders. render: a Blender job that uses the GPU (follow with jobs). part: rebuild a SolidCraft design with parameters; STEP, STL (mm), part.usda (m), measurements, preview. Inputs in approved folders only.
 
-- `action` (Literal['status', 'check', 'fab', 'render'], required): Action to perform.
+- `action` (Literal['status', 'check', 'fab', 'render', 'part'], required): Action to perform.
 - `board` (str | None, default `None`): check/fab: absolute .kicad_pcb path inside an approved folder.
 - `vendor` (Literal['jlcpcb', 'pcbway'], default `'jlcpcb'`): fab: which fab house's file set KiKit writes. Nothing is sent to it.
 - `inputs` (list[str] | None, default `None`): render: absolute .glb, .gltf or .stl paths (GLB in metres, STL in millimetres).
-- `name` (str | None, default `None`): fab/render: new folder name under <workspace>/runs/hardware; default a timestamp.
+- `name` (str | None, default `None`): fab/render/part: new folder name under <workspace>/runs/hardware; default a timestamp.
 - `width` (int, default `1600`): render: image width in pixels.
 - `height` (int, default `1200`): render: image height in pixels.
 - `samples` (int, default `128`): render: Cycles samples per pixel.
 - `allow_concurrent_gpu` (bool, default `False`): render: knowingly start next to another GPU job or a running simulator.
+- `design` (str | None, default `None`): part: absolute SolidCraft .sc path inside an approved folder.
+- `parameters` (dict[str, float] | None, default `None`): part: user parameters to set first, {name: number in its unit}.
+- `output` (str | None, default `None`): part: new absolute folder inside an approved folder, instead of runs/hardware/<name>.
 
 <a id="real2sim"></a>
 

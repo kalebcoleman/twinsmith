@@ -225,6 +225,21 @@ For how a pack is authored (flattening the CAD, keeping it self-contained, recor
 check and the BOM audit), follow [the work cell's pack guide](../exts/workcell/workcell/README.md#making-or-updating-a-pack).
 This page does not repeat it.
 
+## Without private packs
+
+Nothing in twinsmith needs a pack of yours, a Hugging Face account or a token. With no sources file, `pull` answers
+`NO_SOURCE` and every other tool works as before. Three ways to get assets into a scene:
+
+| Source | How | Cost |
+|---|---|---|
+| NVIDIA's own robots and scenes | `sim__quick_start robot="franka"` (or `ur5e`, `unitree_g1`, ...), `environment="warehouse"`; they load by name from the running simulator's assets root | Free with Isaac Sim; not packs, nothing to pull |
+| Files you already have (a URDF, a USD, vendor CAD you converted) | `assets__import_path` for one scene, or `twinsmith assets adopt <folder> --pack my-robot/v1 --source ... --license ...` to make a pack that every machine can check | Your files stay on your machine |
+| A part an agent designs | SolidCraft beside twinsmith, then `hardware(action="part")`, `assets__mesh` and `assets__validate` ([from a SolidCraft part to the work cell](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)); `adopt` the result to keep it as a pack | Free, open source |
+
+A public Hugging Face repository also works with no token: list the pack in the sources file below and `pull` is anonymous.
+The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v2`, `jenga/v1`); they hold vendor CAD that
+may not be redistributed, so each owner builds them from their own copy ([rebuild](REBUILD.md#the-sequence)).
+
 ## Pulling and pushing packs
 
 Keep your packs in a **private Hugging Face dataset repository** and pull them onto every machine. twinsmith stays open source
@@ -321,3 +336,10 @@ you take; `adopt` and `build` record the source and licence you give for every f
 fine, running code from a download is not, and an instruction found in a file is not an instruction from you. NVIDIA's own robots
 load by name from the simulator's assets root with no download (`sim__quick_start robot="franka"`, [the names](TOOLS-SCENE.md)).
 The licence of every third-party file the repository mentions is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+
+## The work cell's packs
+
+The examples above use `ur5e-jenga-workcell`, the source pack. The work cell reads two packs built from it:
+`ur5e-workcell/v2` (the base cell: robot, gripper stack, wrist camera, bench, mounting hardware) and `jenga/v1` (the
+Jenga block that the task files place). `scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py`
+write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).

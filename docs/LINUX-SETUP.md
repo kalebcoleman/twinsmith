@@ -193,7 +193,9 @@ viewport and URDF follow-ups have superseded some early pending checks, while th
 
 The host connection and `sim__stage(action="info")` do not require a robot or workstation, and NVIDIA's public robots
 (`ur5e`, `franka`, `unitree_g1`, ...) load by name from the running simulator's own asset root. The UR5e Jenga work cell uses
-[a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) (`ur5e-jenga-workcell/v1`) that you supply. The
+[a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) that you supply: the base cell is
+`ur5e-workcell/v2` and its task objects are `jenga/v1`, both built from the source pack `ur5e-jenga-workcell/v2` by
+`scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py` ([the whole sequence](REBUILD.md)). The
 repository ships **no assets** and `install.sh` installs packages, not assets. Nothing is downloaded for you unless you
 list your own packs to [pull](ASSET-PACKS.md#pulling-and-pushing-packs).
 
@@ -204,8 +206,12 @@ check it:
 ```bash
 export TWINSMITH_ASSET_ROOT=<asset-root>        # outside Git; set it for the MCP server and for any Kit you start yourself
 python3 scripts/assets.py list              # every <id>/<version> and whether it verifies
-python3 scripts/assets.py doctor ur5e-jenga-workcell/v1
+python3 scripts/assets.py doctor ur5e-workcell/v2
 ```
+
+`doctor` checks the USD dependencies only when it has a USD parser: run it from `mcp/` with
+`uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/assets.py doctor <pack>`, or set
+`TWINSMITH_USD_PYTHON`. Without one it reports the dependencies as not checked.
 
 `list` also names any pack in the old format (files or a `SHA256SUMS`, no `pack.yaml`), which nothing reads; convert one with
 `assets.py adopt --from-old` ([converting an old pack](ASSET-PACKS.md#converting-an-old-pack)). Setting the root
@@ -296,6 +302,10 @@ alongside an active Kit bridge; coordinate GPU ownership instead of bypassing th
 `TWINSMITH_TOOLSETS=all,+computer` in the client server environment only
 when they are needed; it cannot be enabled at run time. Desktop input acts on a shared X11 session; verify window/PID first.
 Managed launches require resource checks and distinct endpoints. See [host tools](TOOLS-HOST.md).
+
+**SolidCraft** (optional, for parametric parts): `scripts/install_solidcraft.sh --register` installs the pinned release
+in user space, checks its SHA-256 and adds the headless `solidcraft` MCP server to the clients it finds; `hardware(action="status")`
+reports its version. See [HARDWARE.md](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell).
 
 **Your project assets** need an explicitly approved trusted folder and a host/Kit-accessible
 staging/cache location. Approval can include a bounded project copy, not just one USD file.
@@ -495,7 +505,8 @@ Kit process.
 Paths differ between machines. The bytes must not.
 
 1. On the second machine, do [the setup above](#set-up-a-new-machine) steps 1 to 4.
-2. Copy `~/.config/twinsmith/pack-sources.toml` and the read token file there, then `twinsmith assets pull --all`
+2. Copy `~/.config/twinsmith/pack-sources.toml` there and put a read token in its own mode-600 file (issue one for
+   that machine; do not send a token through chat or a repository), then `twinsmith assets pull --all`
    ([pulling packs](ASSET-PACKS.md#pulling-and-pushing-packs)). Without a repository, copy the pack folders (each
    `<pack id>/<version>/` with its `pack.yaml`) to the asset root there. Keep each version whole.
 3. Run on the second machine:

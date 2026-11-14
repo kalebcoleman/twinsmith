@@ -60,6 +60,10 @@ token and read-only mode do that.
 6. **The UR5e work cell:** `workcell__cell(action="quick_start")`, only when that is what was asked for. It builds on PhysX or
    Newton; `mirror_real` needs PhysX. (`sim` toolset.)
 7. **See the result:** `screenshot`; for video, `screen_recording(action="start")` (`computer` toolset).
+8. **A CAD part into the twin:** design it in the `solidcraft` server beside twinsmith and save the `.sc` to an approved
+   `cad/` folder; `hardware(action="part", design=..., parameters={...}, output=<approved twin/ folder>)`; then
+   `assets__mesh` decimate and split (`collision={"method": "coacd"}`), `assets__validate(engine="newton")` and
+   `assets__import_path`. Keep `.sc` files out of the folder you import from (a zip blocks it). `docs/HARDWARE.md`.
 
 **Tool names.** The server lists related tools as one tool with an `action` argument, and this guide writes that form:
 `sim__stage(action="info")`. `action="help"` lists a group's actions. The single-purpose names behind them (`sim__stage__info`)
