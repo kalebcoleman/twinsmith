@@ -4,9 +4,9 @@
 |---|---|
 | `rg2_camera_bracket.py` | **Current.** Parametric FreeCAD model of the real printed bracket: a two-piece clamp on the RG2 body, a truss arm and a plate for the D415. Pack `ur5e-workcell/v3` |
 | `wrist_bracket.py` | Superseded placeholder (a ring on the wrist 3 housing). Kept only so `scripts/workcell_camera_assets.py` can rebuild pack `v2` |
-| `bracket_real_vs_sim.jpg` | The real bracket (photo, cropped to the wrist) beside the simulated one from the same viewpoint: an Isaac Sim 6.2 capture of the built cell, and a CPU render of the same builder output |
+| [`docs/media/workcell-bracket-real-vs-sim.jpg`](../../../docs/media/workcell-bracket-real-vs-sim.jpg) | The real bracket (photo, cropped to the wrist) beside the simulated one from the same viewpoint: an Isaac Sim 6.2 capture of the built cell, and a CPU render of the same builder output |
 
-![Real bracket and simulated bracket from the same viewpoint](bracket_real_vs_sim.jpg)
+![Real bracket and simulated bracket from the same viewpoint](../../../docs/media/workcell-bracket-real-vs-sim.jpg)
 
 What still differs: the simulated arm is in its zero pose and the gripper is nearly closed (the photo has the wrist
 turned up and the gripper open); the printed blocks and the truss are a reconstruction, squarer and heavier than the
