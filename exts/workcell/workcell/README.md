@@ -243,9 +243,9 @@ The current candidate contains:
   dimensions, the pack scales member thickness with the post span, and the real attachment
   details are unconfirmed, so this does not establish mounting feasibility. The KB3X3 is a
   camera-only release, not a load-bearing gantry base. Printed mounts and shelf remain proxies.
-- The wrist D415 is on the underside of the wrist, held 0.11 m out from the tool axis and angled 5 degrees toward
+- The wrist D415 is on the underside of the wrist, held 0.11 m out from the tool axis and angled 12 degrees toward
   it: an ideal placeholder (Kaleb, 2026-11-14) until the real bracket CAD arrives, not a measurement. From there the
-  Bota, Quick Changer and wrist are outside the image and the RG2 fingers are in its lower half; a test projects
+  Bota, Quick Changer and wrist are outside the image and the RG2 fingertips are about 70 percent of the way down it; a test projects
   the pack's meshes through the camera to check both. Max's `localizer_bridge.py` has the camera 38 mm from the
   axis, where the Quick Changer fills the lower image. The near clip is 0.02 m, past the camera's own body proxy.
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
@@ -275,7 +275,7 @@ configuration or a design envelope and are not vendor drawings.
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
 | D415 body | 0.099 x 0.020 x 0.023 m | `unconfirmed` |
 | Wrist camera offset | 0, 0.11, -0.005 m in tool0 (placeholder design pose on the underside) | `unconfirmed` |
-| Wrist camera rotation | -5, 0, 180 degrees (extrinsic XYZ): 5 degrees toward the tool axis, turned about it to the underside | `unconfirmed` |
+| Wrist camera rotation | -12, 0, 180 degrees (extrinsic XYZ): 12 degrees toward the tool axis, turned about it to the underside | `unconfirmed` |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |

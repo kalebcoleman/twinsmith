@@ -687,12 +687,12 @@
     },
     "rotation_in_tool0_deg": {
       "value": [
-        -5.0,
+        -12.0,
         0.0,
         180.0
       ],
       "status": "unconfirmed",
-      "source": "Design value, not a measurement. Extrinsic XYZ degrees: -5 about X tilts the view 5 degrees toward the tool axis, so the fingertips are in the lower part of the image while the arm stays out of it; then 180 about Z (the tool axis) puts the camera on the underside with the gripper toward the bottom of the image. The USD camera looks along -Z, so the builder adds Rx(180) internally."
+      "source": "Kaleb, 2026-11-14: show more of the hand. Design value, not a measurement. Extrinsic XYZ degrees: -12 about X tilts the view 12 degrees toward the tool axis, which puts the fingertips about 70 percent of the way down the image with the lower end of the RG2 body below them, while the Bota, Quick Changer and wrist stay out of it; then 180 about Z (the tool axis) puts the camera on the underside with the gripper toward the bottom of the image. The USD camera looks along -Z, so the builder adds Rx(180) internally."
     },
     "mount_position": {
       "value": "under the wrist",
