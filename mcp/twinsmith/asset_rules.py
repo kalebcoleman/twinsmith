@@ -168,8 +168,8 @@ def validate(path, engine="newton", *, triangle_budget=TRIANGLE_BUDGET, rate_hz=
                 body = bodies.get(targets[-1]) if targets else None
                 inertia = _authored(body, "physics:diagonalInertia" if angular else "physics:mass") if body else None
                 link = (max(inertia) if angular and inertia else float(inertia) if inertia else 0) or REFERENCE_INERTIA
-                armature = _authored(prim, "newton:armature") or _authored(prim, "physxJoint:armature")
-                armature = DEFAULT_ARMATURE if armature is None else float(armature)
+                authored = (_authored(prim, "newton:armature"), _authored(prim, "physxJoint:armature"))
+                armature = next((float(a) for a in authored if a is not None), DEFAULT_ARMATURE)  # an authored 0 counts
                 i_eff = link + armature
                 lhs, rhs = dt * dt * k_si / i_eff, 4 + 2 * dt * c_si / i_eff
                 if lhs >= rhs:
@@ -207,7 +207,8 @@ def validate(path, engine="newton", *, triangle_budget=TRIANGLE_BUDGET, rate_hz=
             continue
         mass = _authored(prim, "physics:mass")
         inertia = _authored(prim, "physics:diagonalInertia")
-        if any(mesh_usd.is_collider(p) for p in Usd.PrimRange(prim, every)):
+        # a collider under a nested rigid body belongs to that body, not to this one
+        if any(mesh_usd.is_collider(p) and body_of(str(p.GetPath())) == prim for p in Usd.PrimRange(prim, every)):
             tiny = [v for v in ([mass] if mass else []) if 0 < float(v) <= MJ_MINVAL]
             if tiny:
                 checks.append(_check("MASS_MIN", engine, False, path, f"mass {tiny[0]} at or below {MJ_MINVAL}"))

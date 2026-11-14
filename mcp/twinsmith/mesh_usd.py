@@ -15,6 +15,9 @@ import numpy as np
 from . import mesh_ops
 
 STAGE_METADATA = ("metersPerUnit", "upAxis", "kilogramsPerUnit")
+# A box is at least this thick (half extent, in metres): a plate's box keeps a volume, so it has a mass and a depth to
+# resolve contact in. The work-cell bench's thinnest box (pack v2) is exactly this, so the floor leaves it unchanged.
+MIN_HALF_THICKNESS_M = 0.0005
 
 
 def open_stage(path):
@@ -202,13 +205,17 @@ def _parent_space(prim, points):
 
 def author_collision_layer(source_stage, dest: Path, *, method="box", max_hulls=16, threshold=0.05, prims=None) -> dict:
     """A layer holding only collision shapes: for each mesh, ``<parent>/<mesh>_collision`` (purpose guide)
-    with a ``box`` cube or ``hull_<i>`` convex meshes. Bodies, joints and the meshes are not touched."""
+    with a ``box`` cube or ``hull_<i>`` convex meshes. Bodies, joints and the meshes are not touched.
+    ``triangles`` counts the hulls' triangles (a box is an analytic shape and has none);
+    ``source_triangles`` counts those of the meshes the shapes replace; ``thickened`` the boxes raised to
+    ``MIN_HALF_THICKNESS_M`` (a plate, a line)."""
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, Vt
 
     if dest.exists():
         raise FileExistsError(f"{dest} exists; outputs are never overwritten")
     stage = Usd.Stage.CreateNew(str(dest))
-    counts, skipped, replaced = dict(boxes=0, hulls=0, meshes=0), [], []
+    counts, skipped, replaced = dict(boxes=0, hulls=0, meshes=0, triangles=0, source_triangles=0, thickened=0), [], []
+    floor = MIN_HALF_THICKNESS_M / UsdGeom.GetStageMetersPerUnit(source_stage)
     rows, selected = targets(source_stage, prims)
     for prim, points, faces in rows:
         if prim.IsInstanceProxy() or not len(faces):
@@ -227,7 +234,8 @@ def author_collision_layer(source_stage, dest: Path, *, method="box", max_hulls=
                 cube.AddTranslateOp().Set(Gf.Vec3d(*shape["center"]))
                 w, x, y, z = shape["orientation"]
                 cube.AddOrientOp().Set(Gf.Quatf(w, x, y, z))
-                cube.AddScaleOp().Set(Gf.Vec3f(*[max(h, 1e-9) for h in shape["half_extents"]]))
+                cube.AddScaleOp().Set(Gf.Vec3f(*[max(h, floor) for h in shape["half_extents"]]))
+                counts["thickened"] += any(h < floor for h in shape["half_extents"])
                 gprim, counts["boxes"] = cube, counts["boxes"] + 1
             else:
                 hull = UsdGeom.Mesh.Define(stage, scope_path.AppendChild(f"hull_{i}"))
@@ -235,13 +243,15 @@ def author_collision_layer(source_stage, dest: Path, *, method="box", max_hulls=
                 hull.CreateFaceVertexCountsAttr(Vt.IntArray([3] * len(shape["faces"])))
                 hull.CreateFaceVertexIndicesAttr(Vt.IntArray.FromNumpy(shape["faces"].reshape(-1).astype(np.int32)))
                 UsdPhysics.MeshCollisionAPI.Apply(hull.GetPrim()).CreateApproximationAttr("convexHull")
-                gprim, counts["hulls"] = hull, counts["hulls"] + 1
+                gprim, counts["hulls"], counts["triangles"] = hull, counts["hulls"] + 1, counts["triangles"] + len(shape["faces"])
             gprim.CreatePurposeAttr(UsdGeom.Tokens.guide)
             UsdPhysics.CollisionAPI.Apply(gprim.GetPrim())
         counts["meshes"] += 1
+        counts["source_triangles"] += len(faces)
         replaced.append(str(prim.GetPath()))
     stage.GetRootLayer().Save()
-    return dict(output=str(dest), selected=selected, **counts, skipped=skipped, replaced=replaced)
+    options = dict(max_hulls=max_hulls, threshold=threshold) if method in ("coacd", "auto") else {}
+    return dict(output=str(dest), selected=selected, method=method, **options, **counts, skipped=skipped, replaced=replaced)
 
 
 def strip_collision(stage, paths) -> int:

@@ -53,21 +53,42 @@ def decimate(vertices, faces, *, target_tris: int | None = None, ratio: float | 
 
 
 def box(vertices) -> dict:
-    """The oriented box that encloses the points: center, half extents, and a [w, x, y, z] rotation."""
+    """The oriented box that encloses the points: center, half extents, and a [w, x, y, z] rotation.
+    Points with no volume (a plate, a line) get a box of zero thickness in their own plane or along their line."""
     import trimesh
 
     v = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
-    lo, hi = v.min(axis=0), v.max(axis=0)
-    if not _solid(v):                             # a plate, a line or a point: the axis-aligned box
-        return dict(center=((lo + hi) / 2).tolist(), half_extents=((hi - lo) / 2).tolist(), orientation=[1.0, 0, 0, 0])
-    to_origin, extents = trimesh.bounds.oriented_bounds(trimesh.convex.convex_hull(v))
-    world = np.linalg.inv(to_origin)          # box frame -> mesh frame
-    rotation = world[:3, :3]
+    if not len(v):
+        raise ValueError("a box needs at least one point")
+    if _solid(v):
+        to_origin, extents = trimesh.bounds.oriented_bounds(trimesh.convex.convex_hull(v))
+        world = np.linalg.inv(to_origin)          # box frame -> mesh frame
+        rotation, center, half = world[:3, :3], world[:3, 3], np.asarray(extents) / 2
+    else:
+        rotation, center, half = _flat_box(v)
     if np.linalg.det(rotation) < 0:           # keep a proper rotation: flip one axis
         rotation[:, 2] *= -1
     quat = trimesh.transformations.quaternion_from_matrix(np.vstack([np.hstack([rotation, [[0], [0], [0]]]), [0, 0, 0, 1]]))
-    return dict(center=world[:3, 3].tolist(), half_extents=(np.asarray(extents) / 2).tolist(),
-                orientation=[float(q) for q in quat])
+    return dict(center=np.asarray(center).tolist(), half_extents=np.asarray(half).tolist(), orientation=[float(q) for q in quat])
+
+
+def _flat_box(v):
+    """(rotation, center, half extents) for points with no volume: the smallest rectangle in their plane, or their
+    segment. An axis-aligned plate (a floor) keeps the axis-aligned box, so its axes stay x, y and z."""
+    import trimesh
+
+    lo, hi = v.min(axis=0), v.max(axis=0)
+    mean = v.mean(axis=0)
+    _, s, axes = np.linalg.svd(v - mean)      # rows: principal directions; for a plate the last is its normal
+    if len(s) > 1 and s[1] > 1e-9 * max(s[0], 1e-12):
+        to_rect, _ = trimesh.bounds.oriented_bounds_2D((v - mean) @ axes[:2].T)
+        axes = np.vstack([to_rect[:2, :2] @ axes[:2], axes[2]])
+    local = (v - mean) @ axes.T
+    a, b = local.min(axis=0), local.max(axis=0)
+    half = (b - a) / 2
+    if np.allclose(np.sort(half), np.sort((hi - lo) / 2), rtol=1e-7, atol=1e-12):
+        return np.eye(3), (lo + hi) / 2, (hi - lo) / 2
+    return axes.T.copy(), mean + ((a + b) / 2) @ axes, half
 
 
 def _solid(points) -> bool:
@@ -114,10 +135,14 @@ def collision_shapes(vertices, faces, method: str, *, max_hulls: int = 16, thres
     """The collision shapes for one mesh: ``[{"kind": "box", ...}]`` or ``[{"kind": "hull", "points", "faces"}, ...]``.
 
     ``auto`` uses the box unless the box is more than twice the volume of the convex hull (an L, a frame, a
-    bracket), and then a CoACD decomposition. A flat mesh (a plate, a floor) has no hull, so it always gets the box."""
+    bracket), and then a CoACD decomposition. A flat mesh (a plate, a floor) has no hull, so it always gets the box,
+    of zero thickness in the mesh's plane."""
     if method not in ("box", "convex", "coacd", "auto"):
         raise ValueError("method must be box, convex, coacd or auto")
-    if not _solid(np.asarray(vertices, dtype=np.float64).reshape(-1, 3)):
+    vertices, faces = _as_arrays(vertices, faces)
+    if not len(vertices):
+        raise ValueError("the mesh has no points")
+    if not _solid(vertices):
         method = "box"
     if method == "auto":
         shape = box(vertices)

@@ -34,6 +34,7 @@ files:
     license: Private lab use only; redistribution not authorized
     redistributable: false          # a boolean, always present
     fidelity: ...                   # any extra fields are kept
+    collision: {...}                # written by build for a split asset: see Preparing meshes
 ```
 
 The reader is strict and fails closed. A pack is refused if the manifest is a symlink or does not match the requested id
@@ -165,7 +166,8 @@ root. They run as a job: wait with `jobs(action="lab_status", job_id=..., wait_s
 - `decimate`: a copy whose render meshes are decimated. This lowers render cost; it does not fix a collider overflow.
 - `hulls`: a collision layer only. Each mesh gets `<parent>/<mesh>_collision` holding an oriented `box`, one `convex` hull,
   `coacd` pieces, or `auto` (the box unless it is more than twice the hull's volume, then CoACD). The shapes have purpose
-  `guide` and `CollisionAPI`, and are in the mesh parent's frame, so bodies and joints are untouched.
+  `guide` and `CollisionAPI`, and are in the mesh parent's frame, so bodies and joints are untouched. A flat mesh (a plate)
+  always gets a box in its own plane, at least 0.5 mm thick on each side, so it keeps a volume, a mass and a contact depth.
 - `split`: the asset as two layers and the file that composes them:
 
 ```text
@@ -180,6 +182,24 @@ them is a collider; the bench is the second case, because the work cell adds its
 that brings its own collision layer keeps it, and one without gets triangle-mesh colliders as before. Paths are written
 relative, through the USD API, so a home folder with `@` in its name (as on some university logins) still resolves. To make
 the result a pack version, run `assets__pack action=build` on `<output>/bench.usda`.
+
+`mesh_report.json` also holds the hash of every file the action wrote and a collision summary. When `build` copies the file
+the summary describes (`bench.usda` for `split`, the `_collision.usdc` layer for `hulls`) and none of the hashed files has
+changed, the record of that file in `pack.yaml` gets a `collision` field; the report itself is not copied. The hashes cover
+the output folder only: if the source's render layer references other files and those change, the counts (and the collision
+layer) are stale, and nothing detects it. For the work-cell bench (a box split of `v1`, byte-identical to `v2`'s three
+files) it is:
+
+```yaml
+- asset_id: bench
+  path: bench/bench.usda
+  collision: {method: box, meshes: 385, boxes: 385, hulls: 0, triangles: 0, source_triangles: 1628132, thickened: 0}
+```
+
+`meshes` is how many meshes got shapes, `boxes` and `hulls` the shapes, `triangles` the hulls' triangles (a box is an analytic
+shape, with none), `source_triangles` the triangles of the meshes they stand for, and `thickened` the boxes raised to the
+minimum thickness. `coacd` and `auto` also record `max_hulls` and `threshold`. A record copied out of another pack keeps its `collision` field; `pin` removes it from the
+records in the folder of a file whose hash it rewrites, because the counts no longer describe the files.
 
 ## Converting an old pack
 

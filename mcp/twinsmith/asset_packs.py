@@ -644,6 +644,12 @@ def build_pack(
             raise PackError("source and license are required for files that do not come from a pack, so a record "
                             "can say where they came from: " + ", ".join(lacking[:10]) + (" ..." if len(lacking) > 10 else ""),
                             "MISSING_PROVENANCE")
+    from . import mesh_worker   # standard library at import time; reads the report assets__mesh left beside a file
+
+    for rel, path in files.items():
+        collision = mesh_worker.collision_record(path) if path.suffix.lower() in USD_SUFFIXES else None
+        if collision:
+            records[rel] = dict(records.get(rel) or {}, collision=collision)
     report = dict(
         files=len(files), bytes=sum(p.stat().st_size for p in files.values()), entries=sorted(entries),
         # What to pass as sim__quick_start's robot: a pack keeps the source's folder layout, so it isn't just <pack>/<file>: it is <id>/<version>/<entry>.
@@ -1078,14 +1084,22 @@ def pin_pack(root: Path, pack_id: str, version: str, *, force: bool = False, fil
     if dry_run:
         return dict(dry_run=True, would_change=report["changed"][:MAX_REPORTED], pack_dir=str(directory))
     by_path = {c["file"]: c["actual"] for c in accepted}
-    manifest = report["manifest"]
+    # A collision summary describes the split's files, which sit in one folder: a changed file there makes it stale.
+    stale = {PurePosixPath(rel).parent for rel in by_path}
+    manifest, dropped = report["manifest"], []
     for record in manifest["files"]:
         if record["path"] in by_path:
             record["sha256"] = by_path[record["path"]]
+        if "collision" in record and PurePosixPath(record["path"]).parent in stale:
+            del record["collision"]
+            dropped.append(record["path"])
     _replace_text(directory, MANIFEST_NAME, pack_manifest.manifest_text(manifest))
     return dict(pinned=len(accepted), changed=accepted[:MAX_REPORTED], verifies=len(accepted) == len(report["changed"]),
                 unchanged=report["unchanged"], pack_dir=str(directory),
-                note="pack.yaml was rewritten as JSON (valid YAML); comments in it are not kept.")
+                **({"collision_dropped": dropped} if dropped else {}),
+                note="pack.yaml was rewritten as JSON (valid YAML); comments in it are not kept."
+                     + (" The collision counts of files beside a changed file were removed: they no longer describe "
+                        "the files." if dropped else ""))
 
 
 # ---------------------------------------------------------------------------

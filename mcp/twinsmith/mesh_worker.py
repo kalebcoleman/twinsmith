@@ -22,6 +22,42 @@ if __package__ in (None, ""):                         # run as a file (a job): i
 
 REPORT = "mesh_report.json"
 NEEDS = ("pxr", "trimesh", "coacd", "fast_simplification", "numpy")
+SUMMARY_KEYS = ("method", "max_hulls", "threshold", "meshes", "boxes", "hulls", "triangles", "source_triangles", "thickened")
+METHODS = ("box", "convex", "coacd", "auto")
+MAX_REPORT_BYTES = 4 << 20
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def collision_record(path: Path) -> dict | None:
+    """The collision summary that ``split`` or ``hulls`` left in the report beside *path*, if it describes
+    *path* and no file the report lists has changed since. ``assets__pack`` build copies it into the record."""
+    report_path = Path(path).parent / REPORT
+    try:
+        if report_path.is_symlink() or not report_path.is_file() or report_path.stat().st_size > MAX_REPORT_BYTES:
+            return None
+        report = json.loads(report_path.read_text())
+        summary, hashes = report.get("collision"), report.get("sha256")
+        if not (isinstance(summary, dict) and isinstance(hashes, dict) and summary.get("for") == Path(path).name):
+            return None
+        for name, digest in hashes.items():
+            listed = report_path.parent / name
+            if "/" in name or name.startswith(".") or listed.is_symlink() or not listed.is_file() or _sha256(listed) != digest:
+                return None
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    out = {k: summary[k] for k in SUMMARY_KEYS if k in summary}
+    numbers_ok = all(type(v) is int and v >= 0 for k, v in out.items() if k not in ("method", "threshold"))
+    threshold_ok = isinstance(out.get("threshold", 0), (int, float)) and not isinstance(out.get("threshold"), bool)
+    return out if out.get("method") in METHODS and numbers_ok and threshold_ok else None
 
 
 def missing_modules() -> list[str]:
@@ -58,7 +94,11 @@ def run(request: dict) -> dict:
         else:
             result = mesh_usd.split(source, work, collision=request.get("collision"), prims=prims)
         result = json.loads(json.dumps(dict(action=action, source=str(source), **result)).replace(str(work), str(out)))
-        (work / REPORT).write_text(json.dumps(result, indent=2) + "\n")
+        report = dict(result, sha256={f.name: _sha256(f) for f in sorted(work.iterdir())})
+        if action != "decimate":
+            shapes = result["shapes"] if action == "split" else result
+            report["collision"] = {"for": Path(result["output"]).name, **{k: shapes[k] for k in SUMMARY_KEYS if k in shapes}}
+        (work / REPORT).write_text(json.dumps(report, indent=2) + "\n")
         os.rename(work, out)
     except BaseException:
         shutil.rmtree(work, ignore_errors=True)

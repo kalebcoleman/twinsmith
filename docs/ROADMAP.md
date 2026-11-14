@@ -151,14 +151,20 @@ it will load on Newton before a simulator is started.
   articulation, and passes the new version.
 - Live, recorded: the new pack's bench loads on a Newton session with no triangle-pair overflow, and a render of the bench is
   visually unchanged from `v1`.
-- The collision layer's shape count and triangle count are in the pack manifest's `fidelity` field.
+- The collision layer's shape count and triangle count are in the pack manifest, in the bench record's `collision` field.
 
 **Depends on.** Nothing in Phase 0 blocks it; the `assets` group already exists.
 
 **Status.** Done (#112):
 - `validate` flags `v1`'s faults.
 - Pack `v2` has a box collision layer, and its bench loads on Newton with no overflow.
-- The render comparison and the manifest's collision counts are not recorded yet.
+- `assets__pack` build writes the `collision` field from the split's report. `v2` was built before that existed. A box split
+  of `v1` reproduces `v2`'s three bench files byte for byte and counts 385 meshes, 385 boxes, 0 hull triangles and 1,628,132
+  replaced triangles. Building a `v3` from it records the counts; that is the owner's call.
+- On a CPU (2026-11-14), `v2`'s composed bench has the same 2,157 rendered (non-guide) prims as `v1`, with identical
+  non-physics values and schemas and the same units. A test checks the same for the test asset, with `box` and `auto`. Both
+  bench results are recorded outside the repository, in `<workspace>/runs/assets-phase1-20261114`. A rendered image next
+  to `v1` is still to be taken on a GPU.
 
 ### Phase 2: the work cell on Newton
 

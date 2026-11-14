@@ -108,6 +108,19 @@ def test_split_runs_as_a_job_and_writes_a_report(setup):
     report = json.loads((out / mesh_worker.REPORT).read_text())
     assert report["action"] == "split" and Path(report["output"]) == out / "bench.usda"
     assert {p.name for p in out.iterdir()} == {"bench.usda", "bench_render.usdc", "bench_collision.usdc", mesh_worker.REPORT}
+    assert set(report["sha256"]) == {"bench.usda", "bench_render.usdc", "bench_collision.usdc"}
+    assert report["collision"]["for"] == "bench.usda" and report["collision"]["method"] == "box"
+    # A pack built from the split carries the collision counts in the composed file's record, and only there.
+    built = call(setup, "assets.pack_build", pack="bench/v1", sources=[str(out / "bench.usda")],
+                 source="unit test", license="test fixture", layout_root=str(out))
+    assert built.get("status", "ok") == "ok", built
+    records = {r["path"]: r for r in json.loads((setup["assets"] / "bench" / "v1" / "pack.yaml").read_text())["files"]}
+    assert set(records) == {"bench.usda", "bench_render.usdc", "bench_collision.usdc"}
+    counts = records["bench.usda"]["collision"]
+    assert counts == {k: report["collision"][k] for k in mesh_worker.SUMMARY_KEYS if k in report["collision"]}
+    assert counts["boxes"] == counts["meshes"] >= 1 and counts["hulls"] == counts["triangles"] == 0
+    assert counts["source_triangles"] > 10_000
+    assert "collision" not in records["bench_render.usdc"] and "collision" not in records["bench_collision.usdc"]
 
 
 def test_listed_schemas_take_prim_paths_as_strings(tmp_path):

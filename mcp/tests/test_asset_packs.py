@@ -124,6 +124,19 @@ def test_pin_with_force_accepts_every_change_and_keeps_every_other_field(env):
     verifies(env, "p")
 
 
+def test_pin_drops_collision_counts_beside_a_changed_file(env):
+    directory = make_pack(env, "p", "v1", {"bench/bench.usda": b"a", "bench/bench_collision.usdc": b"c", "other/o.usda": b"o"})
+    manifest = json.loads((directory / "pack.yaml").read_text())
+    for record in manifest["files"]:
+        record["collision"] = dict(method="box", boxes=3)
+    (directory / "pack.yaml").write_text(json.dumps(manifest))
+    (directory / "bench" / "bench_collision.usdc").write_bytes(b"c2")
+    report = packs.pin_pack(env, "p", "v1", files=["bench/bench_collision.usdc"])
+    assert report["collision_dropped"] == ["bench/bench.usda", "bench/bench_collision.usdc"]
+    after = {r["path"]: r for r in verifies(env, "p").manifest["files"]}
+    assert "collision" not in after["bench/bench.usda"] and after["other/o.usda"]["collision"] == dict(method="box", boxes=3)
+
+
 def test_pin_accepts_a_named_change_and_leaves_others_alone(env):
     directory = make_pack(env, "p", "v1", {"a.usd": b"a", "b.usd": b"b"})
     (directory / "a.usd").write_bytes(b"a2")
@@ -365,6 +378,55 @@ def test_a_built_file_keeps_its_own_record_and_an_outside_file_takes_the_default
     build_alone(env, [str(scene)], pack="alone", layout_root=(tmp_path / "project").resolve())
     alone = verifies(env, "alone").manifest["files"][0]
     assert alone["source"] == "unit test" and alone["license"] == "test fixture" and alone["redistributable"] is False
+
+
+def test_build_records_the_collision_counts_of_an_unchanged_split(env, tmp_path):
+    from twinsmith import mesh_worker
+
+    folder = tmp_path / "project" / "bench"
+    top = put(folder, "bench.usda", "#usda 1.0\n(\n  subLayers = [@./bench_collision.usda@, @./bench_render.usda@]\n)\n")
+    for name in ("bench_collision.usda", "bench_render.usda"):
+        put(folder, name, usda())
+    counts = dict(method="box", meshes=2, boxes=2, hulls=0, triangles=0, source_triangles=40)
+    hashes = {p.name: sha(p.read_bytes()) for p in folder.iterdir()}
+    put(folder, mesh_worker.REPORT, json.dumps(dict(sha256=hashes, collision={"for": "bench.usda", **counts})))
+    build_alone(env, [str(top)], pack="split", layout_root=folder.resolve())
+    records = {r["path"]: r for r in verifies(env, "split").manifest["files"]}
+    assert records["bench.usda"]["collision"] == counts and "collision" not in records["bench_render.usda"]
+    assert mesh_worker.REPORT not in records                    # the report is not part of the pack
+    put(folder, "bench_collision.usda", usda() + "\n")          # edited after the split: the counts no longer hold
+    build_alone(env, [str(top)], pack="split", version="v2", layout_root=folder.resolve())
+    assert all("collision" not in r for r in verifies(env, "split", "v2").manifest["files"])
+
+
+def test_a_collision_summary_is_used_only_for_its_own_unchanged_files(tmp_path):
+    from twinsmith import mesh_worker
+
+    def folder(name, report=None, **files):
+        here = tmp_path / name
+        for rel, data in (files or {"a.usda": "a", "a_collision.usdc": "c"}).items():
+            put(here, rel, data)
+        hashes = {p.name: sha(p.read_bytes()) for p in here.iterdir()}
+        body = dict(sha256=hashes, collision={"for": "a.usda", "method": "box", "boxes": 2, "meshes": 2})
+        put(here, mesh_worker.REPORT, json.dumps(report(body) if report else body))
+        return here
+
+    assert mesh_worker.collision_record(folder("ok") / "a.usda") == dict(method="box", boxes=2, meshes=2)
+    assert mesh_worker.collision_record(folder("other") / "a_collision.usdc") is None          # describes a.usda only
+    gone = folder("gone")
+    (gone / "a_collision.usdc").unlink()
+    assert mesh_worker.collision_record(gone / "a.usda") is None
+    for name, edit in [("method", lambda r: r["collision"].update(method="mesh") or r),
+                       ("count", lambda r: r["collision"].update(boxes=-1) or r),
+                       ("type", lambda r: r["collision"].update(meshes="2") or r),
+                       ("nested", lambda r: r["sha256"].update({"../a.usda": "0" * 64}) or r)]:
+        assert mesh_worker.collision_record(folder(name, edit) / "a.usda") is None, name
+    linked = folder("linked")
+    (linked / "real.json").write_text((linked / mesh_worker.REPORT).read_text())
+    (linked / mesh_worker.REPORT).unlink()
+    (linked / mesh_worker.REPORT).symlink_to(linked / "real.json")
+    assert mesh_worker.collision_record(linked / "a.usda") is None
+    assert mesh_worker.collision_record(put(tmp_path / "bare", "a.usda", "a")) is None        # no report
 
 
 def test_files_with_no_record_need_a_source_and_a_license(env, tmp_path):

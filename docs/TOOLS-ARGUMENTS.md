@@ -1591,7 +1591,7 @@ Report every mesh of a USD file: triangles, bounds, closed or not, whether it is
 
 Listed as `assets__mesh(action="split")`.
 
-Write a USD asset as a render layer and a collision layer plus the file that composes them, into a new folder, as a job: <stem>_render (the source; the replaced meshes lose their collision schemas, other colliders stay), <stem>_collision.usdc (explicit shapes, purpose guide) and <stem>.usda (sublayers both, keeps the units, up axis and default prim). Point an asset at <stem>.usda; make it a pack version with assets__pack action=build. The source is never changed.
+Write a USD asset as a render layer and a collision layer plus the file that composes them, into a new folder, as a job: <stem>_render (the source; the replaced meshes lose their collision schemas, other colliders stay), <stem>_collision.usdc (explicit shapes, purpose guide) and <stem>.usda (sublayers both, keeps the units, up axis and default prim). Point an asset at <stem>.usda; make it a pack version with assets__pack action=build, which records the collision counts in its pack.yaml record. The source is never changed.
 
 - `source_path` (string, optional): Absolute USD file under an approved root or the asset root; or give pack and asset_id.
 - `pack` (string, optional): "<pack id>/<version>" holding asset_id. Default: the project file's pack.

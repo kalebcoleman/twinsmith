@@ -54,6 +54,9 @@ def test_split_composes_render_and_collision_and_leaves_the_source(asset, tmp_pa
     assert not mesh_usd.collision_schemas(render.GetPrimAtPath(info["mesh"]))      # replaced by the box
     assert mesh_usd.collision_schemas(render.GetPrimAtPath("/World/Robot/Link0/shape"))  # not a mesh: kept
     assert result["shapes"]["selected"] == "mesh colliders" and result["shapes"]["replaced"] == [info["mesh"]]
+    assert result["shapes"]["method"] == "box" and result["shapes"]["triangles"] == 0      # a box is analytic
+    assert result["shapes"]["source_triangles"] == len(mesh_usd.triangulate(
+        *[getattr(UsdGeom.Mesh(source.GetPrimAtPath(info["mesh"])), a)().Get() for a in ("GetFaceVertexCountsAttr", "GetFaceVertexIndicesAttr")]))
     collision = Usd.Stage.Open(result["collision"])
     shapes = [p for p in collision.Traverse() if mesh_usd.collision_schemas(p)]
     assert shapes and all(UsdGeom.Imageable(p).ComputePurpose() == UsdGeom.Tokens.guide for p in shapes)
@@ -69,6 +72,31 @@ def test_split_composes_render_and_collision_and_leaves_the_source(asset, tmp_pa
         mesh_usd.split(path, out)
 
 
+def rendered(stage):
+    """What a renderer sees: every prim that is not guide purpose, with its type, non-physics schemas and values."""
+    from pxr import UsdGeom
+
+    seen = {}
+    for prim in stage.Traverse():
+        if prim.IsA(UsdGeom.Imageable) and UsdGeom.Imageable(prim).ComputePurpose() == UsdGeom.Tokens.guide:
+            continue
+        values = {a.GetName(): np.asarray(a.Get()).tobytes() if hasattr(a.Get(), "__len__") and not isinstance(a.Get(), str)
+                  else repr(a.Get()) for a in prim.GetAttributes() if a.HasAuthoredValue() and not a.GetName().startswith("physics:")}
+        seen[str(prim.GetPath())] = (prim.GetTypeName(), [n for n in prim.GetAppliedSchemas() if "Physics" not in n], values)
+    return seen
+
+
+def test_split_renders_what_the_source_renders(asset, tmp_path):
+    from pxr import Usd
+
+    path, _ = asset
+    for method in ("box", "auto"):
+        out = tmp_path / method
+        out.mkdir()
+        composed = Usd.Stage.Open(mesh_usd.split(path, out, collision=dict(method=method))["output"])
+        assert rendered(composed) == rendered(Usd.Stage.Open(str(path)))
+
+
 def test_hulls_with_coacd_writes_convex_pieces(asset, tmp_path):
     from pxr import Usd, UsdGeom
 
@@ -81,6 +109,8 @@ def test_hulls_with_coacd_writes_convex_pieces(asset, tmp_path):
     hulls = [p for p in layer.Traverse() if p.IsA(UsdGeom.Mesh)]
     assert len(hulls) == result["hulls"]
     assert all(p.GetAttribute("physics:approximation").Get() == "convexHull" for p in hulls)
+    assert result["triangles"] == sum(len(p.GetAttribute("faceVertexCounts").Get()) for p in hulls) > 0
+    assert (result["method"], result["max_hulls"]) == ("coacd", 4)
 
 
 def test_decimate_writes_a_lighter_copy(asset, tmp_path):
@@ -124,18 +154,21 @@ def _quad(stage, path, z=0.0):
 
 
 def test_split_of_a_flat_root_mesh_keeps_its_box_inside_the_default_prim(tmp_path):
-    from pxr import Usd
+    from pxr import Usd, UsdGeom
 
     src = tmp_path / "plate.usda"
     stage = Usd.Stage.CreateNew(str(src))
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     stage.SetDefaultPrim(_quad(stage, "/plate").GetPrim())
     stage.GetRootLayer().Save()
     out = tmp_path / "out"
     out.mkdir()
     result = mesh_usd.split(src, out, collision=dict(method="coacd"))     # flat: every method falls back to the box
-    assert result["shapes"]["boxes"] == 1 and result["shapes"]["hulls"] == 0
+    assert result["shapes"]["boxes"] == 1 and result["shapes"]["hulls"] == 0 and result["shapes"]["thickened"] == 1
     composed = Usd.Stage.Open(result["output"])
-    assert composed.GetPrimAtPath("/plate/plate_collision/box")
+    box = composed.GetPrimAtPath("/plate/plate_collision/box")
+    # in metres, the plate's box gets the minimum thickness, so it keeps a volume and a mass
+    assert min(box.GetAttribute("xformOp:scale").Get()) == pytest.approx(mesh_usd.MIN_HALF_THICKNESS_M)
 
 
 def test_non_mesh_colliders_need_prims_named(tmp_path):
