@@ -92,3 +92,17 @@ def test_bom_path_is_relative_to_configuration_directory():
         ROOT / "exts/workcell/workcell/bom.csv")
     assert (config_dir / cfg["documentation"]["bom_csv"]).is_file()
     assert raw["documentation"]["bom_csv"]["source"]
+
+
+def test_finger_pads_sit_on_the_fingertip_gripping_face():
+    """The pack's RG2 inner finger: the tip block spans z 0.020..0.053 m and its inner face is the plane y = 0.0189 m.
+    A pad nearer the finger joint, or inside that face, is buried in the finger's collision shape and never touches a part."""
+    cfg, _ = hardware.load_config()
+    thickness, length = cfg["finger_pads"]["size_m"][1], cfg["finger_pads"]["size_m"][2]
+    mounts = cfg["finger_pads"]["mounts"]
+    assert [mount["parent"] for mount in mounts] == ["left_inner_finger", "right_inner_finger"]
+    for mount in mounts:
+        x, y, z = mount["position_m"]
+        assert x == 0 and mount["orientation_wxyz"] == [1, 0, 0, 0]
+        assert y - thickness / 2 >= 0.0189 - 1e-9                    # the whole pad stands proud of the finger face
+        assert 0.020 <= z - length / 2 and z + length / 2 <= 0.053   # on the tip block, not at the joint

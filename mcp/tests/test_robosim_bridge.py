@@ -298,6 +298,13 @@ def test_name_length_before_creating_run(fake):
     assert not bridge.runs.exists()
 
 
+def test_errors_name_the_argument_and_a_missing_run(fake):
+    bridge, scene, _, _ = fake
+    assert "No run named nothing-here" in bridge.call("status", run="nothing-here")["error"]
+    with pytest.raises(ValueError, match="^take must be"):
+        bridge_module._name(None, "take")
+
+
 def test_explicit_device_and_gpu_refusal(fake):
     bridge, scene, _, calls = fake
     result = bridge.call("start", name="test", scene=str(scene))

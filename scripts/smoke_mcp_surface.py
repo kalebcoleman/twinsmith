@@ -31,7 +31,7 @@ OFFLINE_PLAN = [
     ("isaaclab__runs_list", {}), ("isaaclab__checkpoints_list", {}),
     ("assets__roots", {}), ("assets__scan", {"root_id": "does-not-exist"}),
     ("assets__search", {"query": "ur5e"}),
-    ("sim__stage__info", {}), ("workcell__get_recording_status", {}),
+    ("sim__stage__info", {}), ("workcell__workcell_status", {}),
 ]
 
 
