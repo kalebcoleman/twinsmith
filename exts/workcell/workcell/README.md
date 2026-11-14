@@ -17,9 +17,10 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 
 | File | What it is |
 |---|---|
-| `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v2` |
+| `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v3` |
 | `exts/workcell/workcell/bom.csv` | The base cell's BOM |
-| `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2`: RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and the FreeCAD wrist bracket (clamp ring on the wrist 3 housing, arm, tilted plate with the D415's two M3 holes) with its STEP file |
+| `scripts/workcell_bracket_assets.py`, `exts/workcell/cad/rg2_camera_bracket.py` | Build pack `ur5e-workcell/v3` from `v2`: the wrist bracket becomes a parametric copy of the real printed one, a two-piece clamp on the RG2 body with a truss arm and a plate for the D415 ([parameters, sources and what to measure](../cad/README.md)). The pack keeps the USD, a STEP of the assembly and a STEP and STL of each printable piece |
+| `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2` (superseded): RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and a placeholder bracket on the wrist 3 housing |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
 | `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
 
@@ -236,7 +237,8 @@ The current candidate contains:
   preserved local vendor CAD. Their MDL materials were replaced with preview materials, so
   appearance is not vendor-accurate.
 - No genuine Bota Rokubi or gantry CAD is available: these are dimensioned, unconfirmed proxies. The D415 body is
-  the vendor's mesh; the wrist bracket is a FreeCAD placeholder design, not the lab's bracket.
+  the vendor's mesh; the wrist bracket is a FreeCAD copy of the lab's printed bracket estimated from one photo
+  ([what was sourced and what must be measured](../cad/README.md)), not the lab's own CAD.
 - With `overhead_camera.enabled` (off in the shipped config), the overhead support is the pack's three-member gantry (two posts and a cross-member).
   The posts stand on the bench top panel (inside its measured footprint, x up to 0.9436 m,
   y -0.811..-0.091 m), outside the arm's reach, and the camera hangs under the
@@ -245,11 +247,19 @@ The current candidate contains:
   dimensions, the pack scales member thickness with the post span, and the real attachment
   details are unconfirmed, so this does not establish mounting feasibility. The KB3X3 is a
   camera-only release, not a load-bearing gantry base. Printed mounts and shelf remain proxies.
-- The wrist D415 is on the underside of the wrist, held 0.11 m out from the tool axis and angled 12 degrees toward
-  it: an ideal placeholder (Kaleb, 2026-11-14) until the real bracket CAD arrives, not a measurement. From there the
-  Bota, Quick Changer and wrist are outside the image and the RG2 fingertips are about 70 percent of the way down it; a test projects
-  the pack's meshes through the camera to check both. Max's `localizer_bridge.py` has the camera 38 mm from the
-  axis, where the Quick Changer fills the lower image. The near clip is 0.02 m, past the camera's own front glass. The D415 body is the vendor's mesh and the bracket a FreeCAD placeholder design whose fit on the real arm is not measured.
+- The wrist D415 is on a printed bracket clamped to the RG2 body (not to the wrist and not between flange faces, so the
+  tool stack is unchanged and the camera turns with the gripper). It sits off the RG2's back face, the face opposite
+  the lab's AprilTag: body centred 66 mm behind the tool axis and 68 mm to one side, long axis along the
+  finger-opening axis, looking along the approach axis, with the gripper toward the top of the image. The pose is
+  configured in the RG2 body frame (`wrist_camera.offset_in_rg2_m`, `rotation_in_rg2_deg`) and the builder derives the
+  tool0 pose from the stack, so the camera follows the RG2 when the stack changes. It is an estimate from one photo
+  (about 15 mm and 15 degrees), not a measurement. With no tilt, as modelled, the camera looks past the gripper and
+  nothing of the robot is in the image; whether the real image shows the fingertips fixes the tilt. Tests build the
+  real pack and check that the collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate,
+  that bracket and camera stay out of the slab the finger linkage moves in, and that the image is clear of the arm.
+  The camera parts are visual only: the pack's bracket carries a box collision approximation, which the builder
+  removes with every other collider on camera parts, because the parts hang from tool0 (`wrist_3_link`) and a
+  collider there would press on the RG2 past the Bota.
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads
@@ -275,9 +285,9 @@ configuration or a design envelope and are not vendor drawings.
 | UR5e link inertials | 3.761 / 8.058 / 2.846 / 1.37 / 1.3 / 0.365 kg with UR's CoMs and inertia tensors | `confirmed` (Universal Robots ROS 2 description `physical_parameters.yaml`; UR's DH article) |
 | RG2 maximum opening | 0.110 m | `confirmed` |
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
-| D415 body | 0.099 x 0.020 x 0.023 m | `unconfirmed` |
-| Wrist camera offset | 0, 0.11, -0.005 m in tool0 (placeholder design pose on the underside) | `unconfirmed` |
-| Wrist camera rotation | -12, 0, 180 degrees (extrinsic XYZ): 12 degrees toward the tool axis, turned about it to the underside | `unconfirmed` |
+| D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
+| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; -0.033, -0.066, 0.165 m in tool0 with the shipped stack) | `unconfirmed`, estimated from photo |
+| Wrist camera rotation | 0, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): along the approach axis, long axis along the finger-opening axis, no tilt | `unconfirmed`, estimated from photo |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |

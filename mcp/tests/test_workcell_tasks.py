@@ -29,7 +29,7 @@ def cell(monkeypatch):
 def test_base_cell_holds_no_task_objects(cell):
     config, raw = cell.hardware_config.load_config()
     assert "jenga" not in config and "jenga_block" not in config["assets"]
-    assert config["pack"] == {"id": "ur5e-workcell", "version": "v2"}
+    assert config["pack"] == {"id": "ur5e-workcell", "version": "v3"}
     assert "jenga_block" not in cell.scene.ROLES
     rows = cell.bom.load_bom()
     assert not [row for row in rows if row["area"] == "jenga"]

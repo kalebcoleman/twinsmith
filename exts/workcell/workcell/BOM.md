@@ -19,7 +19,7 @@ missing prices are not zero, and no complete workcell total is available.
 | `rg2` | OnRobot RG2 standard parallel gripper | 1 | each | Quote required | Standard RG2, not RG2-FT; nominal maximum opening 110 mm confirmed |
 | `finger_pad` | Black add-on RG2 finger pads | 2 | each | Quote required | Provisional 0.012 x 0.008 x 0.025 m proxy; installed geometry and friction unconfirmed |
 | `d415` | Intel RealSense D415 depth camera | 2 | each | $272.00 each | Wrist unit present, drawn with the vendor's mesh; second overhead unit to buy and not built |
-| `wrist_mount` | Under-arm printed wrist bracket | 1 | each | Quote required | FreeCAD placeholder design; genuine bracket CAD, offset, rotation and real attachment details unconfirmed |
+| `wrist_mount` | Printed camera bracket clamped to the RG2 body | 1 | each | Quote required | Real part exists; the FreeCAD model is a copy estimated from one photo; clamp and arm sizes and the camera pose need measurement |
 | `overhead_mount` | Removable 80/20 1515 camera gantry | 1 | set | Quote required | Planned three-member gantry, not slab; two posts and cross-member, cantilever and real attachments unresolved; not purchased |
 | `overhead_release` | Thorlabs KB3X3 kinematic quick-release base | 1 | each | $117.27 | To buy; camera-only release, not load-bearing gantry base; installed attachment unconfirmed |
 | `overhead_shelf` | Printed overhead camera shelf | 1 | each | Quote required | Proposed proxy; dimensions, manufacture and attachment unconfirmed |

@@ -77,39 +77,136 @@ def _vertices_in_frame(stage, frame, roots):
     return np.vstack(chunks)
 
 
-def _in_wrist_image(stage, report, section, roots):
+def _in_wrist_image(stage, report, camera_report, section, roots):
     """Optical-frame coordinates of the vertices of ``roots`` that fall inside the wrist camera's colour image."""
     points = _vertices_in_frame(stage, report["tool0_path"], roots)
+    optical_pose = camera_report["cameras"]["wrist"]["optical"]          # derived from the RG2 pose and the stack
     # The columns of R are the optical axes in tool0; optical coordinates are R^T (p - offset).
-    quaternion = cameras._euler_xyz_deg_to_quat(section["rotation_in_tool0_deg"])
-    rotation = np.array([cameras._rotate_vector(quaternion, axis) for axis in np.eye(3).tolist()]).T
-    optical = (points - np.array(section["offset_in_tool0_m"])) @ rotation
+    rotation = np.array([cameras._rotate_vector(optical_pose["quaternion_wxyz"], axis) for axis in np.eye(3).tolist()]).T
+    optical = (points - np.array(optical_pose["translation_m"])) @ rotation
     optical = optical[optical[:, 2] > section["clipping_range_m"][0]]  # nearer than the clip plane is not drawn
     inside = ((np.degrees(np.arctan2(np.abs(optical[:, 0]), optical[:, 2])) < section["color_fov_deg"][0] / 2)
               & (np.degrees(np.arctan2(np.abs(optical[:, 1]), optical[:, 2])) < section["color_fov_deg"][1] / 2))
     return optical[inside]
 
 
-def test_wrist_view_shows_the_fingers_and_not_the_arm(cell):
-    config, stage, report, *_ = cell
+def test_wrist_view_is_clear_of_the_arm_the_bracket_and_the_camera_body(cell):
+    """With the pose read from the photo (no tilt) the camera looks past the gripper: nothing of the robot is drawn.
+
+    Whether the real image shows the fingertips is an open question for the lab: it fixes the bracket's tilt."""
+    config, stage, report, camera_report, _ = cell
     section = config["wrist_camera"]
-    arm = _in_wrist_image(stage, report, section, [
+    root = camera_report["cameras"]["wrist"]["root_path"]
+    arm = _in_wrist_image(stage, report, camera_report, section, [
         f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"])
     assert not len(arm), f"{len(arm)} Bota/Quick Changer/wrist vertices fall in the wrist image"
-    gripper = _in_wrist_image(stage, report, section, [report["gripper_path"]])
-    assert len(gripper), "the RG2 fingers are out of the wrist image"
-    assert gripper[:, 1].min() > 0, "the gripper should be in the lower half of the image"
+    own = _in_wrist_image(stage, report, camera_report, section, [f"{root}/bracket", f"{root}/body"])
+    assert not len(own), f"{len(own)} bracket/camera-body vertices fall in the wrist image"
+    gripper = _in_wrist_image(stage, report, camera_report, section, [report["gripper_path"]])
+    # Image down is away from the gripper, so anything of it that shows is in the upper half.
+    assert not len(gripper) or gripper[:, 1].max() < 0
+
+
+def _rg2_frame(stage, report, config):
+    return f"{report['gripper_path']}/{config['asset_layout']['rg2']['mount_frame']}"
+
+
+def _in_cad_frame(stage, report, config, roots):
+    """Vertices in millimetres in the bracket's CAD frame: +X the finger-opening axis, +Y out of the RG2's front face.
+
+    The pack's RG2 body frame is that frame turned a quarter turn about Z (body +Y = CAD +X, body +X = CAD -Y)."""
+    body = _vertices_in_frame(stage, _rg2_frame(stage, report, config), roots) * 1000.0
+    return np.stack([body[:, 1], -body[:, 0], body[:, 2]], axis=1)
+
+
+def test_bracket_clamps_the_rg2_waist_and_holds_the_camera_off_its_back_face(cell):
+    """The bracket asset is modelled in the RG2 body frame: on the built stage it must sit there, whatever the stack."""
+    config, stage, report, camera_report, _ = cell
+    root = camera_report["cameras"]["wrist"]["root_path"]
+    frame = _rg2_frame(stage, report, config)
+    bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket"])
+    body = _in_cad_frame(stage, report, config, [f"{root}/body"])
+    rg2 = _in_cad_frame(stage, report, config, [frame])
+    waist = rg2[(rg2[:, 2] > 75) & (rg2[:, 2] < 95)]
+    assert np.abs(waist[:, 0]).max() < 27.3 and np.abs(waist[:, 1]).max() < 18.7     # the 54 x 36 mm section (datasheet)
+    # The collar is around that section: it reaches past the body on all four sides and no vertex is inside it.
+    collar = bracket[(bracket[:, 2] >= 72 - 1e-6) & (bracket[:, 2] <= 98 + 1e-6)]
+    assert collar[:, 0].min() < -27.3 and collar[:, 0].max() > 27.3 and collar[:, 1].min() < -18.3 and collar[:, 1].max() > 18.3
+    assert not ((np.abs(bracket[:, 0]) < 27.0 - 1e-6) & (np.abs(bracket[:, 1]) < 18.0 - 1e-6)).any()
+    assert bracket[:, 2].min() == pytest.approx(72.0, abs=0.01)                    # below the mounting bracket's arms
+    arms = rg2[(np.abs(rg2[:, 0]) > 33.5) & (rg2[:, 2] < 72)]
+    assert arms[:, 2].max() < 72.0
+    # The D415: long axis along X, back face on the plate, off the back face of the body.
+    size = body.max(0) - body.min(0)
+    assert size == pytest.approx([99.0, 23.0, 20.0], abs=0.6)
+    plate = bracket[bracket[:, 1] < -40.0]
+    assert body[:, 2].min() == pytest.approx(plate[:, 2].max(), abs=0.05)
+    assert body[:, 1].max() < -18.0 - 30.0
+    offset = np.array(config["wrist_camera"]["offset_in_rg2_m"]) * 1000.0
+    assert body[:, 0].max() == pytest.approx(offset[1] + 14.5, abs=0.3)             # the colour sensor end is at CAD +X
+    assert (body[:, 1].min() + body[:, 1].max()) / 2 == pytest.approx(-offset[0], abs=0.5)
+
+
+def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
+    """The linkage turns about axes along the RG2's Y, so it stays in the slab of Y it occupies in any pose."""
+    config, stage, report, camera_report, pack = cell
+    frame = _rg2_frame(stage, report, config)
+    gripper = stage.GetPrimAtPath(report["gripper_path"])
+    cache = UsdGeom.XformCache()
+    to_rg2 = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(frame)).GetInverse()
+    moving, slab, lowest = [], 0.0, 1e9
+    for prim in Usd.PrimRange(gripper):
+        if prim.IsA(UsdPhysics.RevoluteJoint):
+            joint = UsdPhysics.RevoluteJoint(prim)
+            if joint.GetJointEnabledAttr().Get() is False:
+                continue
+            body = stage.GetPrimAtPath(joint.GetBody1Rel().GetTargets()[0])
+            rotation = Gf.Rotation(joint.GetLocalRot1Attr().Get())
+            axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[joint.GetAxisAttr().Get()]
+            in_rg2 = (cache.GetLocalToWorldTransform(body) * to_rg2).TransformDir(rotation.TransformDir(axis))
+            assert abs(in_rg2.GetNormalized()[0]) == pytest.approx(1.0, abs=1e-3), prim.GetPath()   # body X = CAD Y
+            moving.append(str(body.GetPath()))
+    assert len(set(moving)) >= 6
+    for path in sorted(set(moving) - {frame}):
+        points = _in_cad_frame(stage, report, config, [path])
+        slab, lowest = max(slab, np.abs(points[:, 1]).max()), min(lowest, points[:, 2].min())
+    assert slab <= 16.5 + 0.05 and lowest >= 111.0
+    root = camera_report["cameras"]["wrist"]["root_path"]
+    bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket", f"{root}/body"])
+    near = bracket[bracket[:, 2] >= lowest - 4.0]            # the only part of the bracket level with the linkage
+    assert len(near) and np.abs(near[:, 1]).min() >= slab + 1.5
+    # The same holds for the collision approximation the pack carries (the builder removes it from the scene).
+    asset = Usd.Stage.Open(str(pack.asset(config["assets"]["wrist_mount"])))
+    colliders = [prim for prim in asset.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI)]
+    assert len(colliders) == 9
+    for prim in colliders:
+        box = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["guide"]).ComputeWorldBound(prim).ComputeAlignedRange()
+        low, high = np.array(box.GetMin()) * 1000.0, np.array(box.GetMax()) * 1000.0       # body frame: X is CAD -Y
+        assert high[2] < lowest or low[0] > slab or high[0] < -slab, prim.GetPath()
+    wrist = stage.GetPrimAtPath(root)
+    assert not any(item.HasAPI(UsdPhysics.CollisionAPI) or item.HasAPI(UsdPhysics.RigidBodyAPI) for item in Usd.PrimRange(wrist))
+
+
+def test_pack_is_complete_on_its_own(cell):
+    """Every layer the built cell opens is inside the pinned pack version: no file of another version is needed."""
+    config, stage, _, _, pack = cell
+    folder = Path(pack.asset(config["assets"]["robot"])).parents[1]
+    assert folder.name == config["pack"]["version"] == "v3" and folder.parent.name == config["pack"]["id"]
+    layers = [Path(layer.realPath) for layer in stage.GetUsedLayers() if layer.realPath]
+    assert layers and all(folder in path.parents for path in layers), [str(p) for p in layers if folder not in p.parents]
 
 
 def test_wrist_camera_prim_carries_the_configured_rotation_once(cell):
     config, stage, report, camera_report, _ = cell
     cache = UsdGeom.XformCache()
     camera = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(camera_report["cameras"]["wrist"]["prim_path"]))
-    tool0 = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["tool0_path"]))
-    view = tool0.GetInverse().TransformDir(camera.TransformDir(Gf.Vec3d(0, 0, -1)))
+    rg2 = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(_rg2_frame(stage, report, config)))
+    view = rg2.GetInverse().TransformDir(camera.TransformDir(Gf.Vec3d(0, 0, -1)))
     expected = cameras._rotate_vector(
-        cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
+        cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_rg2_deg"]), [0.0, 0.0, 1.0])
     assert list(view) == pytest.approx(expected, abs=1e-6)
+    origin = rg2.GetInverse().Transform(camera.ExtractTranslation())
+    assert list(origin) == pytest.approx(config["wrist_camera"]["offset_in_rg2_m"], abs=1e-6)
 
 
 def _bounds(stage, path):

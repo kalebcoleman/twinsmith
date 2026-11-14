@@ -124,12 +124,26 @@ def test_intrinsics_follow_config_resolution_and_fov(config, tmp_path):
         assert camera["depth"]["units"] == "m"
 
 
-def test_wrist_offset_and_optical_to_usd_conversion(config, tmp_path):
-    config["wrist_camera"]["rotation_in_tool0_deg"] = [0.0, 0.0, 0.0]
+def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_path):
+    """The pose is configured in the RG2 body frame; with the shipped stack that frame is tool0 moved 47.92 mm along
+    the tool axis (Bota 32 mm + Quick Changer 15.92 mm) and turned -90 degrees about it."""
+    rg2_t, rg2_q, length = cameras.rg2_in_tool0(config)
+    assert length == pytest.approx(config["bota"]["length_m"] + config["quick_changer"]["standoff_m"])
+    assert rg2_t == pytest.approx([0, 0, length])
+    half = math.sqrt(0.5)
+    assert rg2_q == pytest.approx([half, 0, 0, -half])
+    assert cameras._rotate_vector(rg2_q, [0, 0, 1]) == pytest.approx([0, 0, 1])      # approach axis = tool0 +Z
+    assert cameras._rotate_vector(rg2_q, [0, 1, 0]) == pytest.approx([1, 0, 0])      # finger-opening axis
+    assert cameras._rotate_vector(rg2_q, [1, 0, 0]) == pytest.approx([0, -1, 0])     # out of the back face
+
+    config["wrist_camera"]["rotation_in_rg2_deg"] = [0.0, 0.0, 0.0]
+    config["wrist_camera"]["offset_in_rg2_m"] = [0.01, -0.02, 0.03]
     wrist = build(config, tmp_path)["cameras"]["wrist"]
-    offset = config["wrist_camera"]["offset_in_tool0_m"]
+    offset = [-0.02, -0.01, 0.03 + length]
     assert wrist["optical"]["translation_m"] == pytest.approx(offset)
-    assert wrist["optical"]["quaternion_wxyz"] == pytest.approx([1, 0, 0, 0])
+    assert wrist["optical"]["quaternion_wxyz"] == pytest.approx(rg2_q)
+    assert wrist["mount"]["offset_in_tool0_m"] == pytest.approx(offset)
+    assert wrist["mount"]["frame"] == "rg2" and wrist["mount"]["stack_length_m"] == pytest.approx(length)
     matrix = wrist["optical"]["matrix4x4_row_major"]
     assert [matrix[0][3], matrix[1][3], matrix[2][3]] == pytest.approx(offset)
     assert [matrix[row][2] for row in range(3)] == pytest.approx([0, 0, 1])
@@ -138,20 +152,45 @@ def test_wrist_offset_and_optical_to_usd_conversion(config, tmp_path):
     assert wrist["usd_camera"]["optical_from_usd"]["rotation_deg_xyz"] == [180.0, 0.0, 0.0]
 
     rotated = copy.deepcopy(config)
-    rotated["wrist_camera"]["rotation_in_tool0_deg"] = [0, 0, 90]
+    rotated["wrist_camera"]["rotation_in_rg2_deg"] = [0, 0, 90]
     camera = build(rotated, tmp_path)["cameras"]["wrist"]
-    half = math.sqrt(0.5)
-    assert camera["optical"]["quaternion_wxyz"] == pytest.approx([half, 0, 0, half])
+    assert camera["optical"]["quaternion_wxyz"] == pytest.approx([1, 0, 0, 0])       # -90 (stack) + 90 (camera)
     # The wrist root carries the optical rotation; the camera prim keeps only Rx(180 deg).
     assert camera["usd_camera"]["quaternion_wxyz"] == pytest.approx([0, 1, 0, 0])
+    bracket = next(part for part in build(rotated, tmp_path)["parts"] if part["role"] == "wrist_mount")
+    assert bracket["local"]["quaternion_wxyz"] == pytest.approx([half, 0, 0, -half])
+    assert bracket["local"]["translation_m"] == pytest.approx([0.02, 0.01, -0.03])   # the RG2 frame, seen from the wrist root
 
-    shifted = copy.deepcopy(config)
-    shifted["wrist_camera"]["offset_in_tool0_m"] = [-0.1, -0.2, -0.3]
-    camera = build(shifted, tmp_path)["cameras"]["wrist"]
-    assert camera["optical"]["translation_m"] == pytest.approx([-0.1, -0.2, -0.3])
-    bracket = next(part for part in build(shifted, tmp_path)["parts"]
-                   if part["role"] == "wrist_mount")
-    assert bracket["local"]["translation_m"] == pytest.approx([0.1, 0.2, 0.3])      # tool0, seen from the wrist root
+
+def test_wrist_camera_follows_the_rg2_when_the_stack_changes(config, tmp_path):
+    """The bracket is on the gripper: a longer stack moves the camera in tool0 and leaves it where it was on the RG2."""
+    before = build(config, tmp_path)
+    longer = copy.deepcopy(config)
+    longer["bota"]["length_m"] += 0.02
+    longer["stack"]["order"] = ["quick_changer", "bota", "rg2"]
+    after = build(longer, tmp_path)
+    old, new = (report["cameras"]["wrist"]["optical"]["translation_m"] for report in (before, after))
+    assert new == pytest.approx([old[0], old[1], old[2] + 0.02])
+
+    def bracket(report):
+        return next(part for part in report["parts"] if part["role"] == "wrist_mount")["local"]
+
+    assert bracket(after) == bracket(before)
+
+    turned = copy.deepcopy(config)          # the RG2 mounted a quarter turn further round the tool axis
+    turned["asset_layout"]["rg2"]["mount_pose"]["orientation_wxyz"] = list(cameras._quat_mul(
+        config["asset_layout"]["rg2"]["mount_pose"]["orientation_wxyz"], [math.sqrt(0.5), math.sqrt(0.5), 0, 0]))   # inlet +X is the tool axis
+    moved = build(turned, tmp_path)["cameras"]["wrist"]["optical"]["translation_m"]
+    assert moved[2] == pytest.approx(old[2])
+    assert math.hypot(moved[0], moved[1]) == pytest.approx(math.hypot(old[0], old[1]))
+    assert [moved[0], moved[1]] != pytest.approx([old[0], old[1]])
+    assert bracket(build(turned, tmp_path)) == bracket(before)
+
+    unknown = copy.deepcopy(config)
+    del unknown["quick_changer"]["standoff_m"]
+    report = build(unknown, tmp_path)
+    assert report["cameras"]["wrist"]["status"] == "unavailable"
+    assert "quick_changer" in report["cameras"]["wrist"]["reason"]
 
 
 def test_overhead_look_at_pose_and_reach_clearance(config, tmp_path):
@@ -221,10 +260,10 @@ def test_parts_carry_asset_id_and_bom_tag(config, tmp_path):
     assert mount["local"]["translation_m"] == pytest.approx(
         [posts[0][0], (posts[0][1] + posts[1][1]) / 2, height / 2])
     bracket = next(part for part in parts if part["role"] == "wrist_mount")
-    offset = config["wrist_camera"]["offset_in_tool0_m"]
-    # The bracket is modelled in tool0, so it sits on tool0: the inverse of the wrist root's pose, unscaled.
+    offset = config["wrist_camera"]["offset_in_rg2_m"]
+    # The bracket is modelled in the RG2 body frame, so it sits on that frame: the inverse of the camera's pose in it.
     assert "scale" not in bracket["local"]
-    inverse = cameras._quat_conjugate(cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_tool0_deg"]))
+    inverse = cameras._quat_conjugate(cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_rg2_deg"]))
     assert bracket["local"]["quaternion_wxyz"] == pytest.approx(inverse)
     assert bracket["local"]["translation_m"] == pytest.approx(cameras._rotate_vector(inverse, [-v for v in offset]))
     assert str(tmp_path) not in json.dumps(report)
@@ -269,10 +308,10 @@ def test_missing_asset_is_partial_and_explicit(config, tmp_path):
 
 def test_missing_pose_marks_the_camera_unavailable(config, tmp_path):
     no_offset = copy.deepcopy(config)
-    del no_offset["wrist_camera"]["offset_in_tool0_m"]
+    del no_offset["wrist_camera"]["offset_in_rg2_m"]
     report = build(no_offset, tmp_path)
     assert report["cameras"]["wrist"]["status"] == "unavailable"
-    assert "offset_in_tool0_m" in report["cameras"]["wrist"]["reason"]
+    assert "offset_in_rg2_m" in report["cameras"]["wrist"]["reason"]
     assert report["cameras"]["overhead"]["status"] == "built"
     assert report["status"] == "partial"
 
@@ -299,14 +338,23 @@ def test_overhead_camera_is_left_out_when_disabled(config, tmp_path):
         build(config, tmp_path)
 
 
-def test_shipped_config_has_the_wrist_camera_only_on_the_underside():
+def test_shipped_config_has_the_wrist_camera_only_on_the_rg2_bracket():
     values, _ = hardware.load_config()
     assert values["overhead_camera"]["enabled"] is False
     wrist = values["wrist_camera"]
-    assert wrist["offset_in_tool0_m"][1] > 0        # tool0 +y is down with the tool forward and wrist_3 at 0
-    forward = cameras._rotate_vector(cameras._euler_xyz_deg_to_quat(wrist["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
-    assert forward[2] > 0.94 and forward[1] <= 0     # within 20 degrees of the tool axis, angled toward it if at all
-    assert 0.06 <= wrist["offset_in_tool0_m"][1] <= 0.15         # held out from the wrist by a bracket, not on the flange
+    assert "offset_in_tool0_m" not in wrist and "rotation_in_tool0_deg" not in wrist     # derived, never typed
+    x, y, z = wrist["offset_in_rg2_m"]
+    # Off the RG2's back face (+X; the body is 36 mm thick), clear of the plane the fingers move in, level with the body.
+    assert 0.018 + 0.0115 + 0.005 <= x <= 0.12
+    assert abs(y) <= 0.1 and 0.07 <= z <= 0.148
+    rotation = cameras._euler_xyz_deg_to_quat(wrist["rotation_in_rg2_deg"])
+    forward = cameras._rotate_vector(rotation, [0.0, 0.0, 1.0])
+    assert forward[2] > 0.94                                    # within 20 degrees of the gripper's approach axis
+    assert abs(cameras._rotate_vector(rotation, [1.0, 0.0, 0.0])[1]) > 0.94      # long axis along the finger-opening axis
+    assert cameras._rotate_vector(rotation, [0.0, 1.0, 0.0])[0] > 0.94           # image down is away from the gripper
+    report = cameras.plan_cameras(values, ROBOT)
+    in_tool0 = report["cameras"]["wrist"]["optical"]["translation_m"]
+    assert in_tool0[2] == pytest.approx(z + values["bota"]["length_m"] + values["quick_changer"]["standoff_m"])
     assert wrist["resolution"] == [1280, 720] and wrist["color_fov_deg"] == [69.4, 42.5]
     # The near plane clears the camera's own body proxy, or the camera renders the inside of its box.
     assert wrist["body_size_m"][2] / 2 < wrist["clipping_range_m"][0] <= 0.03
@@ -337,7 +385,7 @@ def test_d415_is_the_unconfirmed_proxy_and_never_d455(config, tmp_path):
     assert convention["forbidden_substitute"] == "D455/rsd455"
     assert report["cameras"]["wrist"]["body_geometry"]["verified"] is False
     assert "unconfirmed dimensioned proxy" in json.dumps(report)
-    assert report["asset_conventions"]["wrist_mount"]["axes"] == "tool0"
+    assert report["asset_conventions"]["wrist_mount"]["axes"] == "RG2 body frame"
 
 
 def test_repository_internal_old_cache_and_d455_paths_are_refused(config, tmp_path):
@@ -366,7 +414,7 @@ def test_required_config_and_provenance_are_returned(config, tmp_path):
     required = report["required_config"]
     for key in ("assets.d415", "assets.wrist_mount", "assets.overhead_mount",
                 "assets.overhead_release", "assets.overhead_shelf",
-                "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
+                "wrist_camera.offset_in_rg2_m", "wrist_camera.rotation_in_rg2_deg",
                 "wrist_camera.resolution", "wrist_camera.color_fov_deg",
                 "overhead_camera.position_m", "overhead_camera.look_at_m",
                 "overhead_camera.resolution", "overhead_camera.color_fov_deg",
@@ -375,8 +423,8 @@ def test_required_config_and_provenance_are_returned(config, tmp_path):
                 "interfaces.wrist_camera_topics", "interfaces.overhead_camera_topics"):
         assert key in required
     assert required["assets.d415"] == "d415"
-    assert required["wrist_camera.offset_in_tool0_m"] == pytest.approx(
-        config["wrist_camera"]["offset_in_tool0_m"])
+    assert required["wrist_camera.offset_in_rg2_m"] == pytest.approx(
+        config["wrist_camera"]["offset_in_rg2_m"])
     assert report["provenance"]["pack"] == {"id": "ur5e-jenga-workcell", "version": "v1"}
     assert report["provenance"]["assets"]["loader"] == "Pack"
     assert set(report["provenance"]["assets"]["resolved_roles"]) == set(cameras.REQUIRED_ASSET_ROLES)
@@ -459,8 +507,7 @@ def test_authoring_creates_referenced_parts_and_cameras(config, tmp_path):
     root = stage.GetPrimAtPath(wrist["root_path"])
     assert root.GetParent().GetPath() == Sdf.Path(ROBOT["tool0_path"])
     ops = {op.GetOpName(): op for op in UsdGeom.Xformable(root).GetOrderedXformOps()}
-    assert tuple(ops["xformOp:translate"].Get()) == pytest.approx(
-        config["wrist_camera"]["offset_in_tool0_m"])
+    assert tuple(ops["xformOp:translate"].Get()) == pytest.approx(wrist["mount"]["offset_in_tool0_m"])
 
     camera = UsdGeom.Camera(stage.GetPrimAtPath(wrist["prim_path"]))
     assert camera

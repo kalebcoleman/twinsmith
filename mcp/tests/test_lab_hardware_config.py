@@ -36,7 +36,11 @@ def test_default_cell_has_provenance_and_no_task_objects():
     assert tower["jenga"]["block_size_m"] == [0.072, 0.024, 0.014]
     assert tower["jenga"]["tower_layers_built"] == 18
     assert cfg["gravity"]["mode"] == "physics"
-    assert raw["wrist_camera"]["offset_in_tool0_m"]["status"] == "unconfirmed"
+    assert raw["wrist_camera"]["offset_in_rg2_m"]["status"] == "unconfirmed"
+    for key in ("offset_in_rg2_m", "rotation_in_rg2_deg"):          # read from a photo: never to be taken as measured
+        assert raw["wrist_camera"][key]["source"].startswith("Unconfirmed, estimated from photo")
+    assert raw["pack"]["version"]["value"] == "v3"
+    assert raw["stack"]["order"]["value"] == ["bota", "quick_changer", "rg2"]   # the Bota question is open, not decided
 
 
 @pytest.mark.parametrize("order", [["bota", "rg2", "quick_changer"], ["bota", "bota", "rg2"]])

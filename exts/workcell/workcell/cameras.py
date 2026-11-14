@@ -17,9 +17,18 @@ Xform prim at the local origin, no joints):
   +X right, +Y down, +Z forward. It is not a D455/rsd455 substitute. The render
   camera sits at this origin and applies Rx(180 deg) because a USD camera looks
   down -Z with +Y up.
-* ``wrist_mount``: centred proxy box 0.030 x 0.060 x 0.012 m, local axes equal
-  to the optical frame. It is centred between tool0 and the camera optical
-  origin; the manifest may refine that with ``asset_layout.wrist_mount.mount_pose``.
+* ``wrist_mount``: the printed bracket that clamps the RG2 body
+  (``exts/workcell/cad/rg2_camera_bracket.py``), in the RG2 body frame, which is
+  the pack's ``onrobot_rg2_base_link``: origin on the tool axis at the top of the
+  RG2's Quick Changer tool side, +Z toward the fingertips, +Y the finger-opening
+  axis, +X out of the back face (the front face, with the two M3 holes, is -X).
+
+The wrist camera's pose is configured in that RG2 body frame
+(``wrist_camera.offset_in_rg2_m`` and ``rotation_in_rg2_deg``), because the
+bracket is fixed to the gripper. Its pose in tool0 is derived from the
+configured stack (``stack.order``, ``bota.length_m``,
+``quick_changer.standoff_m``, ``asset_layout.rg2.mount_pose``), so it follows
+the RG2 when the stack changes.
 * ``overhead_mount``: open three-member frame with a unit envelope, centred at
   the origin, axes equal to the world. Member proportions are provisional.
   It is scaled to the gantry envelope: extrusion thickness x post span x height,
@@ -45,6 +54,7 @@ except ImportError:  # loaded by file path in host tests
 
 
 SCHEMA = 1
+TOOL0_IN_FLANGE = (0.5, 0.5, 0.5, 0.5)  # wxyz: UR's flange (+X out of the flange) to tool0 (+Z out of the flange)
 OVERHEAD_ASSET_ROLES = ("overhead_mount", "overhead_release", "overhead_shelf")
 REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", *OVERHEAD_ASSET_ROLES)
 D415_BODY_SIZE_M = (0.099, 0.020, 0.023)
@@ -56,7 +66,7 @@ REQUIRED_ROBOT_FRAMES = ("flange_path", "tool0_path", "gripper_path", "articulat
 REQUIRED_CONFIG_PATHS = (
     "pack.id", "pack.version",
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
-    "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
+    "wrist_camera.offset_in_rg2_m", "wrist_camera.rotation_in_rg2_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
     "wrist_camera.body_size_m",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
@@ -146,7 +156,12 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
             "conventions": {"optical": "+X right, +Y down, +Z forward",
                             "usd_camera": "-Z forward, +Y up",
                             "conversion": "Rx(180 deg) about the camera +X axis",
-                            "rotation_in_tool0_deg_order": "extrinsic XYZ"},
+                            "rotation_in_rg2_deg_order": "extrinsic XYZ",
+                            "rg2_frame": "the pack's RG2 body frame (asset_layout.rg2.mount_frame): origin on the "
+                                         "tool axis at the top of the Quick Changer tool side, +Z toward the "
+                                         "fingertips, +Y the finger-opening axis, +X out of the back face",
+                            "tool0_pose": "derived from the RG2 pose in tool0: stack length along the tool "
+                                          "axis and asset_layout.rg2.mount_pose"},
         },
         "required_config": {path: _value(config, path) for path in REQUIRED_CONFIG_PATHS},
         "asset_conventions": _asset_conventions(config),
@@ -252,15 +267,51 @@ def read_frame(sensor, annotator="rgb"):
 
 # --------------------------------------------------------------------------- plan
 
+def rg2_in_tool0(config):
+    """The RG2 body frame in tool0 as ``(translation_m, quaternion_wxyz, stack_length_m)``, from the configured stack.
+
+    ``robot.build_robot`` puts every stack part's inlet on the flange frame, moved along ``stack.axis_in_flange`` by
+    the lengths of the parts before it; ``asset_layout.rg2.mount_pose`` is that inlet in the RG2 body frame. tool0
+    is the flange frame turned by UR's fixed convention (tool0 +Z = flange +X).
+    """
+    stack = config.get("stack") or {}
+    order = list(stack.get("order") or [])
+    if "rg2" not in order:
+        raise ValueError("stack.order must contain rg2 to place the wrist camera")
+    lengths = {"bota": (config.get("bota") or {}).get("length_m"),
+               "quick_changer": (config.get("quick_changer") or {}).get("standoff_m")}
+    length = 0.0
+    for role in order[:order.index("rg2")]:
+        value = lengths.get(role)
+        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            raise ValueError(f"the length of {role} is missing; the RG2 cannot be placed in tool0")
+        length += float(value)
+    axis = _vector(stack.get("axis_in_flange", [1.0, 0.0, 0.0]), 3, "stack.axis_in_flange")
+    pose = (((config.get("asset_layout") or {}).get("rg2") or {}).get("mount_pose")) or {}
+    inlet_t = _vector(pose.get("position_m", [0.0, 0.0, 0.0]), 3, "asset_layout.rg2.mount_pose.position_m")
+    inlet_q = _normalized_quat(pose.get("orientation_wxyz", [1.0, 0.0, 0.0, 0.0]), "asset_layout.rg2.mount_pose.orientation_wxyz")
+    body_q = _quat_conjugate(inlet_q)                                    # the RG2 body in its inlet (= flange) frame
+    body_t = [-value for value in _rotate_vector(body_q, inlet_t)]
+    flange_q = _quat_conjugate(TOOL0_IN_FLANGE)                          # the flange frame in tool0
+    in_flange = [axis[index] * length + body_t[index] for index in range(3)]
+    return _rotate_vector(flange_q, in_flange), _quat_mul(flange_q, body_q), length
+
+
 def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     section = config.get("wrist_camera") or {}
-    offset = _vector(section.get("offset_in_tool0_m"), 3, "wrist_camera.offset_in_tool0_m")
-    rotation = _vector(section.get("rotation_in_tool0_deg"), 3, "wrist_camera.rotation_in_tool0_deg")
+    in_rg2 = _vector(section.get("offset_in_rg2_m"), 3, "wrist_camera.offset_in_rg2_m")
+    rotation = _vector(section.get("rotation_in_rg2_deg"), 3, "wrist_camera.rotation_in_rg2_deg")
     if rotation is None:
         rotation = [0.0, 0.0, 0.0]
-        limitations.append("wrist_camera.rotation_in_tool0_deg is missing; identity rotation assumed.")
-    if offset is None:
-        return _unavailable("wrist", "wrist_camera.offset_in_tool0_m is missing; the wrist camera cannot be placed."), [], None
+        limitations.append("wrist_camera.rotation_in_rg2_deg is missing; identity rotation assumed.")
+    if in_rg2 is None:
+        return _unavailable("wrist", "wrist_camera.offset_in_rg2_m is missing; the wrist camera cannot be placed."), [], None
+    try:
+        rg2_t, rg2_q, stack_length = rg2_in_tool0(config)
+    except ValueError as exc:
+        return _unavailable("wrist", f"{exc}; the wrist camera cannot be placed."), [], None
+    in_rg2_q = _euler_xyz_deg_to_quat(rotation)
+    offset = [rg2_t[index] + value for index, value in enumerate(_rotate_vector(rg2_q, in_rg2))]
     resolution, _, intrinsics = _camera_optics(section, "wrist_camera", limitations)
     if resolution is None:
         return _unavailable("wrist", "wrist_camera resolution or FOV is missing/invalid; the wrist camera cannot be built."), [], None
@@ -268,19 +319,19 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     tool0 = robot["tool0_path"]
     root = f"{tool0}/wrist_d415"
     cam_path = f"{root}/D415_color"
-    optical_q = _euler_xyz_deg_to_quat(rotation)
+    optical_q = _quat_mul(rg2_q, in_rg2_q)
     optical = _pose_block(offset, optical_q)
     # The wrist root prim already carries the optical pose; the camera prim under it only
     # needs the optical-to-USD conversion (applying optical_q again would double the tilt).
     usd = _usd_block(cam_path, root, [0.0, 0.0, 0.0], list(USD_CAMERA_ROTATION))
 
     body_size = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    # The bracket asset is modelled in tool0 coordinates, so it is placed on tool0: in the wrist root frame, which
-    # carries the optical pose, that is the inverse of that pose.
-    inverse = _quat_conjugate(optical_q)
+    # The bracket asset is modelled in the RG2 body frame, so it is placed on that frame: in the wrist root frame,
+    # which carries the optical pose, that is the inverse of the camera's pose in the RG2 frame, whatever the stack.
+    inverse = _quat_conjugate(in_rg2_q)
     parts = []
     bracket = _part(config, assets, assets_cfg, "wrist_mount", f"{root}/bracket", root,
-                    _rotate_vector(inverse, [-value for value in offset]), inverse, "wrist camera bracket", limitations)
+                    _rotate_vector(inverse, [-value for value in in_rg2]), inverse, "wrist camera bracket", limitations)
     if bracket:
         parts.append(bracket)
     body = _part(config, assets, assets_cfg, "d415", f"{root}/body", root,
@@ -301,8 +352,13 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "mount": {"placement": section.get("mount_position"),
                   "asset_id": _value(config, "assets.wrist_mount"),
                   "bom_id": _bom_id(config, "wrist_mount"),
+                  "frame": "rg2",
+                  "offset_in_rg2_m": list(in_rg2),
+                  "rotation_in_rg2_deg": list(rotation),
+                  "stack_length_m": stack_length,
+                  "rg2_in_tool0": {"translation_m": list(rg2_t), "quaternion_wxyz": list(rg2_q)},
                   "offset_in_tool0_m": list(offset),
-                  "rotation_in_tool0_deg": list(rotation)},
+                  "quaternion_in_tool0_wxyz": list(optical_q)},
         "asset_id": _value(config, "assets.d415"),
         "bom_id": _bom_id(config, "d415"),
         "geometry_status": geometry,
@@ -318,8 +374,12 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "physics": _physics_block(tool0),
     }
     limitations.append(
-        "The D415 body asset is in the colour optical frame and the bracket asset in tool0; a bracket fits "
-        "only the camera pose it was modelled for (scripts/workcell_camera_assets.py).")
+        "The D415 body asset is in the colour optical frame and the bracket asset in the RG2 body frame; a bracket "
+        "fits only the camera pose it was modelled for (scripts/workcell_bracket_assets.py). The pose is an "
+        "estimate from one photo of the real bracket, not a measurement.")
+    limitations.append(
+        "The wrist camera's tool0 pose is derived from the configured stack and UR's flange-to-tool0 convention; "
+        "the camera and bracket prims hang from tool0 (wrist_3_link), so their weight is not in the Bota reading.")
     root_entry = {"name": "wrist_mount", "prim_path": root, "parent": tool0,
                   "translation_m": list(offset), "quaternion_wxyz": list(optical_q)}
     return camera, parts, root_entry
@@ -649,8 +709,8 @@ def _asset_conventions(config):
                  "axes": "D415 colour optical frame: +X right, +Y down, +Z forward",
                  "origin": "the colour sensor; the render camera applies Rx(180 deg) for USD",
                  "forbidden_substitute": "D455/rsd455"},
-        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_camera_assets.py)",
-                        "axes": "tool0", "placement": "on tool0, unscaled"},
+        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_bracket_assets.py)",
+                        "axes": "RG2 body frame", "placement": "on the RG2 body frame, unscaled"},
         "overhead_mount": {"kind": "unconfirmed open gantry proxy", "dimensions_m": [1.0, 1.0, 1.0],
                            "scale": "extrusion thickness x post span x height, centred at the post midpoint",
                            "axes": "world / Z-up"},
@@ -748,6 +808,14 @@ def _quat_mul(left, right):
             lw * rx + lx * rw + ly * rz - lz * ry,
             lw * ry - lx * rz + ly * rw + lz * rx,
             lw * rz + lx * ry - ly * rx + lz * rw)
+
+
+def _normalized_quat(value, label):
+    quaternion = _vector(value, 4, label)
+    norm = math.sqrt(sum(item * item for item in quaternion)) if quaternion else 0.0
+    if not norm:
+        raise ValueError(f"{label} must be a non-zero quaternion")
+    return tuple(item / norm for item in quaternion)
 
 
 def _quat_conjugate(quaternion):
