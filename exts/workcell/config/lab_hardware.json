@@ -699,15 +699,6 @@
       "status": "confirmed",
       "source": "Kaleb, 2026-11-14: the wrist camera is on the underside. Its measured offset and rotation are still pending (the bracket CAD from Max has not arrived)."
     },
-    "bracket_size_m": {
-      "value": [
-        0.03,
-        0.06,
-        0.012
-      ],
-      "status": "unconfirmed",
-      "source": "Placeholder: Printed bracket stand-in until Max's CAD arrives."
-    },
     "bracket_mass_kg": {
       "value": 0.02,
       "status": "unconfirmed",

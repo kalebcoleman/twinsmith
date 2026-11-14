@@ -337,8 +337,7 @@ def test_d415_is_the_unconfirmed_proxy_and_never_d455(config, tmp_path):
     assert convention["forbidden_substitute"] == "D455/rsd455"
     assert report["cameras"]["wrist"]["body_geometry"]["verified"] is False
     assert "unconfirmed dimensioned proxy" in json.dumps(report)
-    assert report["asset_conventions"]["wrist_mount"]["dimensions_m"] == pytest.approx(
-        [0.030, 0.060, 0.012])
+    assert report["asset_conventions"]["wrist_mount"]["axes"] == "tool0"
 
 
 def test_repository_internal_old_cache_and_d455_paths_are_refused(config, tmp_path):
