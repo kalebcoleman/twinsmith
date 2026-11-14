@@ -44,7 +44,12 @@ Graph-as-Policy's base dependencies include cuRobo and `cuda-core[cu12]`, and VA
 (cd vabar && uv sync && uv run python -m vabar list && uv run python -m vabar warmup)
 ```
 
-`gap skills check --download` needs `HF_TOKEN` (the SAM 3 weights are gated). VABAR's `warmup` compiles the renderer's
+`gap skills check --download` needs `HF_TOKEN`, and the SAM 3 weights are gated: the Hugging Face account behind the
+token must also be granted access at `https://huggingface.co/facebook/sam3`. Eight of VABAR's twelve bench cells fail
+without it: their reference graphs, `gap_perception` (tool hanging, gear meshing, syringe packing) and `gap_perception_loop`
+(tool sorting), call `sam3.segment_text`. The four cable cells run with upstream's palette segmenter, which `bench` selects
+(`ROBOSIMSTUDIO_SEGMENTATION_BACKEND=palette`); a plain `run` of a cable graph does not set it, and the runtime then picks
+SAM 3. The routines do not use it. VABAR's `warmup` compiles the renderer's
 shader cache and Warp kernels once, in 5 to 8 minutes; a graph cell's first run fails without it. Graph-as-Policy asks
 for 24 GB of GPU memory: run it on a PC that has that. `gap(action="status")` reports a smaller GPU rather than working
 around it.
@@ -173,12 +178,19 @@ Like `allow_paid`, a project `twinsmith.toml` cannot set it. Read a generated gr
 |---|---|---|
 | `status` | Nothing upstream | Checkout, commit and pin; the commits and pins of the Graph-as-Policy and skill checkouts; whether `warmup` has run (its stamps in the renderer cache) |
 | `list` | `python -m vabar list` | Every `suite/variant`. Read-only |
-| `run` | `python -m vabar run --task <t> --solve routine\|graph\|idle [--graph <label>] [--episodes ...]` | A job that uses the GPU. `graph` is a label the task ships, such as `gt` |
-| `bench` | `python -m vabar bench --cell <c> --solve ... [--limit n] --workers <1-4>` | `print_only=true` (the default) returns the command and starts nothing; `false` runs it as a job that uses the GPU |
-| `results` | Nothing upstream | Reads the `episode_results.jsonl` files in a run folder (at most 200, 8 MB each; links and files outside the folder are skipped) and returns successes per task and solver; without `run`, the newest run folders |
+| `run` | `python -m vabar run --task <t> --solve routine\|graph\|idle [--graph <label>] [--episodes ...] [--bus-timeout <s>]` | A job that uses the GPU. `graph` is a label the task ships, such as `gt`. `bus_timeout_s` (30 to 3600) is how long a graph's tool call may wait. Upstream's default is 30 s; with `solve="graph"` and no value the tool passes what bench cells use, 180 s, or 600 s for the cable suites (`cable_route`, `usbc_insert`). A cold first run compiles Newton's IK kernel inside a tool call (44 s on the ASU PC), and `warmup` does not compile it |
+| `bench` | `python -m vabar bench --cell <c> --solve ... [--limit n] --workers <1-4>` | `print_only=true` (the default) runs upstream's `--print` with the GPU hidden: it writes nothing and returns the resolved jobs (tasks, episodes, flags) or upstream's refusal of an unknown cell. `false` runs it as a job that uses the GPU; pass the same `name` to get the folder the plan printed (a name whose folder exists is refused either way) |
+| `results` | Nothing upstream | Reads the `episode_results.jsonl` files in a run folder (at most 200, 8 MB each; links and files outside the folder are skipped) and returns successes per task and solver, with the three commonest reasons the others failed (upstream's `termination_reason`); without `run`, the newest run folders |
 
 `warmup` and `studio` are not wrapped: the owner runs the one-time warmup, and `studio` serves a viewer on the network.
-Run folders are `<workspace>/runs/vabar/<name>/`.
+Run folders are `<workspace>/runs/vabar/<name>/`. Upstream has no real-hardware option at the pin (`run --help` and
+`bench --help` read on 2026-11-13).
+
+A `bench` with more than one worker starts a private NVIDIA MPS daemon (`vabar/mps.py`): only the run's own processes
+connect to it, so other GPU jobs are not affected, and upstream stops it when the run ends. A job cancelled with
+`jobs(action="cancel")` is killed before that cleanup can run, and the daemon (`nvidia-cuda-mps-control`) can be left
+behind. Look for it after cancelling a multi-worker bench; it stops with `echo quit | CUDA_MPS_PIPE_DIRECTORY=<its pipe
+folder> nvidia-cuda-mps-control`.
 
 ## Jobs, guards and answers
 
@@ -195,5 +207,20 @@ warning that it differs from the tested pin.
 ## What has been verified
 
 The host tests run both tools against fake checkouts: the exact argument lists, the refusals, the scrubbed environment,
-the paid-call switch and the jobs. With the real checkouts cloned at their pins and no environments, `status` reports the
-pins and the missing environments. No Graph-as-Policy or VABAR process has run from these tools yet.
+the paid-call switch and the jobs.
+
+On the ASU PC on 2026-11-13, with the three checkouts at their pins and their environments built (Graph-as-Policy on
+Python 3.11, VABAR on 3.12; `gap skills check`: 43 bundles pass, the SAM 3 weights refused as above):
+
+- **CPU, through the tools:** `gap` `status` (pins match, 97,887 MiB against 24 GB), `tools`, `check` and `validate`
+  (`examples/libero_quickstart/graph`: trusted, 8 script nodes, `OK: 0 errors, 0 warning(s)`); `vabar` `status`
+  (warmup ran), `list` (374 variants), `bench` with `print_only` (`tool_hanging/L1`: 4 jobs, 30 episodes; an unknown cell
+  is refused with upstream's list of cells) and `results` on a real run folder.
+- **CLI spellings:** `gap run`, `check`, `tools list` and `generate`, and `vabar run` and `bench`, read with `--help` at
+  the pins; the argument lists the tools build match them. The `task`, `solution`, `success` and `termination_reason`
+  fields `results` reads are the ones VABAR's own RoboSimStudio (`39b7a6e`) writes.
+- **GPU, run once from an agent session, not by a test:** upstream's `warmup` on all six suites (18 to 247 s each), then,
+  through the tool, `vabar run` of `tool_hanging/scissors_level1` with the `gt` graph: the first episode failed with
+  `BusTimeout: build was not serviced within 30 s` (which is why `bus_timeout_s` exists), and a rerun succeeded, 1 of 1.
+
+Not yet run: a `gap run`, a `generate`, a bench cell, and any graph that uses SAM 3.

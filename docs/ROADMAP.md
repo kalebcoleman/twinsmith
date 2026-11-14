@@ -42,8 +42,9 @@ What `origin/main` shows today. Each line is from the code or a recorded result,
 | Generic scenes on Newton | The 54-block tower holds for 10 s at 500 Hz (1.7 mm; Isaac Sim 6.2, Newton 1.6.1). Raycast is refused; a Franka joint move does not settle yet. |
 | Work cell on Newton | Builds and holds since #112 (pack `ur5e-jenga-workcell/v2` and per-engine drives). Live on Isaac Sim 6.2 / Newton 1.6.1: the arm holds within 0.05 degrees at the presentation pose, the RG2 fingers move with the mimic followers within 0.003 degrees, and the tower drifts at most 0.54 mm over 11 s after settling. Not yet: the force/torque read, cameras, `mirror_real` and measured finger widths ([details](OPEN-ITEMS.md#work-cell-on-newton)). |
 | Jenga variation | Seeded per-block variation of size, mass and friction exists (`measured_pending` profile); every number in it is unconfirmed. |
-| Real-to-sim | `robosim` reproduced one real push by image displacement on CPU and GPU. It does not fit mass or friction, match rotation, or estimate the camera. Pinned to RoboSimStudio `87b5e32`. |
-| Perception, planning, evaluation | Nothing. The work cell reads its camera configuration only. |
+| Real-to-sim | `robosim` reproduced one real push by image displacement on CPU and GPU. It does not fit mass or friction, match rotation, or estimate the camera. Pinned to RoboSimStudio `ba3650c` (#116), where the CPU push gives the same result as at `87b5e32`. `sysid` recovers known parameters from synthetic data on CPU; no real dataset has been fitted. |
+| Perception | Nothing. The work cell reads its camera configuration only. |
+| Planning, evaluation | `gap` and `vabar` (#115, #127) at VABAR 1.0's pins, with their environments built on the ASU PC. One `gt` graph episode has run on its GPU; no bench cell and no `gap run` yet ([what was verified](PLANNING-EVAL.md#what-has-been-verified)). |
 | Real robot | Nothing in this repository drives one, by design. Only the owner's laptop connects to it ([hosts](#hardware-and-hosts)). |
 
 ## Hardware and hosts
@@ -58,7 +59,7 @@ named by role here, not by hostname.
 | Runs | RoboSimStudio, real-to-sim, `sysid`, heavy simulation, Graph-as-Policy and VABAR, and the Jenga games | Development and short checks while the owner is there |
 | GPU | NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition, 97,887 MiB, driver 595.99.02 | RTX 5080, 16 GB, as the repository's recorded test machine. Not re-verified from here |
 | System | Ubuntu 22.04.5, 32 CPU threads, 125 GiB of memory | Ubuntu 24.04.5, as recorded |
-| Installed | Isaac Sim 6.0.0.0 to 6.2.0.0, Isaac Lab 2.3.2 and 3.0.0, RoboSimStudio at `87b5e32`, work-cell pack `v1`, the twinsmith host | Not verified from here |
+| Installed | Isaac Sim 6.0.0.0 to 6.2.0.0, Isaac Lab 2.3.2 and 3.0.0, RoboSimStudio at `ba3650c`, Graph-as-Policy, its skill library and VABAR at VABAR 1.0's pins, `sysid`'s MuJoCo 4.0.1, work-cell pack `v1`, the twinsmith host | Not verified from here |
 
 The ASU column was read on that machine on 2026-11-13 (`nvidia-smi`, `scripts/env.py find`, the checkouts themselves).
 
@@ -85,7 +86,7 @@ twinsmith and everything in this roadmap run on the two PCs. Nothing here is ins
   game running. Until then `<workspace>` on that machine is the old folder and must be named with `TWINSMITH_WORKSPACE`;
   without it `scripts/env.py find` finds no install.
 - **Graph-as-Policy does not run on the home PC.** It asks for 24 GB of GPU memory and the RTX 5080 has 16 GB. It runs on the
-  ASU PC only, and it and VABAR are not installed there yet.
+  ASU PC only, where it and VABAR were installed on 2026-11-13.
 - **The home PC cannot host anything unattended:** no scheduled job, no long run, no service another step waits for.
 - **No recorded Newton result is from the ASU PC.** The work-cell probe names an RTX 5080; the tower hold does not record
   its GPU. Each is rerun on the ASU PC's GPU, driver and Ubuntu release before it counts as that host's baseline.
@@ -211,7 +212,7 @@ simulation got.
 
 **Scope.**
 - Bump RoboSimStudio from `87b5e32` and call its module entry point; add `sysid` in the `real2sim` group on MuJoCo's official
-  system identification module ([plan](plans/04-robosim-bump-and-sysid.md)).
+  system identification module (#116).
 - First target: the arm's joint parameters (damping, armature, friction loss, gains) from recorded joint trajectories, because
   that data needs no perception. Second target: block mass and friction from push recordings, once Phase 5 gives object poses.
 - A data contract for approved exports: a folder of episodes the owner copies off the laptop, the one machine connected to
@@ -224,6 +225,11 @@ simulation got.
 - `robosim` runs at the new pin on CPU with the same push result as before, within its own tolerance.
 
 **Depends on.** Phase 2 for the simulated arm to compare against. The `robosim` bump depends on nothing.
+
+**Status.** The tools are done (#116):
+- `robosim` runs at `ba3650c` on CPU with the same push result as at `87b5e32`; no `cuda:0` run at the new pin yet.
+- `sysid` recovers damping and armature from synthetic data in a CPU test.
+- No real joint log has been fitted, so nothing in `lab_hardware.json` comes from it yet.
 
 ### Phase 5: markerless perception
 
@@ -253,7 +259,7 @@ own evaluated the same way.
 
 **Scope.**
 - `gap` in the `planning` group and `vabar` in the `eval` group: one grouped tool each, the upstream command line in its own
-  environment, simulation only ([plan](plans/03-planning-eval-wrappers.md)).
+  environment, simulation only (#115, #127).
 - Reproduce one published VABAR cell to prove the stack before measuring anything of ours.
 - Express a Jenga turn as a skill graph and evaluate it with the Phase 3 protocol.
 
@@ -264,6 +270,14 @@ own evaluated the same way.
 
 **Depends on.** Phase 0 (the groups) and Phase 3 (the task). It runs on the ASU PC only
 ([hardware and hosts](#hardware-and-hosts)).
+
+**Status.** The wrappers are done (#115, #127), and the refusal test is in place:
+- The environments are built on the ASU PC. `vabar list`, `bench` plans and `gap validate` run on CPU, and one `gt`
+  graph episode has run on the GPU ([details](PLANNING-EVAL.md#what-has-been-verified)).
+- The published-cell rerun is still open. Eight of the twelve bench cells need SAM 3, whose gated weights the owner's
+  Hugging Face account must be granted. The cable cells (`cable_routing/L1` uses the `gt` graph) run with upstream's
+  palette segmenter and need no access.
+- The Jenga skill graph is still open.
 
 ### Phase 7: parts beyond Jenga
 
@@ -302,10 +316,10 @@ the real robot runs the result as approved ROS 2 code.
 | 0 | Computer use (#108, merged 2026-11-13) | 0 | Done |
 | 1 | Mesh preparation, validation, and the work-cell pack rebuild | 1 | Merged as #112 (with the work cell on Newton) |
 | 2 | Toolset groups, stubs deleted, README table | 0 | Merged as #120; the final groups and names follow in the tool-groups pull request |
-| 3 | `gap` and `vabar` wrappers | 6 | [03-planning-eval-wrappers](plans/03-planning-eval-wrappers.md) |
-| 4 | RoboSimStudio bump and `sysid` | 4 | [04-robosim-bump-and-sysid](plans/04-robosim-bump-and-sysid.md) |
+| 3 | `gap` and `vabar` wrappers | 6 | Merged as #115, with `gap validate` in #127 |
+| 4 | RoboSimStudio bump and `sysid` | 4 | Merged as #116 |
 
-Items 3 and 4 do not depend on each other. Later candidates, not yet specified: a bridge lease so parallel agents cannot
+Later candidates, not yet specified: a bridge lease so parallel agents cannot
 interleave changes in one Kit (`use_bridge` with `hold` and `release`), a step that returns observations in the same call,
 semantic clicks through the desktop accessibility tree, the CAD format, the pose service, and dataset export.
 

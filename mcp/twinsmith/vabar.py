@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -31,6 +32,12 @@ _EPISODES = re.compile(r"[0-9]+(:[0-9]+(:[0-9]+)?|(,[0-9]+)+)?")
 RESULT_FILES = 200
 RESULT_BYTES = 8 * 1024 * 1024   # read at most this much of one episode_results.jsonl
 WALK_ENTRIES = 200_000            # stop walking a run folder after this many entries
+REASONS = 3                       # failure reasons listed per results row
+# A graph run's tool-call wait when none is given: what upstream's bench cells use (vabar/benchmark.py:68 and :73 at the
+# pin), since upstream's own 30 s default fails a cold first run while a kernel compiles.
+GRAPH_BUS_TIMEOUT_S = 180
+CABLE_SUITES = ("cable_route", "usbc_insert")
+CABLE_BUS_TIMEOUT_S = 600
 
 
 def checkout(workspace=None, root=None) -> sibling.Checkout:
@@ -47,14 +54,15 @@ def warmup(co: sibling.Checkout) -> dict:
 
 
 def argv(co: sibling.Checkout, action: str, *, task=None, solve="routine", graph=None, episodes=None, cell=None,
-         limit=None, workers=1, out=None) -> list[str]:
+         limit=None, workers=1, out=None, bus_timeout_s=None) -> list[str]:
     """The command line for one action, from validated values only."""
     base = [str(co.bin("python")), "-m", "vabar"]
     if action == "list":
         return [*base, "list"]
     if action == "run":
         return [*base, "run", "--task", task, "--solve", solve, *(["--graph", graph] if graph else []),
-                *(["--episodes", episodes] if episodes else []), "--out", str(out)]
+                *(["--episodes", episodes] if episodes else []),
+                *(["--bus-timeout", str(bus_timeout_s)] if bus_timeout_s else []), "--out", str(out)]
     return [*base, "bench", "--cell", cell, "--solve", solve, *(["--limit", str(limit)] if limit else []),
             "--workers", str(workers), "--out", str(out)]
 
@@ -100,11 +108,15 @@ def results(co: sibling.Checkout, run=None) -> dict:
             except ValueError:
                 continue
             if isinstance(row, dict):
-                entry = table.setdefault((str(row.get("task")), str(row.get("solution"))), [0, 0])
+                entry = table.setdefault((str(row.get("task")), str(row.get("solution"))), [0, 0, Counter()])
                 entry[0] += 1
                 entry[1] += bool(row.get("success"))
-    rows = [{"task": task, "solution": solution, "episodes": count, "successes": wins, "success_rate": round(wins / count, 4)}
-            for (task, solution), (count, wins) in sorted(table.items())]
+                if not row.get("success"):
+                    entry[2][str(row.get("termination_reason") or row.get("graph_error") or "none recorded")[:300]] += 1
+    rows = [{"task": task, "solution": solution, "episodes": count, "successes": wins, "success_rate": round(wins / count, 4),
+             **({"failures": [{"reason": reason, "episodes": n} for reason, n in reasons.most_common(REASONS)]}
+                if reasons else {})}
+            for (task, solution), (count, wins, reasons) in sorted(table.items())]
     return {"run": folder.name, "folder": str(folder), "result_files": [str(path.relative_to(folder)) for path in files],
             "rows": rows, "episodes": sum(row["episodes"] for row in rows),
             "successes": sum(row["successes"] for row in rows),
@@ -112,7 +124,7 @@ def results(co: sibling.Checkout, run=None) -> dict:
 
 
 def call(co: sibling.Checkout, action: str, task=None, solve="routine", graph=None, episodes=None, cell=None, limit=None,
-         workers: int = 1, print_only: bool = True, name=None, run=None, timeout_s: float = 6 * 3600,
+         workers: int = 1, print_only: bool = True, name=None, run=None, bus_timeout_s=None, timeout_s: float = 6 * 3600,
          allow_concurrent_gpu: bool = False) -> dict:
     info = co.info("python")
     try:
@@ -157,14 +169,31 @@ def call(co: sibling.Checkout, action: str, task=None, solve="routine", graph=No
                 raise sibling.Refusal("INVALID_VALUE", "workers must be 1 to 4.")
             if limit is not None and (type(limit) is not int or limit < 1):
                 raise sibling.Refusal("INVALID_VALUE", "limit must be a positive number of instances.")
+        if bus_timeout_s is not None and (action != "run" or type(bus_timeout_s) is not int or not 30 <= bus_timeout_s <= 3600):
+            raise sibling.Refusal("INVALID_VALUE", "bus_timeout_s is for run only: 30 to 3600 seconds (bench sets its own).")
+        if action == "run" and solve == "graph" and bus_timeout_s is None:
+            bus_timeout_s = CABLE_BUS_TIMEOUT_S if task.split("/")[0] in CABLE_SUITES else GRAPH_BUS_TIMEOUT_S
         if isinstance(timeout_s, bool) or not isinstance(timeout_s, (int, float)) or not 0 < timeout_s <= 7 * 86400:
             raise sibling.Refusal("INVALID_VALUE", "timeout_s must be more than 0 and at most 7 days in seconds.")
         folder = co.workspace / "runs/vabar" / sibling.run_name(name, action)
         command = argv(co, action, task=task, solve=solve, graph=graph, episodes=episodes, cell=cell, limit=limit,
-                       workers=workers, out=folder)
+                       workers=workers, out=folder, bus_timeout_s=bus_timeout_s)
         if action == "bench" and print_only:
-            return sibling.answer("vabar", action, info, result={
-                "planned": command, "note": "Nothing ran. Call again with print_only=false to run it as a job; it uses the GPU."})
+            # Upstream's --print resolves the cell's jobs and exits before any warmup, MPS daemon or folder; the GPU is
+            # hidden from it anyway. It asks no model, so it gets no key, endpoint or token.
+            if folder.exists():
+                raise sibling.Refusal("ALREADY_EXISTS", f"{folder} exists; choose another name.")
+            done = sibling.run([*command, "--print"], cwd=co.root, env_pass=gap.PLAIN_ENV,
+                               env_set={**skills_env, "CUDA_VISIBLE_DEVICES": ""}, timeout_s=120, stdout_chars=sibling.WHOLE)
+            summary = [line for line in done["stderr"].splitlines() if line.strip()]
+            if done["exit_code"] != 0:
+                reason = "did not finish in 120 s." if done["timed_out"] else summary[-1] if summary else "gave no reason."
+                what = "refused the cell or config" if done["exit_code"] == 2 else "failed"
+                return sibling.answer("vabar", action, info, exit_code=done["exit_code"], code="UPSTREAM_FAILED",
+                                      error=f"vabar bench --print {what}: {reason}", stderr=done["stderr"])
+            return sibling.answer("vabar", action, info, exit_code=0, result={
+                "planned": command, "summary": summary, "jobs": [line for line in done["stdout"].splitlines() if line.strip()],
+                "note": "Nothing ran. Call again with print_only=false (and the same name) to run it as a job; it uses the GPU."})
         local = gap.owner_vlm()
         env_pass, env, env_warnings = gap.model_env(allowed, local)
         env.update(skills_env)
@@ -198,18 +227,19 @@ def register(server, *, workspace=None, root=None):
         cell: Annotated[str | None, Field(description="bench (required): benchmark cell TASK_CLASS/L<level>, such as tool_hanging/L1.")] = None,
         limit: Annotated[int | None, Field(description="bench: run only the first N instances.", ge=1)] = None,
         workers: Annotated[int, Field(description="bench: worker processes, 1 to 4.", ge=1, le=4)] = 1,
-        print_only: Annotated[bool, Field(description="bench: return the planned command without running it.")] = True,
+        print_only: Annotated[bool, Field(description="bench: return upstream's resolved jobs (--print, CPU, writes nothing) without running.")] = True,
         name: Annotated[str | None, Field(description="run/bench: run folder name under <workspace>/runs/vabar; default action and time.")] = None,
+        bus_timeout_s: Annotated[int | None, Field(description="run: seconds a graph's tool call may wait (--bus-timeout); default for solve=graph 180, cable suites 600, as bench does.", ge=30, le=3600)] = None,
         run: Annotated[str | None, Field(description="results: run folder name; omit to list the newest runs.")] = None,
         timeout_s: Annotated[float, Field(description="run/bench: job time limit in seconds.", gt=0, le=604800)] = 21600,
         allow_concurrent_gpu: Annotated[bool, Field(description="run/bench: knowingly start beside another GPU job or a running Isaac Sim.")] = False,
     ) -> str:
         """VABAR benchmark from its own pinned checkout: status (pins, warmup), list (tasks), run (a task's episodes, as a
-        job; uses the GPU), bench (a frozen cell; print_only=true returns the plan, false runs it as a job), results
-        (success table of a run folder). Follow jobs with jobs(action="status").
+        job; uses the GPU), bench (a frozen cell; print_only=true returns upstream's plan, false runs it as a job),
+        results (success table and failure reasons of a run folder). Follow jobs with jobs(action="status").
         """
         arguments = dict(task=task, solve=solve, graph=graph, episodes=episodes, cell=cell, limit=limit, workers=workers,
-                         print_only=print_only, name=name, run=run, timeout_s=timeout_s,
+                         print_only=print_only, name=name, run=run, bus_timeout_s=bus_timeout_s, timeout_s=timeout_s,
                          allow_concurrent_gpu=allow_concurrent_gpu)
         return json.dumps(await asyncio.to_thread(call, co, action, **arguments))
 

@@ -50,14 +50,54 @@ def test_graph_runs_take_a_shipped_label(workspace):
     assert vabar.call(co, "run", task="a/b", solve="graph", graph="../x")["code"] == "INVALID_VALUE"
 
 
-def test_bench_defaults_to_the_plan_and_starts_nothing(workspace):
+def test_bench_defaults_to_upstreams_plan_and_starts_nothing(workspace):
     co = vabar.checkout(workspace=workspace)
     result = vabar.call(co, "bench", cell="tool_hanging/L1")
     assert result["ok"] and "job_id" not in result["result"]
     assert result["result"]["planned"][3:] == ["bench", "--cell", "tool_hanging/L1", "--solve", "routine", "--workers", "1",
                                                "--out", result["result"]["planned"][-1]]
-    assert calls(co.root) == [] and not (workspace / "runs/vabar").exists()
-    assert not any(jobs.jobs_dir().iterdir())
+    assert result["result"]["jobs"] == ["python -m vabar run --task tool_hanging/wrenches_level1 --episodes 1,5 --bus-timeout 180"]
+    assert result["result"]["summary"] == ["# tool_hanging/L1 under config default: 1 jobs, 8 episodes"]
+    (call,) = calls(co.root)
+    assert call["argv"] == [*result["result"]["planned"], "--print"] and call["env"]["CUDA_VISIBLE_DEVICES"] == ""
+    assert "OPENROUTER_API_KEY" not in call["env"] and "ROS_DOMAIN_ID" not in call["env"]
+    assert not (workspace / "runs/vabar").exists() and not any(jobs.jobs_dir().iterdir())
+
+
+def test_a_planned_bench_reports_upstreams_refusal(workspace):
+    result = vabar.call(vabar.checkout(workspace=workspace), "bench", cell="nope/L1")
+    assert result["code"] == "UPSTREAM_FAILED" and result["exit_code"] == 2 and "no cell 'nope/L1'" in result["error"]
+    assert "refused the cell" in result["error"] and not (workspace / "runs/vabar").exists()
+
+
+def test_a_planned_bench_that_times_out_is_not_a_refused_cell(workspace, monkeypatch):
+    monkeypatch.setattr(vabar.sibling, "run", lambda *a, **k: {"exit_code": None, "timed_out": True, "stdout": "", "stderr": ""})
+    result = vabar.call(vabar.checkout(workspace=workspace), "bench", cell="tool_hanging/L1")
+    assert result["code"] == "UPSTREAM_FAILED" and result["error"] == "vabar bench --print failed: did not finish in 120 s."
+
+
+def test_a_planned_bench_refuses_a_taken_name(workspace):
+    (workspace / "runs/vabar/taken").mkdir(parents=True)
+    co = vabar.checkout(workspace=workspace)
+    assert vabar.call(co, "bench", cell="tool_hanging/L1", name="taken")["code"] == "ALREADY_EXISTS"
+    assert calls(co.root) == []
+
+
+def test_run_passes_a_bus_timeout(workspace):
+    co = vabar.checkout(workspace=workspace)
+    result = vabar.call(co, "run", task="tool_hanging/scissors_level1", solve="graph", graph="gt", bus_timeout_s=180, name="b")
+    assert result["result"]["command"][-4:] == ["--bus-timeout", "180", "--out", str(workspace / "runs/vabar/b")]
+    wait_for(result["result"]["job_id"])
+    for task, expected in (("tool_hanging/scissors_level1", "180"), ("cable_route/board_l1", "600"), ("usbc_insert/a", "600")):
+        started = vabar.call(co, "run", task=task, solve="graph", name=f"d-{expected}-{task.split('/')[0]}")
+        assert started["result"]["command"][-4:-2] == ["--bus-timeout", expected], task
+        wait_for(started["result"]["job_id"])
+    routine = vabar.call(co, "run", task="cable_route/board_l1", name="r")
+    assert "--bus-timeout" not in routine["result"]["command"]
+    wait_for(routine["result"]["job_id"])
+    for action, value in (("run", 10), ("run", 4000), ("run", True), ("run", 60.5), ("bench", 180)):
+        refused = vabar.call(co, action, task="a/b", cell="tool_hanging/L1", bus_timeout_s=value)
+        assert refused["code"] == "INVALID_VALUE" and "bus_timeout_s" in refused["error"], (action, value)
 
 
 @pytest.mark.parametrize("workers", [0, 5, 9, True])
@@ -89,10 +129,26 @@ def test_results_summarise_the_run_folder(workspace):
     co = vabar.checkout(workspace=workspace)
     result = vabar.call(co, "results", run="done")["result"]
     assert result["rows"] == [{"task": "tool_hanging/wrenches_level1", "solution": "routine", "episodes": 3,
-                               "successes": 2, "success_rate": 0.6667}]
+                               "successes": 2, "success_rate": 0.6667,
+                               "failures": [{"reason": "none recorded", "episodes": 1}]}]
     assert vabar.call(co, "results")["result"]["runs"] == ["done"]
     assert vabar.call(co, "results", run="missing")["code"] == "NOT_FOUND"
     assert vabar.call(co, "results", run="../x")["code"] == "INVALID_VALUE"
+
+
+def test_results_count_why_episodes_failed(workspace):
+    folder = workspace / "runs/vabar/failed/t"
+    folder.mkdir(parents=True)
+    timeout = "graph failed: BusTimeout: build was not serviced within 30 s"
+    rows = [{"task": "a/b", "solution": "graph:gt", "success": False, "termination_reason": timeout}] * 3 + [
+        {"task": "a/b", "solution": "graph:gt", "success": False, "graph_error": "x" * 500},
+        {"task": "a/b", "solution": "graph:gt", "success": False},
+        {"task": "a/b", "solution": "graph:gt", "success": True, "termination_reason": "success"}]
+    (folder / "episode_results.jsonl").write_text("\n".join(map(json.dumps, rows)) + "\n")
+    (row,) = vabar.call(vabar.checkout(workspace=workspace), "results", run="failed")["result"]["rows"]
+    assert row["episodes"] == 6 and row["successes"] == 1
+    assert row["failures"] == [{"reason": timeout, "episodes": 3}, {"reason": "x" * 300, "episodes": 1},
+                               {"reason": "none recorded", "episodes": 1}]
 
 
 def test_status_reports_the_pins_beside_it(workspace):
@@ -153,7 +209,8 @@ def test_list_and_a_planned_bench_never_read_the_endpoint_key(workspace, tmp_pat
     co = vabar.checkout(workspace=workspace)
     assert vabar.call(co, "list")["ok"]
     assert "GAP_VLM_API_KEY" not in calls(co.root)[-1]["env"] and "GAP_VLM_BASE_URL" not in calls(co.root)[-1]["env"]
-    assert vabar.call(co, "bench", cell="tool_hanging/L1")["ok"]          # print_only: nothing runs, nothing read
+    assert vabar.call(co, "bench", cell="tool_hanging/L1")["ok"]          # print_only: upstream --print, nothing read
+    assert "GAP_VLM_API_KEY" not in calls(co.root)[-1]["env"] and "GAP_VLM_BASE_URL" not in calls(co.root)[-1]["env"]
     assert vabar.call(co, "run", task="tool_hanging/wrenches_level1")["code"] == "CONFIG_INVALID"
     (secrets / "key").chmod(0o600)
     started = vabar.call(co, "run", task="tool_hanging/wrenches_level1", name="v")
