@@ -97,8 +97,8 @@ its own key: upstream's client falls back to `OPENROUTER_API_KEY`, so with an en
 endpoint, and its `OPENROUTER_API_KEY` still needs `allow_paid`.
 
 - The URL must have a host, and no user, password, query or fragment in it (a key goes in the key file). Anything else
-  is `CONFIG_INVALID` for `run` and `check`; `status` reports the problem instead of refusing, and the other actions
-  never read these settings.
+  is `CONFIG_INVALID` for `run`, `bench` and `check`; `status` reports the problem instead of refusing, and the other
+  actions never read these settings.
 - The key file must be a regular file (not a link), owned by the owner and readable by no one else (`chmod 600`),
   holding one key on one line. It is read when a process starts. Answers, job records and `status` never contain the key.
 - `status` reports the URL, host and model, the key file's path and whether it is usable.
@@ -108,6 +108,40 @@ endpoint, and its `OPENROUTER_API_KEY` still needs `allow_paid`.
 The owner chooses the endpoint and pays whatever it costs: a free tier's limits, or a paid API behind a local server,
 are theirs. Graph nodes send the endpoint their prompts and camera images. Only VLM nodes use it; `generate`'s planner is
 a separate model and still needs `allow_paid`.
+
+**VABAR's pinned model.** A VABAR suite can pin the model its numbers were measured with (`tool_sort` pins
+`gemini-2.5-flash` in `vabar/configs/default.toml`), and upstream lets a suite's `env` win over the environment. So
+with `vlm_model` set, `vabar` `run` and `bench` pass `--set suites.<suite>.env.GAP_VLM_MODEL="<vlm_model>"`: `run` for
+its task's suite, `bench` for every suite in the checkout's `tasks/` (cells are named by task class, not suite).
+Upstream records the override in the run's provenance. Without `vlm_model` the suite's pin stays, and the endpoint is
+asked for that model name.
+
+### A local model with vLLM
+
+A model served on this machine needs no key and sends no image off it. Serve it with vLLM's OpenAI-compatible server,
+bound to loopback, and point the endpoint at it:
+
+```bash
+vllm serve Qwen/Qwen3-VL-32B-Instruct-FP8 --host 127.0.0.1 --port 8000 \
+  --kv-cache-memory-bytes 5G --max-model-len 16384 --max-num-seqs 4 --limit-mm-per-prompt '{"image": 4, "video": 0}'
+```
+
+```toml
+# ~/.config/twinsmith/config.toml
+[planning]
+vlm_url = "http://127.0.0.1:8000/v1"
+vlm_model = "Qwen/Qwen3-VL-32B-Instruct-FP8"     # the name the server lists at /v1/models
+```
+
+- Qwen3-VL-32B-Instruct in FP8 holds about 41 GB with a 5 GiB KV cache, which leaves room on a 96 GB card for
+  Graph-as-Policy's SAM 3, GroundingDINO and cuRobo (about 16 GB) and Kit. Graph nodes send one request at a time.
+- **Reasoning models.** Upstream's VLM client caps a reply at 1024 tokens and sends no extra request fields, so a
+  model that thinks first can spend the whole reply on reasoning and return no answer (`content: null`). Use an Instruct
+  (non-thinking) model, or turn thinking off in the server: vLLM's
+  `--default-chat-template-kwargs '{"enable_thinking": false}'` does it for chat templates that read that flag. A hosted
+  reasoning model whose API needs a per-request field cannot be switched from twinsmith.
+- NVIDIA's hosted API (`https://integrate.api.nvidia.com/v1` with `vlm_api_key_file`) stays a fallback when the GPU
+  is busy; choose a non-reasoning model there, for the same reason.
 
 ## `gap`
 
@@ -178,7 +212,7 @@ Like `allow_paid`, a project `twinsmith.toml` cannot set it. Read a generated gr
 |---|---|---|
 | `status` | Nothing upstream | Checkout, commit and pin; the commits and pins of the Graph-as-Policy and skill checkouts; whether `warmup` has run (its stamps in the renderer cache) |
 | `list` | `python -m vabar list` | Every `suite/variant`. Read-only |
-| `run` | `python -m vabar run --task <t> --solve routine\|graph\|idle [--graph <label>] [--episodes ...] [--bus-timeout <s>]` | A job that uses the GPU. `graph` is a label the task ships, such as `gt`. `bus_timeout_s` (30 to 3600) is how long a graph's tool call may wait. Upstream's default is 30 s; with `solve="graph"` and no value the tool passes what bench cells use, 180 s, or 600 s for the cable suites (`cable_route`, `usbc_insert`). A cold first run compiles Newton's IK kernel inside a tool call (44 s on the ASU PC), and `warmup` does not compile it |
+| `run` | `python -m vabar run [--set ...] --task <t> --solve routine\|graph\|idle [--graph <label>] [--episodes ...] [--bus-timeout <s>] [--perception oracle\|vision [--no-privileged]] [--record]` | A job that uses the GPU. `graph` is a label the task ships, such as `gt`. `perception="vision"` runs the graph's perception on camera images (SAM 3, GroundingDINO, the VLM) and withholds the `sim.*` tools, as upstream advises; `"oracle"` reads the simulator's answer. `record=true` keeps video, ground-truth state and every step under the run folder. `--set` is the [VLM model pin](#a-vlm-endpoint-for-graph-nodes). `bus_timeout_s` (30 to 3600) is how long a graph's tool call may wait. Upstream's default is 30 s; with `solve="graph"` and no value the tool passes what bench cells use, 180 s, or 600 s for the cable suites (`cable_route`, `usbc_insert`). A cold first run compiles Newton's IK kernel inside a tool call (44 s on the ASU PC), and `warmup` does not compile it |
 | `bench` | `python -m vabar bench --cell <c> --solve ... [--limit n] --workers <1-4>` | `print_only=true` (the default) runs upstream's `--print` with the GPU hidden: it writes nothing and returns the resolved jobs (tasks, episodes, flags) or upstream's refusal of an unknown cell. `false` runs it as a job that uses the GPU; pass the same `name` to get the folder the plan printed (a name whose folder exists is refused either way) |
 | `results` | Nothing upstream | Reads the `episode_results.jsonl` files in a run folder (at most 200, 8 MB each; links and files outside the folder are skipped) and returns successes per task and solver, with the three commonest reasons the others failed (upstream's `termination_reason`); without `run`, the newest run folders |
 

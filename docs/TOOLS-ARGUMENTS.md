@@ -1806,7 +1806,9 @@ VABAR benchmark from its own pinned checkout: status (pins, warmup), list (tasks
 - `workers` (int, default `1`): bench: worker processes, 1 to 4.
 - `print_only` (bool, default `True`): bench: return upstream's resolved jobs (--print, CPU, writes nothing) without running.
 - `name` (str | None, default `None`): run/bench: run folder name under <workspace>/runs/vabar; default action and time.
-- `bus_timeout_s` (int | None, default `None`): run: seconds a graph's tool call may wait (--bus-timeout); default for solve=graph 180, cable suites 600, as bench does.
+- `bus_timeout_s` (int | None, default `None`): run: seconds a graph's tool call may wait (--bus-timeout); graph default 180, cable 600.
+- `perception` (Literal['oracle', 'vision'] | None, default `None`): run, graph: vision (cameras, no sim.* tools), oracle.
+- `record` (bool, default `False`): run: keep video.
 - `run` (str | None, default `None`): results: run folder name; omit to list the newest runs.
 - `timeout_s` (float, default `21600`): run/bench: job time limit in seconds.
 - `allow_concurrent_gpu` (bool, default `False`): run/bench: knowingly start beside another GPU job or a running Isaac Sim.
