@@ -4,7 +4,7 @@ The `cad` toolset holds one tool, `hardware`. It runs the deterministic steps th
 outputs: `kicad-cli` ERC and DRC, a KiKit fab package with `board.step` and `board.glb`, and a headless Blender render.
 Authoring (schematic, layout, routing, enclosure modelling, interactive Blender) stays in the servers that run **beside**
 twinsmith; a client lists them as separate servers. twinsmith does not proxy their tools, vendor their code or install
-them. It needs no Isaac Sim or Kit bridge.
+them, with one owner-run exception: `scripts/install_solidcraft.sh` (below). It needs no Isaac Sim or Kit bridge.
 
 `cad` is off by default, like every toolset but `core`. Turn it on at startup with
 `TWINSMITH_TOOLSETS=default,+cad` (or add `+cad` to `tools.toolsets` in `~/.config/twinsmith/config.toml`), or for one
@@ -13,7 +13,7 @@ server process with `toolsets(action="enable", names=["cad"])`.
 ## What runs beside twinsmith
 
 Each is the owner's to install, under `<workspace>/tools/<name>` with its own environment, at these pins.
-`hardware(action="status")` reports every version and commit against them and never installs anything.
+`hardware(action="status")` reports every version and commit against them (SolidCraft not yet) and never installs anything.
 
 | Area | Server or tool | Pin |
 |---|---|---|
@@ -22,6 +22,7 @@ Each is the owner's to install, under `<workspace>/tools/<name>` with its own en
 | Autorouting | Freerouting jar, called by the `kicad` server, with a Java 25 JRE in `<workspace>/tools/jre/current` | 2.5.0 |
 | Fab hand-off | KiKit `fab jlcpcb` / `fab pcbway` (MIT) | 1.8.1 |
 | Enclosure | `freecad`: neka-nat/freecad-mcp (MIT), `freecadcmd` on `PATH` | as installed |
+| Parametric parts | `solidcraft`: tangency-labs/solidcraft (MIT OR Apache-2.0), `solidcraft-cli mcp --headless` | `v0.42.0` (`1b1e940`), tarball sha256 `5c05463c…4424b` |
 | Render | Blender, `blender -b` (no add-on, port or GUI) | 5.2.x |
 | Render, interactive | `blender`: the Blender Foundation's `blender_mcp` (GPL-3.0) | `v1.0.3` (`2cea8d5`) |
 | Firmware | `platformio`: jl-codes/platformio-mcp (MIT), PlatformIO Core | `v3.1.0` (`29d4900`), Core 6.2.0 |
@@ -39,6 +40,18 @@ Setup notes the owner follows once:
 - **`kicad` server.** `KICAD_MCP_TOOLBOXES=core` keeps its list short; toolboxes open on demand.
 - **`platformio` server.** Run it with the `build_only` policy profile, which refuses flash and the serial monitor, and
   with `--disable-dashboard`. Its `run_tests` compiles native tests without running them; run `pio test -e native`.
+- **SolidCraft.** `scripts/install_solidcraft.sh --register` downloads the pinned Linux x86_64 tarball, checks its
+  SHA-256 (the Linux packages are unsigned and carry no attestation, so the pinned digest is the only check), unpacks it to
+  `<workspace>/tools/solidcraft/`, points `current` at it and links `solidcraft` and `solidcraft-cli` into `~/.local/bin`,
+  without sudo. `--register` then runs `scripts/register_solidcraft_mcp.py`, which adds
+  `solidcraft-cli mcp --headless --allow-path <workspace>/projects` to Claude Code, Codex, OpenCode, Claude Desktop,
+  Antigravity and T3's Antigravity copies (whichever exist; an existing entry is kept). Headless needs no control-channel
+  token; it renders screenshots on the GPU. Not `--allow-any-path`: the server then reaches only that folder, its
+  scratch folder and the folders of designs it opens or saves. The desktop app, when started, adds a plain
+  `solidcraft-cli mcp` entry (bridged when the app runs) to clients that have none and leaves entries it did not write
+  alone; Settings › Assistant turns that off. To
+  move to a new release, change the two pins in the script, run it again and repeat the smoke check (a 40×30×5 mm
+  plate with a 4 mm hole: `measure` gives 5937.17 mm³; export STEP and STL; `screenshot`).
 - **`blender` server and FreeCAD.** Their sockets are localhost and unauthenticated: start them only while in use.
 
 ## Client configuration
