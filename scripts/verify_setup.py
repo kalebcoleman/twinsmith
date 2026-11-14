@@ -68,18 +68,19 @@ def pack_state(root, name):
         return False, "missing"
     try:
         files = json.loads(manifest.read_text())["files"]
-    except (ValueError, KeyError):
+        files = [(record["path"], record["sha256"]) for record in files]
+    except (ValueError, KeyError, TypeError):
         return False, "pack.yaml is not the JSON manifest this check reads; use scripts/assets.py doctor"
-    for record in files:
-        path = folder / record["path"]
+    for relative, sha256 in files:
+        path = folder / relative
         if not path.is_file():
-            return False, f"file missing: {record['path']}"
+            return False, f"file missing: {relative}"
         digest = hashlib.sha256()
         with path.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1 << 20), b""):
                 digest.update(chunk)
-        if digest.hexdigest() != record["sha256"]:
-            return False, f"file changed: {record['path']}"
+        if digest.hexdigest() != sha256:
+            return False, f"file changed: {relative}"
     return True, f"{len(files)} files match pack.yaml"
 
 
@@ -107,12 +108,12 @@ def collect():
             "VERSION_CODENAME", "")
     add("machine", "Ubuntu 22.04 or 24.04", "PASS" if codename in ("jammy", "noble") else "FAIL", codename or "unknown")
     gpu = run(["nvidia-smi", "--query-gpu=name,memory.total,driver_version", "--format=csv,noheader,nounits"]).strip().splitlines()
-    vram = 0
-    if gpu:
+    try:
         name, memory, driver = (part.strip() for part in gpu[0].split(","))
         vram = int(memory)
         add("machine", "NVIDIA GPU", "PASS", f"{name}, {vram} MiB, driver {driver}")
-    else:
+    except (IndexError, ValueError):
+        vram = 0
         add("machine", "NVIDIA GPU", "FAIL", "nvidia-smi reports no GPU")
     level = tier(vram)
     add("machine", "tier", "PASS", f"{level}: " + ("simulator, work cell and the optional tools" if level == "full"
