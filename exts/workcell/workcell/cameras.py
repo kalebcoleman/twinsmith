@@ -123,10 +123,11 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         "Capture needs a running Isaac RTX renderer and a rendered frame; no pixels are synthesized.",
         "The capture helper targets Isaac Sim 6.x isaacsim.sensors.experimental.rtx; older releases "
         "only have the deprecated camera API and must not silently substitute another source.",
-        "Camera bodies and mounts are visual-only: RigidBodyAPI and CollisionAPI are removed from "
-        "referenced parts, so nothing becomes a nested rigid body under tool0.",
+        "Camera bodies and mounts under tool0 are visual-only: RigidBodyAPI and CollisionAPI are removed from "
+        "referenced parts, so nothing becomes a nested rigid body under tool0. The wrist bracket's collision "
+        "approximation is attached separately, to the RG2 body it clamps; the D415 body has no collider.",
     ]
-    wrist, wrist_parts, wrist_root = _plan_wrist(config, robot, assets, assets_cfg, limitations)
+    wrist, wrist_parts, wrist_root, wrist_collider = _plan_wrist(config, robot, assets, assets_cfg, limitations)
     overhead, overhead_parts, overhead_root = _plan_overhead(config, assets, assets_cfg, limitations)
     parts = wrist_parts + overhead_parts
     roots = [root for root in (wrist_root, overhead_root) if root]
@@ -146,6 +147,7 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         "cameras": {"wrist": wrist, "overhead": overhead},
         "parts": parts,
         "roots": roots,
+        "colliders": [wrist_collider] if wrist_collider else [],
         "limitations": _dedupe(limitations),
         "provenance": {
             "config": {"path": str(config_path) if config_path else None,
@@ -211,6 +213,9 @@ def author_report(stage, report, usd=None):
         physics_removed += _strip_physics(Usd, UsdPhysics, prim)
         parts_authored.append(part["prim_path"])
 
+    colliders_authored = [_author_collider(stage, Usd, UsdPhysics, collider, report["limitations"])
+                          for collider in report.get("colliders", [])]
+
     cameras_authored = []
     for key in ("wrist", "overhead"):
         camera = report["cameras"][key]
@@ -238,7 +243,39 @@ def author_report(stage, report, usd=None):
             + "; verify the pack assets.")
     return {"roots": [root["prim_path"] for root in report["roots"]],
             "parts": parts_authored, "cameras": cameras_authored,
-            "physics_removed": physics_removed, "rigid_bodies_remaining": remaining}
+            "physics_removed": physics_removed, "rigid_bodies_remaining": remaining,
+            "colliders": colliders_authored}
+
+
+def _author_collider(stage, Usd, UsdPhysics, collider, limitations):
+    """Reference the pack asset's collision scope under its rigid body; report the shapes that result."""
+    asset = Usd.Stage.Open(collider["_path"])          # kept alive while its prims are read
+    default = asset.GetDefaultPrim() if asset else None
+    source = default.GetChild(collider["source_prim"]) if default else None
+    result = {"name": collider["name"], "prim_path": collider["prim_path"], "body_path": collider["body_path"]}
+    if not source or not any(prim.HasAPI(UsdPhysics.CollisionAPI) for prim in Usd.PrimRange(source)):
+        limitations.append(f"The pack's {collider['role']} asset has no collision approximation; the bracket has no collider.")
+        return dict(result, status="absent", shapes=[])
+    body = stage.GetPrimAtPath(collider["body_path"])
+    if not body or not body.IsValid() or not body.HasAPI(UsdPhysics.RigidBodyAPI):
+        raise ValueError(f"the bracket collider's body {collider['body_path']} is not a rigid body on the stage")
+    prim = stage.DefinePrim(collider["prim_path"])
+    if not prim.HasAuthoredReferences():
+        if not prim.GetReferences().AddReference(collider["_path"], source.GetPath()):
+            raise ValueError(f"could not reference the collision approximation at {collider['prim_path']}")
+    prim.SetCustomDataByKey("workcell:asset_id", collider["asset_id"])
+    prim.SetCustomDataByKey("workcell:bom_id", collider["bom_id"])
+    shapes = []
+    for item in Usd.PrimRange(prim):
+        if item.HasAPI(UsdPhysics.RigidBodyAPI) or item.IsA(UsdPhysics.Joint):
+            raise ValueError(f"the collision approximation must hold shapes only: {item.GetPath()}")
+        if item.HasAPI(UsdPhysics.CollisionAPI):
+            approximation = item.GetAttribute("physics:approximation")
+            shapes.append({"prim_path": str(item.GetPath()), "type": str(item.GetTypeName()),
+                           "approximation": approximation.Get() if approximation else None})
+    if not shapes or any(shape["approximation"] != "convexHull" for shape in shapes):
+        raise ValueError(f"every shape under {collider['prim_path']} must be a mesh with an explicit convexHull approximation")
+    return dict(result, status="attached", shapes=shapes)
 
 
 def make_camera_sensor(camera_prim, resolution, annotators=("rgb", "distance_to_image_plane")):
@@ -305,16 +342,16 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         rotation = [0.0, 0.0, 0.0]
         limitations.append("wrist_camera.rotation_in_rg2_deg is missing; identity rotation assumed.")
     if in_rg2 is None:
-        return _unavailable("wrist", "wrist_camera.offset_in_rg2_m is missing; the wrist camera cannot be placed."), [], None
+        return _unavailable("wrist", "wrist_camera.offset_in_rg2_m is missing; the wrist camera cannot be placed."), [], None, None
     try:
         rg2_t, rg2_q, stack_length = rg2_in_tool0(config)
     except ValueError as exc:
-        return _unavailable("wrist", f"{exc}; the wrist camera cannot be placed."), [], None
+        return _unavailable("wrist", f"{exc}; the wrist camera cannot be placed."), [], None, None
     in_rg2_q = _euler_xyz_deg_to_quat(rotation)
     offset = [rg2_t[index] + value for index, value in enumerate(_rotate_vector(rg2_q, in_rg2))]
     resolution, _, intrinsics = _camera_optics(section, "wrist_camera", limitations)
     if resolution is None:
-        return _unavailable("wrist", "wrist_camera resolution or FOV is missing/invalid; the wrist camera cannot be built."), [], None
+        return _unavailable("wrist", "wrist_camera resolution or FOV is missing/invalid; the wrist camera cannot be built."), [], None, None
 
     tool0 = robot["tool0_path"]
     root = f"{tool0}/wrist_d415"
@@ -379,10 +416,42 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "estimate from one photo of the real bracket, not a measurement.")
     limitations.append(
         "The wrist camera's tool0 pose is derived from the configured stack and UR's flange-to-tool0 convention; "
-        "the camera and bracket prims hang from tool0 (wrist_3_link), so their weight is not in the Bota reading.")
+        "the camera and bracket prims hang from tool0 (wrist_3_link) and carry no mass, so their weight is not in "
+        "the Bota reading.")
+    collider = _plan_bracket_collider(config, robot, bracket, limitations)
+    if collider:
+        camera["physics"]["bracket_collider"] = {key: value for key, value in collider.items() if not key.startswith("_")}
     root_entry = {"name": "wrist_mount", "prim_path": root, "parent": tool0,
                   "translation_m": list(offset), "quaternion_wxyz": list(optical_q)}
-    return camera, parts, root_entry
+    return camera, parts, root_entry, collider
+
+
+COLLISION_SCOPE = "Collision"       # child of the bracket asset's default prim (scripts/workcell_bracket_assets.py)
+
+
+def _plan_bracket_collider(config, robot, bracket, limitations):
+    """Where the wrist bracket's collision approximation goes: under the RG2 body, which the bracket clamps.
+
+    Shapes of one rigid body never collide with each other, so the collar cannot press on the gripper body it wraps,
+    and a push on the bracket reaches the arm through the Bota joint, as on the real stack. No mass is added: the RG2
+    body's mass, centre of mass and inertia are authored explicitly (``inertials``).
+    """
+    if not bracket:
+        return None
+    layout = _layout(config, "rg2")
+    body, frame = layout.get("body"), layout.get("mount_frame")
+    if not isinstance(body, str) or not body or body != frame:
+        limitations.append("The wrist bracket collider is not attached: it is modelled in asset_layout.rg2.mount_frame, "
+                           "which must also be the RG2 rigid body (asset_layout.rg2.body).")
+        return None
+    body_path = robot["gripper_path"] if body == "." else f"{robot['gripper_path']}/{body}"
+    limitations.append(
+        "The wrist bracket's collider (a few convex hulls from the pack) belongs to the RG2 body and adds no mass; "
+        "it stops short of the printed part near the finger linkage, and the D415 body has no collider.")
+    return {"name": "wrist_mount_collision", "prim_path": f"{body_path}/wrist_mount_collision", "body_path": body_path,
+            "role": "wrist_mount", "asset_id": bracket["asset_id"], "bom_id": bracket["bom_id"],
+            "source_prim": COLLISION_SCOPE, "frame": "RG2 body frame, identity transform", "mass": "none added",
+            "filtered_pairs": [], "_path": bracket["_path"]}
 
 
 def overhead_enabled(config):
@@ -696,7 +765,8 @@ def _frames(namespace):
 def _physics_block(tool0):
     return {"attachment": tool0,
             "rigid_body": "none; referenced RigidBodyAPI and CollisionAPI are removed at author time",
-            "note": "Visual-only pack geometry follows the parent transform; no nested rigid body is created."}
+            "note": "Visual-only pack geometry follows the parent transform; no nested rigid body is created. "
+                    "The wrist bracket's collider, when the pack has one, is under bracket_collider."}
 
 
 def _asset_conventions(config):
@@ -963,6 +1033,8 @@ def _public_report(report):
     public = dict(report)
     public["parts"] = [{key: value for key, value in part.items() if not key.startswith("_")}
                        for part in report["parts"]]
+    public["colliders"] = [{key: value for key, value in collider.items() if not key.startswith("_")}
+                           for collider in report.get("colliders", [])]
     return public
 
 

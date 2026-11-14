@@ -60,3 +60,19 @@ def test_cad_file_separates_sourced_from_estimated_and_cites_the_vendors():
     assert '"clamp_z0"' in estimated and '"plate_thickness"' in estimated
     readme = (ROOT / "exts/workcell/cad/README.md").read_text()
     assert "## Estimated from photo, measure to confirm" in readme and "## Sourced dimensions" in readme
+
+
+def test_collision_pieces_are_few_convex_and_named_the_same_everywhere():
+    """Five convex pieces; the scope name is shared with the builder that attaches it to the RG2 body."""
+    import importlib.util as util
+
+    spec = util.spec_from_file_location("bracket_test_cameras", ROOT / "exts/workcell/workcell/cameras.py")
+    sys.path.insert(0, str(ROOT / "exts/workcell/workcell"))
+    cameras = util.module_from_spec(spec)
+    spec.loader.exec_module(cameras)
+    assert bracket.COLLISION_SCOPE == cameras.COLLISION_SCOPE
+    pieces = re.findall(r'^    "(\w+)": (?:corners\(|\[\[x, y, z\])', CAD.split('report["collision_pieces_mm"] = {')[1].split("\n}\n")[0], re.M)
+    assert pieces == ["collar", "back_bar_upper", "front_bar_extension", "truss", "camera_plate"]
+    assert '"collision_top_z_near_fingers": 104.0' in CAD
+    source = (ROOT / "scripts/workcell_bracket_assets.py").read_text()
+    assert 'CreateApproximationAttr("convexHull")' in source and "RigidBodyAPI" not in source and "MassAPI" not in source

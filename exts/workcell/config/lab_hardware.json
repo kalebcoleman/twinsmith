@@ -702,7 +702,7 @@
     "bracket_mass_kg": {
       "value": 0.1,
       "status": "unconfirmed",
-      "source": "Estimate, weigh it: the model in exts/workcell/cad/rg2_camera_bracket.py has 130 cm3 of solid (161 g in solid PLA at 1.24 g/cm3); about half of that as printed with infill, plus four M4 bolts and nuts (about 20 g). Not used by the simulation yet: the camera parts are visual only."
+      "source": "Estimate, weigh it: the model in exts/workcell/cad/rg2_camera_bracket.py has 130 cm3 of solid (161 g in solid PLA at 1.24 g/cm3); about half of that as printed with infill, plus four M4 bolts and nuts (about 20 g). Not used by the simulation: the bracket's collider is attached to the RG2 body and adds no mass (that body's mass, centre of mass and inertia are set explicitly under inertials), and the camera parts under tool0 are visual only. So the bracket and camera weigh nothing in the simulated Bota reading; on the real arm they hang below the sensor."
     },
     "camera_mass_kg": {
       "value": 0.064,

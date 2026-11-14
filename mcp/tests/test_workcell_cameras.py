@@ -490,6 +490,9 @@ def test_authoring_creates_referenced_parts_and_cameras(config, tmp_path):
     assert len(report["authoring"]["parts"]) == 6
     assert report["authoring"]["rigid_bodies_remaining"] == []
     assert report["authoring"]["physics_removed"]
+    # These plain assets carry no collision scope, so the bracket gets no collider, and the report says so.
+    assert [item["status"] for item in report["authoring"]["colliders"]] == ["absent"]
+    assert any("has no collision approximation" in item for item in report["limitations"])
     assert not any("Rigid bodies remain" in item for item in report["limitations"])
 
     for part in report["parts"]:
@@ -569,6 +572,109 @@ def _write_asset(Usd, UsdGeom, UsdPhysics, path):
     body = UsdGeom.Xform.Define(stage, "/Asset/body").GetPrim()
     UsdPhysics.RigidBodyAPI.Apply(body)
     assert stage.GetRootLayer().Save()
+
+
+RG2_BODY = ROBOT["gripper_path"] + "/onrobot_rg2_base_link"
+
+
+def test_bracket_collider_is_planned_on_the_rg2_body(config, tmp_path):
+    """The bracket clamps the gripper, so its collider belongs to the RG2 body: same body, no contact with it."""
+    report = build(config, tmp_path)
+    (collider,) = report["colliders"]
+    assert collider["body_path"] == RG2_BODY and collider["prim_path"] == RG2_BODY + "/wrist_mount_collision"
+    assert collider["source_prim"] == cameras.COLLISION_SCOPE == "Collision"
+    assert collider["filtered_pairs"] == [] and collider["mass"] == "none added"
+    assert collider["asset_id"] == "wrist_mount" and "_path" not in collider
+    wrist = report["cameras"]["wrist"]
+    assert wrist["physics"]["attachment"] == ROBOT["tool0_path"]            # the camera prims themselves stay on tool0
+    assert wrist["physics"]["bracket_collider"] == collider
+    assert "bracket_collider" not in report["cameras"]["overhead"]["physics"]
+    assert any("belongs to the RG2 body and adds no mass" in item for item in report["limitations"])
+
+    elsewhere = copy.deepcopy(config)           # modelled in a frame that is not the rigid body: not attached, and said
+    elsewhere["asset_layout"]["rg2"]["mount_frame"] = "some_other_frame"
+    report = build(elsewhere, tmp_path)
+    assert report["colliders"] == [] and "bracket_collider" not in report["cameras"]["wrist"]["physics"]
+    assert any("collider is not attached" in item for item in report["limitations"])
+
+    no_bracket = build(config, tmp_path, assets=Pack(tmp_path, missing={"wrist_mount"}))
+    assert no_bracket["colliders"] == []
+
+
+def _write_bracket(Usd, UsdGeom, UsdPhysics, path, approximation="convexHull", rigid=False):
+    """A bracket asset with a render mesh and a collision scope, as scripts/workcell_bracket_assets.py writes it."""
+    stage = Usd.Stage.CreateNew(str(path))
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    stage.SetDefaultPrim(UsdGeom.Xform.Define(stage, "/Asset").GetPrim())
+    UsdGeom.Mesh.Define(stage, "/Asset/Body")
+    scope = UsdGeom.Scope.Define(stage, "/Asset/Collision")
+    UsdGeom.Imageable(scope.GetPrim()).CreatePurposeAttr(UsdGeom.Tokens.guide)
+    for name in ("collar", "truss"):
+        mesh = UsdGeom.Mesh.Define(stage, f"/Asset/Collision/{name}")
+        mesh.CreatePointsAttr([(x, y, z) for x in (0, 0.01) for y in (0, 0.01) for z in (0, 0.01)])
+        UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+        UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr(approximation)
+    if rigid:
+        UsdPhysics.RigidBodyAPI.Apply(stage.GetPrimAtPath("/Asset/Collision/collar"))
+    assert stage.GetRootLayer().Save()
+
+
+def _bracket_stage(tmp_path, config, rigid_body=True, **bracket):
+    pytest.importorskip("pxr")
+    from pxr import Usd, UsdGeom, UsdPhysics
+
+    for role in cameras.REQUIRED_ASSET_ROLES:
+        _write_asset(Usd, UsdGeom, UsdPhysics, tmp_path / f"{role}.usd")
+    (tmp_path / "wrist_mount.usd").unlink()
+    _write_bracket(Usd, UsdGeom, UsdPhysics, tmp_path / "wrist_mount.usd", **bracket)
+    stage = Usd.Stage.CreateInMemory()
+    UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
+    UsdGeom.SetStageMetersPerUnit(stage, 1.0)
+    UsdGeom.Xform.Define(stage, ROBOT["tool0_path"])
+    body = UsdGeom.Xform.Define(stage, RG2_BODY).GetPrim()
+    if rigid_body:
+        UsdPhysics.RigidBodyAPI.Apply(body)
+    return stage, Usd, UsdGeom, UsdPhysics
+
+
+def test_bracket_collider_is_authored_under_the_rg2_body_and_nowhere_else(config, tmp_path):
+    stage, Usd, UsdGeom, UsdPhysics = _bracket_stage(tmp_path, config)
+    report = cameras.build_cameras(stage, Pack(tmp_path), config, ROBOT)
+    (authored,) = report["authoring"]["colliders"]
+    assert authored["status"] == "attached" and authored["body_path"] == RG2_BODY
+    assert [(Path(shape["prim_path"]).name, shape["type"], shape["approximation"]) for shape in authored["shapes"]] == [
+        ("collar", "Mesh", "convexHull"), ("truss", "Mesh", "convexHull")]
+    root = stage.GetPrimAtPath(RG2_BODY + "/wrist_mount_collision")
+    assert root.HasAuthoredReferences() and root.GetCustomDataByKey("workcell:bom_id") == "wrist_mount"
+    assert UsdGeom.Imageable(root).ComputePurpose() == UsdGeom.Tokens.guide
+    shapes = [prim for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.CollisionAPI)]
+    assert len(shapes) == 2 and not any(prim.HasAPI(UsdPhysics.RigidBodyAPI) for prim in Usd.PrimRange(root))
+    for prim in shapes:         # the nearest rigid body above every shape is the RG2 body
+        owner = prim.GetParent()
+        while not owner.HasAPI(UsdPhysics.RigidBodyAPI):
+            owner = owner.GetParent()
+        assert str(owner.GetPath()) == RG2_BODY
+    # The copy under tool0 (the visual bracket) and the D415 body keep no collider and no rigid body.
+    visual = stage.GetPrimAtPath(report["cameras"]["wrist"]["root_path"])
+    assert not any(prim.HasAPI(UsdPhysics.CollisionAPI) or prim.HasAPI(UsdPhysics.RigidBodyAPI) for prim in Usd.PrimRange(visual))
+    assert every_collider_is_under(stage, Usd, UsdPhysics, RG2_BODY + "/wrist_mount_collision")
+
+
+def every_collider_is_under(stage, Usd, UsdPhysics, path):
+    return all(str(prim.GetPath()).startswith(path) for prim in stage.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI))
+
+
+def test_bracket_collider_refuses_a_body_that_is_not_rigid_and_shapes_that_are_not_convex(config, tmp_path):
+    stage, *_ = _bracket_stage(tmp_path, config, rigid_body=False)
+    with pytest.raises(ValueError, match="is not a rigid body"):
+        cameras.build_cameras(stage, Pack(tmp_path), config, ROBOT)
+    for folder, bracket, message in (("mesh", dict(approximation="none"), "explicit convexHull"),
+                                     ("nested", dict(rigid=True), "shapes only")):
+        (tmp_path / folder).mkdir()
+        stage, *_ = _bracket_stage(tmp_path / folder, config, **bracket)
+        with pytest.raises(ValueError, match=message):
+            cameras.build_cameras(stage, Pack(tmp_path / folder), config, ROBOT)
 
 
 def test_capture_helper_uses_official_sensor_and_never_invents_pixels(monkeypatch):

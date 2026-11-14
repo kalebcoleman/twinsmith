@@ -257,9 +257,16 @@ The current candidate contains:
   nothing of the robot is in the image; whether the real image shows the fingertips fixes the tilt. Tests build the
   real pack and check that the collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate,
   that bracket and camera stay out of the slab the finger linkage moves in, and that the image is clear of the arm.
-  The camera parts are visual only: the pack's bracket carries a box collision approximation, which the builder
-  removes with every other collider on camera parts, because the parts hang from tool0 (`wrist_3_link`) and a
-  collider there would press on the RG2 past the Bota.
+  The bracket has a collider; the D415 body has none. The pack's bracket asset carries five convex hulls (`collar`,
+  `back_bar_upper`, `front_bar_extension`, `truss`, `camera_plate`, each with `physics:approximation = "convexHull"`),
+  and the builder references them under the RG2 body it clamps, at
+  `<assembly>/rg2/onrobot_rg2_base_link/wrist_mount_collision`. Because they belong to that body, they cannot press on
+  the gripper body they wrap (shapes of one body never collide; no pair is filtered), and a push on the bracket
+  reaches the arm through the Bota joint, as on the real stack. No mass is added, so the bracket and camera still
+  weigh nothing in the wrench. Near the finger linkage the collider stops 2.8 to 12 mm short of the printed part, so
+  it stays at least 10.9 mm from the linkage over the whole stroke, more than two of Newton's 4 mm contact gaps; a
+  test sweeps both driven joints over their limits against the links' own collision hulls and the pads. The render
+  bracket and the camera body under tool0 stay visual only ([details and measurements](../cad/README.md#collision)).
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads

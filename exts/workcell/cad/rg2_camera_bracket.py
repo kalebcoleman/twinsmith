@@ -93,6 +93,8 @@ P = {
     "truss_tip_x_from_camera_centre": -12.0,   # the truss meets the plate's half nearer the gripper
     "truss_tip_past_camera": 4.0,   # ... and reaches this far past the camera centreline, along -Y
     "m3_clearance_d": 3.4,
+    # --- collision approximation: a design choice, checked against the pack's RG2 linkage ------------------------
+    "collision_top_z_near_fingers": 104.0,
 }
 
 HX = P["rg2_waist_width"] / 2 + P["fit_clearance"]
@@ -203,20 +205,28 @@ report["hardware"] = {"cross_bolts": "4 x M4 socket head, about 55 mm, with 4 x 
                       "camera_screws": "2 x M3 x 6 (plate %.1f mm + at most %.0f mm into the camera)" % (P["plate_thickness"], P["d415_m3_max_insertion"])}
 report["camera"] = {"optical_origin_mm": [P["cam_x"], P["cam_y"], P["cam_z"]], "body_centre_x_mm": round(BODY_CX, 2),
                     "back_face_z_mm": round(CAM_BACK_Z, 2), "m3_holes_xy_mm": [[round(x, 2), P["cam_y"]] for x in M3_X]}
-# A box approximation for collision, in the RG2 frame: [name, min, max]; the truss as a closed triangular prism.
-report["collision_boxes_mm"] = [
-    ["back_bar", [-X_OUT, Y_BACK, Z0], [X_OUT, -HY, CAM_BACK_Z]],
-    ["back_ear_neg", [-X_OUT, -HY, Z0], [-HX_LOW, -GAP, CAM_BACK_Z]],
-    ["back_ear_pos", [HX_LOW, -HY, Z0], [X_OUT, -GAP, CAM_BACK_Z]],
-    ["front_bar", [-X_OUT, HY, Z0], [X_OUT, Y_FRONT, Z1]],
-    ["front_ear_neg", [-X_OUT, GAP, Z0], [-HX, HY, Z1]],
-    ["front_ear_pos", [HX, GAP, Z0], [X_OUT, HY, Z1]],
-    ["front_bar_extension", [-P["rg2_waist_width"] / 2, HY, Z1], [P["rg2_waist_width"] / 2, Y_FRONT, Z1 + P["front_bar_extension"]]],
-    ["camera_plate", [PLATE_X0, PLATE_Y0, PLATE_Z0], [PLATE_X1, PLATE_Y1, CAM_BACK_Z]],
-]
-report["collision_prism_mm"] = {"name": "truss", "z": [Z0, CAM_BACK_Z],
-                                "xy": [[P["truss_root_x"], Y_BACK + 2.0], [-X_OUT, Y_BACK + 2.0],
-                                       [BODY_CX + P["truss_tip_x_from_camera_centre"], P["cam_y"] - P["truss_tip_past_camera"]]]}
+# Collision approximation: five convex pieces in this CAD frame, each a list of corner points (the builder script makes
+# one convex hull of each). The collider belongs to the RG2 body the bracket clamps, so the collar is its whole outer
+# envelope (the space inside it is that same body). Near the finger linkage the pieces stop at COLLISION_TOP_Z, short
+# of the printed part, so every piece stays at least 10 mm from the linkage over its whole stroke: more than two of
+# Newton's 4 mm contact gaps, so no contact point is ever created (mcp/tests/test_workcell_real_pack.py sweeps it).
+COLLISION_TOP_Z = P["collision_top_z_near_fingers"]
+
+
+def corners(low, high):
+    return [[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])]
+
+
+TRUSS_XY = [[P["truss_root_x"], Y_BACK + 2.0], [-X_OUT, Y_BACK + 2.0],
+            [BODY_CX + P["truss_tip_x_from_camera_centre"], P["cam_y"] - P["truss_tip_past_camera"]]]
+report["collision_pieces_mm"] = {
+    "collar": corners([-X_OUT, Y_BACK, Z0], [X_OUT, Y_FRONT, Z1]),
+    "back_bar_upper": corners([-X_OUT, Y_BACK, Z1], [X_OUT, -HY, min(CAM_BACK_Z, COLLISION_TOP_Z)]),
+    "front_bar_extension": corners([-P["rg2_waist_width"] / 2, HY, Z1],
+                                   [P["rg2_waist_width"] / 2, Y_FRONT, min(Z1 + P["front_bar_extension"], COLLISION_TOP_Z)]),
+    "truss": [[x, y, z] for z in (Z0, CAM_BACK_Z) for x, y in TRUSS_XY],
+    "camera_plate": corners([PLATE_X0, PLATE_Y0, PLATE_Z0], [PLATE_X1, PLATE_Y1, CAM_BACK_Z]),
+}
 if errors:
     print("BRACKET ERROR: " + "; ".join(errors))
     raise SystemExit(1)

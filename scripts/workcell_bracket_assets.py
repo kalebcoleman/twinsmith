@@ -4,8 +4,8 @@
 * ``wrist_mount``: ``exts/workcell/cad/rg2_camera_bracket.py`` run by ``freecadcmd`` for the camera pose in
   ``exts/workcell/config/lab_hardware.json`` (``wrist_camera.offset_in_rg2_m``). The printed bracket clamps the RG2
   body, so the USD is in the pack's RG2 body frame and the builder places it there. The pack keeps the USD (render
-  mesh plus a box collision approximation), and, in the CAD frame, the STEP of both pieces as mounted and the STEP
-  and STL of each printable piece.
+  mesh plus a collision approximation of five convex hulls, which the builder attaches to the RG2 body), and, in the
+  CAD frame, the STEP of both pieces as mounted and the STEP and STL of each printable piece.
 * Every other file is copied from v2 unchanged, including the D415 body.
 
 v2 is only read (its hashes are verified first); no other pack or version is read or written. The result is complete
@@ -83,35 +83,36 @@ def run_cad(out: Path, camera_mm, back_mm, body_cx_mm):
     return json.loads(report.read_text())
 
 
+COLLISION_SCOPE = "Collision"       # child of the asset's default prim; the work cell builder references it onto the RG2 body
+
+
 def add_collision(path: Path, report):
-    """Box colliders (and the truss as a convex prism) under ``/Asset/Collision``, guide purpose, in metres."""
+    """The bracket's collision approximation under ``/Asset/Collision``: a few convex hulls, guide purpose, metres.
+
+    Each piece is a small point cloud with ``physics:approximation = "convexHull"`` set explicitly, the form the pack's
+    RG2 links already use. Nothing here is a rigid body: the builder references this scope under the RG2 body.
+    """
     from pxr import Gf, Usd, UsdGeom, UsdPhysics, Vt
 
     stage = Usd.Stage.Open(str(path))
-    scope = UsdGeom.Scope.Define(stage, "/Asset/Collision")
+    scope = UsdGeom.Scope.Define(stage, f"/Asset/{COLLISION_SCOPE}")
     UsdGeom.Imageable(scope.GetPrim()).CreatePurposeAttr(UsdGeom.Tokens.guide)
+    box_faces = [0, 1, 3, 2, 4, 6, 7, 5, 0, 4, 5, 1, 2, 3, 7, 6, 0, 2, 6, 4, 1, 5, 7, 3]
+    prism_faces = [0, 2, 1, 3, 4, 5, 0, 1, 4, 3, 1, 2, 5, 4, 2, 0, 3, 5]
     names = []
-    for name, low, high in report["collision_boxes_mm"]:
-        corners = to_body([low, high]) / 1000.0
-        low, high = corners.min(0), corners.max(0)
-        cube = UsdGeom.Cube.Define(stage, f"/Asset/Collision/{name}")
-        cube.CreateSizeAttr(1.0)
-        cube.CreateExtentAttr([Gf.Vec3f(-0.5, -0.5, -0.5), Gf.Vec3f(0.5, 0.5, 0.5)])
-        cube.AddTranslateOp().Set(Gf.Vec3d(*((low + high) / 2)))
-        cube.AddScaleOp().Set(Gf.Vec3f(*(high - low)))
-        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    for name, points in report["collision_pieces_mm"].items():
+        points = to_body(points) / 1000.0
+        if len(points) not in (6, 8):
+            raise SystemExit(f"collision piece {name} must be a box (8 corners) or a triangular prism (6)")
+        mesh = UsdGeom.Mesh.Define(stage, f"/Asset/{COLLISION_SCOPE}/{name}")
+        mesh.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*point) for point in points.tolist()]))
+        mesh.CreateFaceVertexCountsAttr(Vt.IntArray([4] * 6 if len(points) == 8 else [3, 3, 4, 4, 4]))
+        mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(box_faces if len(points) == 8 else prism_faces))
+        mesh.CreateSubdivisionSchemeAttr("none")
+        mesh.CreateExtentAttr([Gf.Vec3f(*points.min(0)), Gf.Vec3f(*points.max(0))])
+        UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
+        UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr("convexHull")
         names.append(name)
-    prism = report["collision_prism_mm"]
-    corners = (to_body([[x, y, z] for z in prism["z"] for x, y in prism["xy"]]) / 1000.0).tolist()
-    mesh = UsdGeom.Mesh.Define(stage, f"/Asset/Collision/{prism['name']}")
-    mesh.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*corner) for corner in corners]))
-    mesh.CreateFaceVertexCountsAttr(Vt.IntArray([3, 3, 4, 4, 4]))
-    mesh.CreateFaceVertexIndicesAttr(Vt.IntArray([0, 2, 1, 3, 4, 5, 0, 1, 4, 3, 1, 2, 5, 4, 2, 0, 3, 5]))
-    mesh.CreateSubdivisionSchemeAttr("none")
-    mesh.CreateExtentAttr([Gf.Vec3f(*np.min(corners, axis=0)), Gf.Vec3f(*np.max(corners, axis=0))])
-    UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
-    UsdPhysics.MeshCollisionAPI.Apply(mesh.GetPrim()).CreateApproximationAttr("convexHull")
-    names.append(prism["name"])
     stage.GetRootLayer().Save()
     return names
 
@@ -154,8 +155,8 @@ def main() -> int:
         files["wrist_mount/wrist_mount.usdc"] = made / "wrist_mount.usdc"
         records["wrist_mount/wrist_mount.usdc"] = dict(
             asset_id="wrist_mount", **common,
-            changes="Both printed pieces as one render mesh in the RG2 body frame, plus a box collision approximation "
-                    "under /Asset/Collision (the work cell builder removes it: camera parts are visual only).")
+            changes="Both printed pieces as one render mesh in the RG2 body frame, plus a collision approximation of five "
+                    "convex hulls under /Asset/Collision, which the work cell builder attaches to the RG2 body.")
         for name in ("wrist_bracket.step", "bracket.json", *(f"{piece}.{kind}" for piece in PIECES for kind in ("step", "stl"))):
             files[f"wrist_mount/{name}"] = made / name
             records[f"wrist_mount/{name}"] = dict(common)

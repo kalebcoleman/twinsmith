@@ -175,16 +175,169 @@ def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
     bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket", f"{root}/body"])
     near = bracket[bracket[:, 2] >= lowest - 4.0]            # the only part of the bracket level with the linkage
     assert len(near) and np.abs(near[:, 1]).min() >= slab + 1.5
-    # The same holds for the collision approximation the pack carries (the builder removes it from the scene).
-    asset = Usd.Stage.Open(str(pack.asset(config["assets"]["wrist_mount"])))
-    colliders = [prim for prim in asset.Traverse() if prim.HasAPI(UsdPhysics.CollisionAPI)]
-    assert len(colliders) == 9
-    for prim in colliders:
-        box = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["guide"]).ComputeWorldBound(prim).ComputeAlignedRange()
-        low, high = np.array(box.GetMin()) * 1000.0, np.array(box.GetMax()) * 1000.0       # body frame: X is CAD -Y
-        assert high[2] < lowest or low[0] > slab or high[0] < -slab, prim.GetPath()
-    wrist = stage.GetPrimAtPath(root)
+    wrist = stage.GetPrimAtPath(root)       # everything under tool0 stays visual only, the D415 body included
     assert not any(item.HasAPI(UsdPhysics.CollisionAPI) or item.HasAPI(UsdPhysics.RigidBodyAPI) for item in Usd.PrimRange(wrist))
+
+
+def _gilbert(first, second, iterations=400, tolerance=1e-7):
+    """A certified lower bound on the distance between the convex hulls of two point sets (Gilbert's algorithm)."""
+    v, lower = first[0] - second[0], 0.0
+    for _ in range(iterations):
+        support = first[np.argmin(first @ v)] - second[np.argmax(second @ v)]
+        norm = np.linalg.norm(v)
+        if norm < 1e-12:
+            return 0.0
+        lower = max(lower, float(v @ support) / norm)
+        step = v - support
+        if norm - lower <= tolerance or float(step @ step) < 1e-18:
+            break
+        v = v + min(1.0, max(0.0, float(v @ step) / float(step @ step))) * (support - v)
+    return lower
+
+
+def _joint_pose(position, rotation):
+    matrix = Gf.Matrix4d()
+    matrix.SetRotate(Gf.Rotation(Gf.Quatd(rotation.GetReal(), Gf.Vec3d(*rotation.GetImaginary()))))
+    matrix.SetTranslateOnly(Gf.Vec3d(*position))
+    return matrix
+
+
+def _linkage(stage, gripper):
+    """The RG2's revolute joints: {name: body0, body1, frames, limits in degrees, (driving joint, ratio) or None}."""
+    joints = {}
+    for prim in Usd.PrimRange(gripper):
+        if not prim.IsA(UsdPhysics.RevoluteJoint) or UsdPhysics.Joint(prim).GetJointEnabledAttr().Get() is False:
+            continue
+        joint = UsdPhysics.RevoluteJoint(prim)
+        mimic = prim.GetRelationship("newton:mimicJoint")
+        driver = mimic.GetTargets()[0].name if mimic and mimic.GetTargets() else None
+        joints[prim.GetName()] = dict(
+            body0=joint.GetBody0Rel().GetTargets()[0], body1=joint.GetBody1Rel().GetTargets()[0], axis=joint.GetAxisAttr().Get(),
+            frame0=_joint_pose(joint.GetLocalPos0Attr().Get(), joint.GetLocalRot0Attr().Get()),
+            frame1=_joint_pose(joint.GetLocalPos1Attr().Get(), joint.GetLocalRot1Attr().Get()),
+            limits=(joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()),
+            mimic=(driver, prim.GetAttribute("newton:mimicCoef1").Get()) if driver else None)
+    return joints
+
+
+def _link_frames(joints, base, driver, degrees):
+    """Row-vector matrices, link to RG2 body, for the chain that ``driver`` moves, at ``degrees``."""
+    frames, todo = {base: Gf.Matrix4d(1.0)}, dict(joints)
+    while True:
+        moved = False
+        for name, joint in list(todo.items()):
+            if (name if joint["mimic"] is None else joint["mimic"][0]) != driver or joint["body0"] not in frames:
+                continue
+            axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[joint["axis"]]
+            turn = Gf.Matrix4d()
+            turn.SetRotate(Gf.Rotation(axis, degrees * (1.0 if joint["mimic"] is None else joint["mimic"][1])))
+            frames[joint["body1"]] = joint["frame1"].GetInverse() * turn * joint["frame0"] * frames[joint["body0"]]
+            del todo[name]
+            moved = True
+        if not moved:
+            return frames
+
+
+def _collision_points(stage, body, frame_matrix=None):
+    """Points of every collision shape whose nearest rigid body is ``body``, in that body's frame (or through a matrix)."""
+    cache = UsdGeom.XformCache()
+    inverse = cache.GetLocalToWorldTransform(body).GetInverse()
+    boxes = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "guide", "proxy"])
+    chunks = []
+    for prim in Usd.PrimRange(body):
+        if not prim.HasAPI(UsdPhysics.CollisionAPI):
+            continue
+        owner = prim
+        while owner and not owner.HasAPI(UsdPhysics.RigidBodyAPI):
+            owner = owner.GetParent()
+        if owner != body:
+            continue
+        if prim.IsA(UsdGeom.Mesh):
+            points = np.array(UsdGeom.Mesh(prim).GetPointsAttr().Get(), dtype=float)
+        else:                                   # a primitive or a group of them: the corners of its local box
+            box = boxes.ComputeUntransformedBound(prim).ComputeAlignedRange()
+            points = np.array([[x, y, z] for x in (box.GetMin()[0], box.GetMax()[0]) for y in (box.GetMin()[1], box.GetMax()[1])
+                               for z in (box.GetMin()[2], box.GetMax()[2])], dtype=float)
+        matrix = cache.GetLocalToWorldTransform(prim) * inverse * (frame_matrix or Gf.Matrix4d(1.0))
+        chunks.append((np.c_[points, np.ones(len(points))] @ np.array(matrix))[:, :3])
+    return chunks
+
+
+BRACKET_SHAPES = {"collar", "back_bar_upper", "front_bar_extension", "truss", "camera_plate"}
+NEWTON_CONTACT_GAP_M = 0.004        # sim_tools.newton_support.collision_settings, on every collider of the cell
+
+
+def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
+    """Five convex hulls on the RG2 body: no mass, no filtered pair, and never within two contact gaps of anything
+    that is another body: the finger linkage and its pads over the whole stroke, the Quick Changer, the Bota, wrist 3."""
+    config, stage, report, camera_report, _ = cell
+    body_path = _rg2_frame(stage, report, config)
+    body = stage.GetPrimAtPath(body_path)
+    (collider,) = camera_report["colliders"]
+    (authored,) = camera_report["authoring"]["colliders"]
+    assert collider["body_path"] == authored["body_path"] == body_path and authored["status"] == "attached"
+    assert collider["filtered_pairs"] == [] and collider["mass"] == "none added" and "_path" not in collider
+    assert camera_report["cameras"]["wrist"]["physics"]["bracket_collider"]["prim_path"] == collider["prim_path"]
+    root = stage.GetPrimAtPath(collider["prim_path"])
+    assert root.GetParent() == body and body.HasAPI(UsdPhysics.RigidBodyAPI)
+    assert UsdGeom.Imageable(root).ComputePurpose() == UsdGeom.Tokens.guide
+    shapes = {prim.GetName(): prim for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.CollisionAPI)}
+    assert set(shapes) == BRACKET_SHAPES == {Path(item["prim_path"]).name for item in authored["shapes"]}
+    for prim in Usd.PrimRange(root):
+        assert not prim.HasAPI(UsdPhysics.RigidBodyAPI) and not prim.HasAPI(UsdPhysics.MassAPI) and not prim.IsA(UsdPhysics.Joint)
+        assert not prim.HasAPI(UsdPhysics.FilteredPairsAPI)
+    for prim in shapes.values():
+        assert prim.IsA(UsdGeom.Mesh) and len(UsdGeom.Mesh(prim).GetPointsAttr().Get()) in (6, 8)
+        assert UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() == "convexHull"
+    # No mass is added: the RG2 body keeps the explicit mass the config gives it.
+    assert UsdPhysics.MassAPI(body).GetMassAttr().Get() == pytest.approx(
+        config["inertials"]["rg2_links"]["onrobot_rg2_base_link"]["mass_kg"])
+
+    cache = UsdGeom.XformCache()
+    to_body = cache.GetLocalToWorldTransform(body).GetInverse()
+    pieces = {name: (np.c_[points, np.ones(len(points))] @ np.array(cache.GetLocalToWorldTransform(prim) * to_body))[:, :3]
+              for name, prim in shapes.items() for points in [np.array(UsdGeom.Mesh(prim).GetPointsAttr().Get(), dtype=float)]}
+    # The collar is the bracket's outer envelope around the body; it and the render mesh agree on that envelope.
+    visual = _vertices_in_frame(stage, body_path, [f"{camera_report['cameras']['wrist']['root_path']}/bracket"])
+    everything = np.vstack(list(pieces.values()))
+    assert everything.min(0) == pytest.approx(visual.min(0), abs=2e-4)
+    assert everything.max(0)[:2] == pytest.approx(visual.max(0)[:2], abs=2e-4)
+    assert everything.max(0)[2] <= visual.max(0)[2] + 1e-6
+
+    # The finger linkage and the pads, over the whole stroke of each driven joint.
+    joints = _linkage(stage, stage.GetPrimAtPath(report["gripper_path"]))
+    base = body.GetPath()
+    drivers = [name for name, joint in joints.items() if joint["mimic"] is None]
+    assert len(drivers) == 2 and len(joints) == 6
+    hulls = {joint["body1"]: _collision_points(stage, stage.GetPrimAtPath(joint["body1"])) for joint in joints.values()}
+    assert all(hulls.values()) and len(report["pad_paths"]) == 2          # the pads are colliders of the inner fingers
+    for driver in drivers:
+        at_rest = _link_frames(joints, base, driver, 0.0)
+        for link, matrix in at_rest.items():                               # the chain reproduces the authored poses
+            authored_pose = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(link)) * to_body
+            assert np.allclose(np.array(matrix), np.array(authored_pose), atol=1e-5), link
+    closest = {}
+    for driver in drivers:
+        low, high = joints[driver]["limits"]
+        assert low < 0 < high
+        for degrees in np.linspace(low, high, 27):
+            for link, matrix in _link_frames(joints, base, driver, float(degrees)).items():
+                for chunk in hulls.get(link, []):
+                    moved = (np.c_[chunk, np.ones(len(chunk))] @ np.array(matrix))[:, :3]
+                    for name, piece in pieces.items():
+                        closest[name] = min(closest.get(name, 1.0), _gilbert(moved, piece))
+    assert min(closest.values()) >= 2 * NEWTON_CONTACT_GAP_M + 0.001, closest
+    assert closest["camera_plate"] > 0.03 and closest["truss"] > 0.015
+
+    # The bodies fixed to the RG2: nothing of the bracket is anywhere near them.
+    fixed = {}
+    for path in (f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"):
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(path)):
+            if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                matrix = cache.GetLocalToWorldTransform(prim) * to_body
+                for chunk in _collision_points(stage, prim, matrix):
+                    fixed[path] = min([fixed.get(path, 1.0)] + [_gilbert(chunk, piece) for piece in pieces.values()])
+    assert len(fixed) == 3 and min(fixed.values()) > 0.05, fixed
 
 
 def test_pack_is_complete_on_its_own(cell):
