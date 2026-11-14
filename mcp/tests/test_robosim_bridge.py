@@ -20,11 +20,20 @@ from twinsmith.robosim import bridge as bridge_module
 STUB = r'''
 import hashlib, json, os, pathlib, re, signal, subprocess, sys, time
 args = sys.argv[1:]
-run = pathlib.Path(args[args.index("--run-dir") + 1])
-if "robosimstudio_real2sim_agent.serve" in args:
-    while True:
-        time.sleep(0.1)
-args = args[args.index("--run-dir") + 2:]
+if args[:1] == ["-I"]:      # the bridge's take_scores.py, run in this interpreter
+    assert pathlib.Path(args[1]).name == "take_scores.py", args
+    request = json.loads(pathlib.Path(args[2]).read_text())
+    run = pathlib.Path(request["run_dir"])
+    args = ["take-scores"]
+    if request["take"] == "unscorable":
+        sys.stderr.write("take 'unscorable' has no segmentation")
+        sys.exit(1)
+else:
+    run = pathlib.Path(args[args.index("--run-dir") + 1])
+    if "robosimstudio_real2sim_agent.serve" in args:
+        while True:
+            time.sleep(0.1)
+    args = args[args.index("--run-dir") + 2:]
 action = args[0]
 with (run / "calls.jsonl").open("a") as output:
     output.write(json.dumps({"args": args, "cwd": os.getcwd(), "env": {
@@ -118,11 +127,31 @@ elif action == "compare":
             row_photo = [100.0 - 50 * i / last, 100.0 - 60 * i / last]
             entry = reading(moved)
             entry["photo"] = dict(entry["photo"], centre=row_photo)
-            rows.append({"t": anchor["t"], "label": anchor["label"], "sim_t": anchor["sim_t"],
-                         "sim_step": round(anchor["sim_t"] * 50), "objects": {"block": entry}})
+            # RSS at the pin: which frame each anchor was held against, and no per-object readings
+            rows.append({"t": anchor["t"], "label": anchor["label"], "file": anchor["file"], "frame": i,
+                         "sim_t": anchor["sim_t"], "sim_step": round(anchor["sim_t"] * 50)})
+            if (run / "later_rss.json").exists():      # a later RSS that returns the readings itself
+                rows[-1]["objects"] = {"block": dict(reading(moved), photo={"centre": row_photo, "pixels": 1000}, iou=0.7)}
+            if (run / "no_frame.json").exists():
+                del rows[-1]["frame"]
         reply.update(anchors=rows, verdict="1 of 1 did what the clip did", score=0.4, strip=write(run / "strip.png"))
     else:
         reply.update(objects={"block": reading([102.0, 103.0])}, beside=write(option("--out")))
+elif action == "take-scores":
+    def reading(centre):
+        return {"photo": {"centre": [100.0, 100.0], "pixels": 1000}, "sim": {"centre": centre, "pixels": 1100},
+                "iou": 0.5, "offset_px": [2, 3], "width_ratio": 1.1, "height_ratio": 0.9, "size_ratio": 1.049}
+    full = [-40.0, -40.0]
+    if (run / "physics.json").exists():
+        full = fake_physics(json.loads((run / (request["take"] + ".json")).read_text()).get("push"))
+    last = len(request["anchors"]) - 1
+    found = []
+    for i, anchor in enumerate(request["anchors"]):
+        assert anchor["frame"] == i and anchor["file"], anchor
+        entry = reading([100.0 + full[0] * i / last, 100.0 + full[1] * i / last])
+        entry["photo"] = dict(entry["photo"], centre=[100.0 - 50 * i / last, 100.0 - 60 * i / last])
+        found.append({"frame": i, "objects": {key.split("=", 1)[0]: entry for key in request["keys"]}})
+    reply["anchors"] = found
 elif action == "play":
     text = (run / "rollout.txt").read_text() if (run / "rollout.txt").exists() else "ROLLOUT = {}"
     rollout = eval(text.split("=", 1)[1], {"None": None})
@@ -347,8 +376,11 @@ def test_complete_workflow_and_containment(fake):
     assert not gpu_calls
     assert sorted(str(file.relative_to(bridge.root)) for file in bridge.root.rglob("*") if file.is_file()) == [".venv/bin/python", "robosimstudio_real2sim_agent/__main__.py"]
     assert all("wall_s" in command and "finished_at" in command for command in ledger["commands"])
-    assert all(command["argv"][:3] == [str(bridge.root / ".venv/bin/python"), "-m", "robosimstudio_real2sim_agent"]
-               for command in ledger["commands"])
+    script = str(Path(bridge_module.__file__).with_name("take_scores.py"))
+    for command in ledger["commands"]:
+        argv = command["argv"]
+        assert argv[:3] == [str(bridge.root / ".venv/bin/python"), "-m", "robosimstudio_real2sim_agent"] or (
+            argv[:3] == [str(bridge.root / ".venv/bin/python"), "-I", script] and Path(argv[3]).parent == path), argv
 
 
 def test_async_poll_and_busy(fake):
@@ -1295,3 +1327,82 @@ def test_the_workspace_follows_the_shared_rule(tmp_path, monkeypatch):
     monkeypatch.setenv("TWINSMITH_WORKSPACE", str(tmp_path / "chosen"))
     assert RoboSimBridge().workspace == (tmp_path / "chosen").resolve()
     assert RoboSimBridge(workspace=tmp_path / "given").workspace == (tmp_path / "given").resolve()
+
+
+def test_a_take_reply_without_readings_is_scored_from_the_take_and_a_failure_is_an_error(fake):
+    """RSS at the pin answers compare --take with the frame each anchor was held against and nothing per object; the
+    bridge reads the masks itself. When it cannot, the answer is an error, never "did not move"."""
+    bridge = fake[0]
+    first = start(fake)
+    run, path = first["run"], Path(first["run_dir"])
+    complete(bridge, "reference", run, video=str(fake[2]), at="0:start,3:middle,6:end")
+    complete(bridge, "rollout", run, take="plain", duration_s=6)
+    plain = complete(bridge, "compare_take", run, take="plain", keys=["block=red"])
+    assert plain["verdict"] == "matches" and plain["anchors"][-1]["objects"]["block"]["iou"] == 0.5
+    (request_file,) = path.glob("take-scores-*.json")
+    request = json.loads(request_file.read_text())
+    assert request["keys"] == ["block=red"] and [a["frame"] for a in request["anchors"]] == [0, 1, 2]
+    (path / "later_rss.json").write_text("{}")             # RSS's own readings are used as given, without the script
+    later = complete(bridge, "compare_take", run, take="plain", keys=["block=red"])
+    assert later["anchors"][-1]["objects"]["block"]["iou"] == 0.7 and len(list(path.glob("take-scores-*.json"))) == 1
+    (path / "later_rss.json").unlink()
+    (path / "no_frame.json").write_text("{}")
+    framed = bridge.call("compare_take", run=run, take="plain", keys=["block=red"], wait_s=10)
+    framed = framed.get("operation", {}).get("result", framed)
+    assert framed["ok"] is False and "no frame or file" in framed["error"], framed
+    (path / "no_frame.json").unlink()
+    complete(bridge, "rollout", run, take="unscorable", duration_s=6)
+    failed = bridge.call("compare_take", run=run, take="unscorable", keys=["block=red"], wait_s=10)
+    result = failed.get("operation", {}).get("result", failed)
+    assert result["ok"] is False and "masks could not be read" in result["error"], result
+    assert "no segmentation" in result["error"] and result.get("verdict") != "did not move"
+
+
+RSS_ROOT = Path(os.environ.get("TWINSMITH_ROBOSIM_ROOT") or Path.home() / "robotics-workspace/tools/robosimstudio")
+
+
+@pytest.mark.skipif(not (RSS_ROOT / ".venv/bin/python").exists(), reason="no RoboSimStudio checkout with its environment")
+def test_take_scores_against_the_real_rss_functions(tmp_path):
+    """take_scores.py in the real RSS interpreter on a small take: a half-size segmentation, as RSS records it."""
+    import numpy as np
+    from PIL import Image
+
+    run = tmp_path / "run"
+    (run / "ref").mkdir(parents=True)
+    width, height = 64, 48
+    seg = np.zeros((2, height // 2, width // 2), dtype=np.int32)
+    seg[0, 4:12, 4:12] = 3                      # the block, top-left at the start
+    seg[1, 4:12, 20:28] = 3                     # and further right at the end
+    np.savez_compressed(run / "push_seg.npz", seg=seg)
+    (run / "push.json").write_text(json.dumps({"frames": [{"i": 0, "t": 0.0, "step": 0}, {"i": 1, "t": 1.0, "step": 50}],
+                                               "names": {"3": "block"}, "width": width, "height": height}))
+    for name, x in (("a.png", 8), ("b.png", 40)):
+        photo = np.full((height, width, 3), 255, dtype=np.uint8)
+        photo[8:24, x:x + 16] = (220, 20, 20)
+        Image.fromarray(photo).save(run / "ref" / name)
+    request = tmp_path / "request.json"
+    request.write_text(json.dumps({"run_dir": str(run), "take": "push", "keys": ["block=red"],
+                                   "anchors": [{"file": "a.png", "frame": 0}, {"file": str(run / "ref/b.png"), "frame": 1}]}))
+    script = Path(bridge_module.__file__).with_name("take_scores.py")
+    done = subprocess.run([str(RSS_ROOT / ".venv/bin/python"), "-I", str(script), str(request)], cwd=tmp_path,
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-2000:]
+    rows = json.loads(done.stdout)["anchors"]
+    first, last = (row["objects"]["block"] for row in rows)
+    assert first["iou"] > 0.9 and last["iou"] > 0.9, rows
+    moved_photo = last["photo"]["centre"][0] - first["photo"]["centre"][0]
+    moved_sim = last["sim"]["centre"][0] - first["sim"]["centre"][0]
+    assert abs(moved_photo - 32) < 1.5 and abs(moved_sim - 32) < 1.5, (moved_photo, moved_sim)
+    request.write_text(json.dumps({"run_dir": str(run), "take": "push", "keys": ["block=red", "floor=red"],
+                                   "anchors": [{"file": "a.png", "frame": 0}, {"file": "b.png", "frame": 5}]}))
+    late = subprocess.run([str(RSS_ROOT / ".venv/bin/python"), "-I", str(script), str(request)], cwd=tmp_path,
+                          capture_output=True, text=True, timeout=120)
+    first, last = json.loads(late.stdout)["anchors"]
+    assert first["objects"]["floor"]["sim"] is None                 # a name the take has no label for
+    assert last["objects"]["block"]["sim"] is None and last["objects"]["block"]["photo"] is not None   # past the seg
+    for key in ("block=@20,16", "block=red@20,16", "block=mask:a.png"):
+        request.write_text(json.dumps({"run_dir": str(run), "take": "push", "keys": [key],
+                                       "anchors": [{"file": "a.png", "frame": 0}]}))
+        refused = subprocess.run([str(RSS_ROOT / ".venv/bin/python"), "-I", str(script), str(request)], cwd=tmp_path,
+                                 capture_output=True, text=True, timeout=120)
+        assert refused.returncode != 0 and "seed or a mask" in refused.stderr, (key, refused.stderr[-500:])

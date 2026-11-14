@@ -293,12 +293,8 @@ each one in full.
 
 | Namespace | Tool | Actions | Runs in | Plan |
 |---|---|---|---|---|
-| none | `gap` | `status`, `tools`, `check`, `generate`, `run` | Graph-as-Policy's environment | [03](plans/03-planning-eval-wrappers.md) |
-| none | `vabar` | `status`, `list`, `run`, `bench`, `results` | VABAR's environment | [03](plans/03-planning-eval-wrappers.md) |
-| none | `sysid` | `status`, `fit`, `report` | Its own MuJoCo environment | [04](plans/04-robosim-bump-and-sysid.md) |
 | none | `perception` | `status`, `pose` | A separate pose service | Later |
-| none | `status` | Adds the loaded and pinned versions of every wrapped tool | Host | With [03](plans/03-planning-eval-wrappers.md) |
-| none | `hardware` | `status`, `check`, `fab`, `render` | Host; `kicad-cli`, KiKit and Blender beside it | 05 (#110) |
+| none | `status` | Adds the loaded and pinned versions of every wrapped tool; today each wrapped tool's own `status` reports its pin | Host | Later |
 | none | `use_bridge` | Adds `hold` and `release`: a lease on one Kit for one caller | Host | Later |
 
 A wrapped tool takes the upstream tool's name, bare, and is one grouped tool. A new asset format is an option on
@@ -361,13 +357,14 @@ twinsmith only reports them.
 | Isaac Sim | 6.2.0.0, Python 3.12 | This repository's lock |
 | Newton inside Kit | 1.6.1 (`isaacsim.physics.newton` 1.1.1), with Warp 1.17.0 | Loaded versions recorded in [compatibility](COMPATIBILITY.md) |
 | Isaac Lab | 3.0.0 with Sim 6.2; 2.3.2 with Sim 5.1 (PhysX only) | [Compatibility](COMPATIBILITY.md) |
-| RoboSimStudio | `87b5e32`; upstream `main` was `4e52e1a` on 2026-11-13, 13 commits later | `mcp/twinsmith/robosim/bridge.py`; upstream |
+| RoboSimStudio | `ba3650c`, upstream `main` on 2026-11-13 | `mcp/twinsmith/robosim/bridge.py` |
+| RoboSimStudio inside VABAR | VABAR's own pin, the `KeplerC/robosimstudio` fork at `39b7a6e`, in VABAR's environment | VABAR's project file |
 | Newton inside RoboSimStudio | `newton[sim]>=1.7,<1.8` | RoboSimStudio's project file |
 | Newton, latest release | 1.8.0, released 2026-11-11; used by nothing here | Upstream |
 | CoACD | 1.0.11, the same pin RoboSimStudio uses, so both stacks cut the same hulls | Plan 01 |
-| Graph-as-Policy and its skill library | The commits VABAR's README names: `06dd619` and `b15859a` | Plan 03 |
-| VABAR | The 1.0 release commit, set when the wrapper is written | Plan 03 |
-| MuJoCo for `sysid` | 4.0.1, in its own environment | Plan 04 |
+| Graph-as-Policy and its skill library | The commits VABAR 1.0 names: `06dd619` and `b15859a`. Both forks have newer commits (`964bb8a`, `752dfbd` on 2026-11-13) that VABAR does not use | `mcp/twinsmith/gap.py` |
+| VABAR | `64b594e`, the 1.0 release. Upstream's one later commit (`cc9e2d3`) changes only its README | `mcp/twinsmith/vabar.py` |
+| MuJoCo for `sysid` | 4.0.1, in its own environment | `mcp/twinsmith/sysid.py` |
 
 Three Newton versions are in play and that is intended. `status` reports them side by side; nothing unifies them.
 

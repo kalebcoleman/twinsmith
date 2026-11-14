@@ -79,7 +79,7 @@ Listed as `jobs(action="status")`.
 Check a background job in this Kit; with no job_id, list the jobs. run_python(background=true), sim__simulation__run and sim__trajectory__replay return a job_id. Gives state (running, succeeded, failed, cancelled), elapsed_s, progress, the last output and, when finished, the result or error. The list is newest first. Through the MCP server it also takes an Isaac Lab or script job_id (isaaclab__train, run_script, ...), with no bridge needed.
 
 - `job_id` (string, optional): job_id from the call that started the work. Omit to list jobs.
-- `wait_s` (number, optional): Wait up to this many seconds (0-60) for the job to end before answering, instead of polling.
+- `wait_s` (number, optional): Wait up to this many seconds (0-60; a larger value waits 60) for the job to end before answering, instead of polling.
 
 ### `refresh_tools`
 
@@ -1794,7 +1794,7 @@ Toolset `eval` is off until you select it with `+eval`. Reference: [PLANNING-EVA
 
 ### `vabar`
 
-VABAR benchmark from its own pinned checkout: status (pins, warmup), list (tasks), run (a task's episodes, as a job; uses the GPU), bench (a frozen cell; print_only=true returns the plan, false runs it as a job), results (success table of a run folder). Follow jobs with jobs(action="status").
+VABAR benchmark from its own pinned checkout: status (pins, warmup), list (tasks), run (a task's episodes, as a job; uses the GPU), bench (a frozen cell; print_only=true returns upstream's plan, false runs it as a job), results (success table and failure reasons of a run folder). Follow jobs with jobs(action="status").
 
 - `action` (Literal['status', 'list', 'run', 'bench', 'results'], required): Action to perform.
 - `task` (str | None, default `None`): run (required): SUITE/VARIANT from list, such as tool_hanging/wrenches_level1.
@@ -1804,8 +1804,9 @@ VABAR benchmark from its own pinned checkout: status (pins, warmup), list (tasks
 - `cell` (str | None, default `None`): bench (required): benchmark cell TASK_CLASS/L<level>, such as tool_hanging/L1.
 - `limit` (int | None, default `None`): bench: run only the first N instances.
 - `workers` (int, default `1`): bench: worker processes, 1 to 4.
-- `print_only` (bool, default `True`): bench: return the planned command without running it.
+- `print_only` (bool, default `True`): bench: return upstream's resolved jobs (--print, CPU, writes nothing) without running.
 - `name` (str | None, default `None`): run/bench: run folder name under <workspace>/runs/vabar; default action and time.
+- `bus_timeout_s` (int | None, default `None`): run: seconds a graph's tool call may wait (--bus-timeout); default for solve=graph 180, cable suites 600, as bench does.
 - `run` (str | None, default `None`): results: run folder name; omit to list the newest runs.
 - `timeout_s` (float, default `21600`): run/bench: job time limit in seconds.
 - `allow_concurrent_gpu` (bool, default `False`): run/bench: knowingly start beside another GPU job or a running Isaac Sim.

@@ -13,6 +13,12 @@ with open(pathlib.Path(__file__).resolve().parents[2] / "calls.jsonl", "a") as s
     stream.write(json.dumps(record) + "\n")
 if sys.argv[1:4] == ["-m", "vabar", "list"]:
     print("tool_hanging/wrenches_level1\nusbc_insert/insert_easy")
+elif sys.argv[1:4] == ["-m", "vabar", "bench"] and "--print" in sys.argv:
+    if "nope/L1" in sys.argv:
+        print("[bench] no cell 'nope/L1'; the cells are ['tool_hanging/L1']", file=sys.stderr)
+        sys.exit(2)
+    print("# tool_hanging/L1 under config default: 1 jobs, 8 episodes", file=sys.stderr)
+    print("python -m vabar run --task tool_hanging/wrenches_level1 --episodes 1,5 --bus-timeout 180")
 elif "--validate-only" in sys.argv:
     if "broken" in sys.argv[-1]:
         print("[error] grasp_sg.pick: unknown skill 'pick_up'")

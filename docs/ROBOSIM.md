@@ -128,6 +128,15 @@ in the result (`bridge_verdict.thresholds`):
 - `moved, but not like the clip`: moved 3 px or more but a test failed; `failed` lists the numbers that did;
 - `did not move`: the simulated displacement is under 3 px.
 
+Where the per-anchor numbers come from: RSS's `compare --take` at the pin returns, per anchor, only the take frame it
+was held against (`robosimstudio_real2sim_agent/checks.py`, `compare_take`; its keys only outline things on the
+strip). So the bridge reads each anchor's masks itself. It runs `mcp/twinsmith/robosim/take_scores.py` in RSS's own
+interpreter (`python -I`), which applies the same RSS functions a still `compare` uses (`photo_masks`, `fit_mask`,
+`sim_masks`, `compare_masks`) to the take's `<take>_seg.npz` and the anchor's photograph. A take without a
+segmentation, or any other failure there, is an error, not `did not move`. If a later RSS returns per-object readings
+itself, they are used as given. Keys must be colour keys (`name=colour`): a seed or a mask marks one still only, so
+RSS leaves it off the clip's side of a take, and `compare_take` and `tune_push` refuse it.
+
 All long actions return quickly by default. Supply `wait_s` (0–120), or poll
 `status(run=..., wait_s=120)` until `operation.state` is `completed` or `failed`.
 Only one action operates a run at a time. `status` without a run lists
@@ -220,6 +229,7 @@ Each run is `<workspace>/runs/robosim/<YYYYMMDD-HHMMSS>-<name>/`:
 - `run.json`: device, checkout commit, inputs, scene versions, command argv/logs/results and timings.
 - `serve.log`, `serve.pid`, `command-*.stdout/.stderr`: process evidence.
 - `ref/`: extracted frames, contact sheet, `timeline.json`, and `timeline-map-N.json` per `compare_take`.
+- `take-scores-N.json`: the request for `take_scores.py`, one per `compare_take` (keys, and each anchor's photograph and take frame).
 - `snapshot-*.png`, comparison pictures/JSON, `<take>.mp4/.json/_seg.npz`, `push-<take>.json`, `REPORT.md`.
 
 RSS caches are the only checkout-local writes: `TMPDIR=<rss>/.tmp`,
