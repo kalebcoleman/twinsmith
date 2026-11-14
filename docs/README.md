@@ -59,7 +59,7 @@ over both.
 | [Roadmap](ROADMAP.md) | The phases from cleanup to the real-to-sim-to-real Jenga loop, each with goal, scope, exit criteria and dependencies; the pull request queue; decisions needed |
 | [Plans](plans/README.md) | One specification per upcoming pull request, ready to hand to an agent |
 | [Open items](OPEN-ITEMS.md) | Unfinished work by topic, including the Newton qualification list |
-| [Publishing](PUBLISHING.md) | PyPI release steps |
+| [Releasing](RELEASING.md) | Bump the version, tag, and the PyPI trusted publishing that uploads it |
 | [Vendoring](VENDORING.md) · [Third-party notices](../THIRD-PARTY-NOTICES.md) | Licenses and origins |
 | [Media](media/README.md) | Provenance of the images in the examples |
 

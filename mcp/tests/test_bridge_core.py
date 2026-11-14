@@ -560,3 +560,20 @@ def test_a_job_wait_from_the_main_loop_does_not_freeze_it():
 
         reply, took = asyncio.run_coroutine_threadsafe(ask(), live.loop).result(10)
         assert took < 1 and reply["wait_timed_out"] and "main loop" in reply["note"]
+
+
+def test_a_job_wait_longer_than_a_call_may_hold_is_clamped():
+    from twinsmith_bridge import builtins
+
+    with LiveBridge() as live:
+        async def quick(job):
+            return {"done": True}
+
+        async def ask():
+            job = live.bridge.jobs.start("test", quick)
+            await asyncio.sleep(0.2)
+            return [(await live.bridge.dispatch("job_status", {"job_id": job.id, "wait_s": wait})) for wait in (300, -1)]
+
+        clamped, refused = asyncio.run_coroutine_threadsafe(ask(), live.loop).result(10)
+        assert clamped["status"] == "success" and clamped["result"]["wait_s_used"] == builtins.JOB_WAIT_MAX_S
+        assert refused["status"] == "error" and refused["code"] == "INVALID_VALUE"

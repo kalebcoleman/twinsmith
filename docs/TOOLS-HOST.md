@@ -336,8 +336,9 @@ running ones. This is the simulator-side counterpart of the Isaac Lab job tools,
   and the `result` or `error` once it has ended. A result larger than 16 KiB is cut and says so: write large data to a file and
   return its path. For a finished replay, or a controller run recorded with `camera`, the host encodes the frames and adds
   `video_path`.
-- `wait_s` (0–60) is served inside Kit, off the main loop: the call returns when the job ends, with no polling and no simulator
-  time spent, and sets `wait_timed_out` if the job is still running. Without a `job_id` the status call lists the simulator's jobs,
+- `wait_s` (0–60; a larger value waits 60 and the answer says so in `wait_s_used`, plus `wait_note` while the job still runs) is
+  served inside Kit, off the main loop: the call returns when the job ends, with no polling and no simulator time spent, and
+  sets `wait_timed_out` if the job is still running. Without a `job_id` the status call lists the simulator's jobs,
   newest first. A cancelled job ends at its next step and cleans up after itself; confirm with the status call. A Lab or script
   `job_id` given to the same calls is answered by the host from its own record, with no bridge needed, so one tool follows every
   job.

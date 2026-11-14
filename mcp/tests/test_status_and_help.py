@@ -109,10 +109,36 @@ def test_a_simulator_job_s_wait_is_served_by_the_simulator_in_one_call(state):
     out = json.loads(gw._dispatch("job_status", {"job_id": "job-1", "wait_s": 30}, state))
     assert out["state"] == "succeeded"
     assert state.client.calls == [("job_status", {"job_id": "job-1", "wait_s": 30})], "one call: the bridge waits, not the host"
-    for bad in (61, -1, True):
+    for bad in (-1, True, float("nan"), "30"):
         refused = gw._dispatch("job_status", {"job_id": "job-1", "wait_s": bad}, state)
         assert gw._failed_tool_result(refused) and "wait_s" in refused
     assert len(state.client.calls) == 1, "a bad wait is refused before anything is asked"
+
+
+def test_a_longer_wait_waits_the_most_a_call_may_instead_of_failing(state):
+    state.client = Bridge({"job_status": lambda params: {"job_id": "job-1", "state": "running", "wait_timed_out": True}})
+    out = json.loads(gw._dispatch("job_status", {"job_id": "job-1", "wait_s": 300}, state))
+    assert state.client.calls == [("job_status", {"job_id": "job-1", "wait_s": 60.0})], "the simulator gets 60, not 300"
+    assert out["wait_s_used"] == 60.0 and "Call again" in out["wait_note"] and out["state"] == "running" and "note" not in out
+
+
+def test_a_clamped_wait_keeps_the_jobs_own_note_and_stops_at_sixty_on_the_host(state, monkeypatch):
+    """A Lab or script job is waited for on the host: the clamp holds there too, and a failed job keeps its reason."""
+    from twinsmith.isaaclab import jobs as lab_jobs
+
+    clock = {"now": 0.0}
+    monkeypatch.setattr("time.monotonic", lambda: clock["now"])
+    monkeypatch.setattr("time.sleep", lambda s: clock.__setitem__("now", clock["now"] + s))
+    monkeypatch.setattr(gw, "_job_record", lambda job_id: {"runner": "lab", "status": "running"})
+    states = {"running": {"state": "running"}, "failed": {"state": "failed", "note": "the simulator exited first"}}
+    current = {"state": "running"}
+    monkeypatch.setattr(lab_jobs, "runs_status", lambda job_id: dict(states[current["state"]]))
+    out = json.loads(gw._dispatch("job_status", {"job_id": "lab-1", "wait_s": 300}, state))
+    assert out["state"] == "running" and out["wait_timed_out"] and out["wait_s_used"] == 60.0
+    assert 60.0 <= clock["now"] < 61.0, clock          # stopped at the clamp, not 300 s
+    current["state"] = "failed"
+    ended = json.loads(gw._dispatch("job_status", {"job_id": "lab-1", "wait_s": 300}, state))
+    assert ended["note"] == "the simulator exited first" and ended["wait_s_used"] == 60.0 and "wait_note" not in ended
 
 
 def replay_result(folder, frames=4):
