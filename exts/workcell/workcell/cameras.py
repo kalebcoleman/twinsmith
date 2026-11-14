@@ -1,4 +1,4 @@
-"""Work-cell cameras: a wrist and an overhead D415, built from pack geometry.
+"""Work-cell cameras: a wrist D415 and, when ``overhead_camera.enabled``, an overhead one, built from pack geometry.
 
 Plain functions, no work cell mixin. ``build_cameras`` is the entry point the workcell
 scene calls; ``plan_cameras`` is the same plan without USD authoring, so host
@@ -45,7 +45,8 @@ except ImportError:  # loaded by file path in host tests
 
 
 SCHEMA = 1
-REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf")
+OVERHEAD_ASSET_ROLES = ("overhead_mount", "overhead_release", "overhead_shelf")
+REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", *OVERHEAD_ASSET_ROLES)
 D415_BODY_SIZE_M = (0.099, 0.020, 0.023)
 WRIST_BRACKET_SIZE_M = (0.030, 0.060, 0.012)
 DEFAULT_APERTURE_MM = 36.0
@@ -59,7 +60,7 @@ REQUIRED_CONFIG_PATHS = (
     "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
     "wrist_camera.body_size_m", "wrist_camera.bracket_size_m",
-    "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
+    "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
     "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
     "overhead_mount.height_m", "overhead_mount.removable", "overhead_mount.printed_shelf_size_m",
@@ -71,7 +72,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def build_cameras(stage, assets, config, robot_report, *, author=None, config_path=None):
-    """Author the wrist and overhead D415 cameras and return a JSON report.
+    """Author the wrist D415 camera, and the overhead one when enabled, and return a JSON report.
 
     ``assets`` exposes ``asset(logical_id) -> absolute Path``; the workcell scene
     may pass its resolved ``{role: Path}`` mapping instead. ``config`` is the
@@ -121,8 +122,9 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
     parts = wrist_parts + overhead_parts
     roots = [root for root in (wrist_root, overhead_root) if root]
 
-    built = [camera for camera in (wrist, overhead) if camera["status"] == "built"]
-    if len(built) == 2 and len(parts) == 6:
+    wanted = [camera for camera in (wrist, overhead) if camera["status"] != "disabled"]
+    built = [camera for camera in wanted if camera["status"] == "built"]
+    if len(built) == len(wanted) and len(parts) == (6 if overhead in wanted else 2):
         status = "ok"
     elif built:
         status = "partial"
@@ -334,8 +336,19 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     return camera, parts, root_entry
 
 
+def overhead_enabled(config):
+    enabled = (config.get("overhead_camera") or {}).get("enabled")
+    if type(enabled) is not bool:
+        raise ValueError("overhead_camera.enabled must be true or false")
+    return enabled
+
+
 def _plan_overhead(config, assets, assets_cfg, limitations):
     section = config.get("overhead_camera") or {}
+    if not overhead_enabled(config):
+        return {"status": "disabled", "prim_path": None, "root_path": None, "geometry_status": "not built",
+                "reason": "overhead_camera.enabled is false: the cell has the wrist camera only, "
+                          "with no overhead camera, gantry, release plate or shelf."}, [], None
     position = _vector(section.get("position_m"), 3, "overhead_camera.position_m")
     target = _vector(section.get("look_at_m"), 3, "overhead_camera.look_at_m")
     up_hint = _vector(section.get("up_hint"), 3, "overhead_camera.up_hint") or [1.0, 0.0, 0.0]

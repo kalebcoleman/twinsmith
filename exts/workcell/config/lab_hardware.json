@@ -644,17 +644,25 @@
         1280,
         720
       ],
+      "status": "confirmed",
+      "source": "Max's merged_localization.py opens the wrist D415 colour stream at 1280x720 (c_width, c_height) and builds its camera matrix from this size and the 69.4 x 42.5 degree field of view, with the principal point at the image centre. The real unit's factory intrinsics are not recorded here."
+    },
+    "clipping_range_m": {
+      "value": [
+        0.01,
+        10.0
+      ],
       "status": "unconfirmed",
-      "source": "Placeholder: RGB and aligned depth at 1280x720. Set to the profile the real pipeline uses."
+      "source": "Render setting, not a D415 property: the RG2 body is nearer than the renderer's default 0.1 m near plane and would be drawn cut open. The real colour sensor has no near cut-off; its depth stream starts at about 0.3 m."
     },
     "offset_in_tool0_m": {
       "value": [
-        -0.012,
-        -0.09,
+        0.012,
+        0.038,
         -0.005
       ],
       "status": "unconfirmed",
-      "source": "Design pose, not a lab measurement. Max's localizer_bridge.py gives (-0.012,-0.038,-0.005), but there the RG2 fingers and body fill the D415 frustum (projecting the pack's RG2, Quick Changer and Bota vertices through the camera). y is moved to -0.09 and the camera tilted (rotation_in_tool0_deg) so no gripper-stack vertex lies inside the colour frustum plus a 3 degree margin; x and z keep Max's values. Re-measure on the real bracket. Max's camera_model.py has z=-0.010; Aldrin hard-codes a D455 at wrist_3 (0.045,-0.05,0.07), a different camera and mount."
+      "source": "The lab's own value, moved to the side Kaleb reports. Max's localizer_bridge.py (the node the real pipeline runs) has the camera at (-0.012,-0.038,-0.005) in the end-effector frame, 38 mm from the tool axis; at Max's home pose that is the side away from the robot base. Kaleb, 2026-11-14: the camera is on the other side, towards the underside, on the gripper close to the wrist. So the same mount turned 180 degrees about the tool axis: with the tool pointing forward and wrist_3 at 0, tool0 +y points down. The RG2 is in the image, as in the lab. Not measured since the move: measure on the real bracket."
     },
     "offset_in_tool0_alternatives_m": {
       "value": {
@@ -679,17 +687,17 @@
     },
     "rotation_in_tool0_deg": {
       "value": [
-        8.0,
         0.0,
-        0.0
+        0.0,
+        180.0
       ],
       "status": "unconfirmed",
-      "source": "Design tilt, not a lab measurement: 8 degrees about the optical X axis tilts the view away from the tool axis (toward the offset side) so the RG2 fingertips stay out of the frustum (3.7 degrees clear of its edge); the tool axis enters the view about 0.4 m ahead of tool0. Max's code uses identity (camera OPTICAL frame, z forward, y down, equals tool0). Extrinsic XYZ degrees. The USD camera looks along -Z, so the builder adds Rx(180) internally."
+      "source": "Max's localizer_bridge.py uses the identity (the optical frame equals the end-effector frame: z forward along the tool axis, y down), with no tilt. Extrinsic XYZ degrees; the 180 about Z (the tool axis) turns the camera with its mount to the underside, which keeps the gripper toward the bottom of the image as in Max's mount. If the real image shows the gripper at the top, set Z to 0. The USD camera looks along -Z, so the builder adds Rx(180) internally."
     },
     "mount_position": {
-      "value": "under the arm",
-      "status": "unconfirmed",
-      "source": "Kaleb says it is now mounted UNDER the arm. Neither Max's tool0 offset (y=-38 mm) nor Aldrin's wrist_3 pose is documented as under-arm: the bracket CAD from Max is pending. Re-measure offset and rotation after the move."
+      "value": "under the wrist",
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: the wrist camera is on the underside. Its measured offset and rotation are still pending (the bracket CAD from Max has not arrived)."
     },
     "bracket_size_m": {
       "value": [
@@ -722,6 +730,11 @@
     }
   },
   "overhead_camera": {
+    "enabled": {
+      "value": false,
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: wrist camera only for now. The overhead D415 and its gantry are not bought, so the cell is built without them; set true to build the proposed overhead camera."
+    },
     "model": {
       "value": "Intel RealSense D415",
       "status": "unconfirmed",
@@ -920,14 +933,14 @@
   },
   "lighting": {
     "key_intensity": {
-      "value": 2500.0,
+      "value": 800.0,
       "status": "unconfirmed",
-      "source": "Placeholder: Demo lighting preset."
+      "source": "Placeholder demo preset, not the lab's lighting: a soft dome with a weak key light, so the arm casts no hard shadow into the wrist view."
     },
     "dome_intensity": {
-      "value": 600.0,
+      "value": 1100.0,
       "status": "unconfirmed",
-      "source": "Placeholder: Demo lighting preset."
+      "source": "Placeholder demo preset, not the lab's lighting: a soft dome with a weak key light, so the arm casts no hard shadow into the wrist view."
     }
   },
   "interfaces": {

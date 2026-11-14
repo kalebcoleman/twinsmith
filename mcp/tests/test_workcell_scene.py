@@ -387,3 +387,15 @@ def test_bench_keeps_its_own_collision_layer_and_else_gets_triangle_meshes(modul
 
     with pytest.raises(ValueError):
         scene.bench_colliders(Usd.Stage.CreateInMemory())
+
+
+def test_scene_rows_leave_out_the_overhead_hardware_when_it_is_off(modules):
+    scene, _ = modules
+    roles = ("robot", "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf")
+    rows = [{"bom_id": role, "asset_id": role, "quantity": 2 if role == "d415" else 1} for role in roles]
+    config = {"assets": {role: role for role in roles}, "overhead_camera": {"enabled": True}}
+    assert scene.scene_rows(config, rows) == rows
+    config["overhead_camera"]["enabled"] = False
+    assert {row["bom_id"]: row["quantity"] for row in scene.scene_rows(config, rows)} == {
+        "robot": 1, "d415": 1, "wrist_mount": 1}
+    assert rows[1]["quantity"] == 2     # the BOM rows themselves are not changed

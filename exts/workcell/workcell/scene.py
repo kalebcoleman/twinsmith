@@ -218,6 +218,19 @@ def bench_colliders(stage, path="/World/Bench", engine="physx") -> str:
     return "triangle meshes"
 
 
+def scene_rows(config, rows):
+    """The BOM rows the scene must hold. With the overhead camera off, its mount rows and its D415 unit
+    (the second one) are left out; the BOM itself still lists them."""
+    from .cameras import OVERHEAD_ASSET_ROLES, overhead_enabled
+
+    if overhead_enabled(config):
+        return rows
+    absent = {config["assets"][role] for role in OVERHEAD_ASSET_ROLES}
+    d415 = config["assets"]["d415"]
+    return [{**row, "quantity": row["quantity"] - (row["asset_id"] == d415)}
+            for row in rows if row["asset_id"] not in absent]
+
+
 def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
     from pxr import Usd, UsdGeom, UsdPhysics, UsdShade
     from . import bom
@@ -244,7 +257,7 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
     from .environment import ROOT
-    return bom.audit_parts(parts, rows, stage=stage, strict=True, ignore=(ROOT,))
+    return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT,))
 
 
 def bench_top(stage, top, bench="/World/Bench"):
@@ -395,8 +408,7 @@ class Workcell:
             block_report = jenga.build(stage, assets["jenga_block"], config)
             parts = ([{"prim_path": "/World/Bench", "asset_id": config["assets"]["bench"], "bom_id": "bench"}]
                      + robot_report["parts"] + camera_report["parts"] + block_report["parts"])
-            required_assets = {config["assets"][role] for role in ROLES if role != "materials"}
-            missing = required_assets - {part["asset_id"] for part in parts}
+            missing = {row["asset_id"] for row in scene_rows(config, rows)} - {part["asset_id"] for part in parts}
             if missing:
                 raise ValueError(f"Physical assets missing from BOM part mappings: {sorted(missing)}")
             _tag_parts(stage, parts)

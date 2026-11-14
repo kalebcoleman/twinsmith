@@ -8,8 +8,10 @@ does not run the simulator or inspect private assets.
 ## Scope
 
 The work cell is one UR5e on a Vention bench with a Bota Rokubi, OnRobot Quick Changer,
-standard OnRobot RG2, black finger pads, a wrist D415 and an overhead D415 on a removable
-gantry. The Jenga tower is 54 blocks of nominal 72 x 24 x 14 mm dimensions.
+standard OnRobot RG2, black finger pads and one camera: a D415 on the wrist. That camera is the
+cell's only sensor for perception and real-to-sim. A second, overhead D415 on a removable gantry is
+a proposal that is not bought and is not built (`overhead_camera.enabled` is `false` in the
+config; `true` builds it). The Jenga tower is 54 blocks of nominal 72 x 24 x 14 mm dimensions.
 
 Machine-readable data:
 
@@ -86,7 +88,7 @@ physical part must map to one of these rows.
 | --- | --- |
 | Scene | `bench` 1 |
 | Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1, `finger_pad` 2 |
-| Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 |
+| Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
 | Jenga | `jenga_block` 54 |
 
 Both cameras use the single `d415` logical asset; the BOM records two physical units. The
@@ -219,7 +221,7 @@ The current candidate contains:
   appearance is not vendor-accurate.
 - No genuine Bota Rokubi, D415, wrist bracket or gantry CAD is available. These are
   dimensioned, unconfirmed proxies.
-- The overhead support is the pack's three-member gantry (two posts and a cross-member).
+- With `overhead_camera.enabled` (off in the shipped config), the overhead support is the pack's three-member gantry (two posts and a cross-member).
   The posts stand on the bench top panel (inside its measured footprint, x up to 0.9436 m,
   y -0.811..-0.091 m), outside the arm's reach, and the camera hangs under the
   beam through the stacked pack proxies (camera, printed shelf, KB3X3 release plate, beam
@@ -227,10 +229,11 @@ The current candidate contains:
   dimensions, the pack scales member thickness with the post span, and the real attachment
   details are unconfirmed, so this does not establish mounting feasibility. The KB3X3 is a
   camera-only release, not a load-bearing gantry base. Printed mounts and shelf remain proxies.
-- The wrist D415 is 90 mm below the tool axis and tilted 8 degrees away from it. Projecting
-  every RG2, Quick Changer and Bota vertex through the camera finds none inside the colour
-  frustum plus a 3 degree margin (3.7 degrees clear of the edge). A render of the previous
-  75 mm / 6 degree pose still showed the finger tips at the bottom edge of the frame.
+- The wrist D415 is on the underside of the wrist, 38 mm from the tool axis, looking along it with no
+  tilt: Max's `localizer_bridge.py` offset, turned 180 degrees about the tool axis to the side Kaleb
+  reports (2026-11-14). The RG2 body fills the lower part of the image, as that offset implies for
+  the lab camera. The pose has not been measured since the camera was moved. Its near clip is
+  0.01 m so the RG2 is not drawn cut open.
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads
@@ -257,9 +260,10 @@ configuration or a design envelope and are not vendor drawings.
 | RG2 maximum opening | 0.110 m | `confirmed` |
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
 | D415 body | 0.099 x 0.020 x 0.023 m | `unconfirmed` |
-| Wrist camera offset | -0.012, -0.09, -0.005 m in tool0 (design pose; Max's measured value was y = -0.038) | `unconfirmed` |
-| Wrist camera tilt | 8 degrees about the optical X axis (design value) | `unconfirmed` |
-| Overhead camera position | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
+| Wrist camera offset | 0.012, 0.038, -0.005 m in tool0 (Max's localizer offset, turned to the underside) | `unconfirmed` |
+| Wrist camera rotation | 0, 0, 180 degrees (extrinsic XYZ): no tilt, turned about the tool axis with the mount | `unconfirmed` |
+| Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
+| Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |
 | Shelf and release stack offsets | +0.0205 m and +0.0305 m above the camera (from proxy dimensions) | `unconfirmed` |
 | Printed shelf | 0.1 x 0.06 x 0.008 m | `placeholder` |

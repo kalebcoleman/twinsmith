@@ -64,6 +64,7 @@ def config():
     values = copy.deepcopy(values)
     values["pack"] = {"id": "ur5e-jenga-workcell", "version": "v1"}
     values["assets"] = {role: role for role in cameras.REQUIRED_ASSET_ROLES}
+    values["overhead_camera"]["enabled"] = True     # the shipped config is wrist-only; these tests cover both cameras
     return values
 
 
@@ -200,6 +201,7 @@ def test_gantry_outside_reach_and_removable_are_enforced(config, tmp_path):
 
 
 def test_parts_carry_asset_id_and_bom_tag(config, tmp_path):
+    config["wrist_camera"]["offset_in_tool0_m"] = [0.012, 0.09, -0.005]   # farther out than the 60 mm bracket proxy
     report = build(config, tmp_path)
     parts = report["parts"]
     assert len(parts) == 6
@@ -277,6 +279,31 @@ def test_missing_pose_marks_the_camera_unavailable(config, tmp_path):
     report = build(no_position, tmp_path)
     assert report["cameras"]["overhead"]["status"] == "unavailable"
     assert "position" in report["cameras"]["overhead"]["reason"]
+
+
+def test_overhead_camera_is_left_out_when_disabled(config, tmp_path):
+    config["overhead_camera"]["enabled"] = False
+    report = build(config, tmp_path)
+    assert report["status"] == "ok"
+    assert report["cameras"]["wrist"]["status"] == "built"
+    overhead = report["cameras"]["overhead"]
+    assert overhead["status"] == "disabled" and overhead["prim_path"] is None and "wrist camera only" in overhead["reason"]
+    assert {part["role"] for part in report["parts"]} == {"d415", "wrist_mount"}
+    assert [root["name"] for root in report["roots"]] == ["wrist_mount"]
+    config["overhead_mount"]["type"] = "clamp"      # the unused mount is not checked
+    assert build(config, tmp_path)["status"] == "ok"
+    config["overhead_camera"]["enabled"] = "no"
+    with pytest.raises(ValueError, match="overhead_camera.enabled"):
+        build(config, tmp_path)
+
+
+def test_shipped_config_has_the_wrist_camera_only_on_the_underside():
+    values, _ = hardware.load_config()
+    assert values["overhead_camera"]["enabled"] is False
+    wrist = values["wrist_camera"]
+    assert wrist["offset_in_tool0_m"][1] > 0        # tool0 +y is down with the tool forward and wrist_3 at 0
+    forward = cameras._rotate_vector(cameras._euler_xyz_deg_to_quat(wrist["rotation_in_tool0_deg"]), [0.0, 0.0, 1.0])
+    assert forward[2] > 0.98                         # looks along the tool axis
 
 
 def test_topics_capture_and_fiducials_are_declared_not_verified(config, tmp_path):
