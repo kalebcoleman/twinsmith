@@ -11,7 +11,7 @@ Checked against `origin/main` at `33ff56e` on 2026-11-13, and updated after the 
 ## The thesis in one paragraph
 
 A UR5e plays Jenga. The simulated cell is the lab's cell: the Vention bench, the Bota force-torque sensor, the OnRobot RG2 with
-its finger pads, a wrist and an overhead D415, and 54 blocks that each differ a little in size, mass and friction, as real
+its finger pads, a wrist D415 (the overhead one is not bought and not built), and, as a task pack loaded on top, 54 blocks that each differ a little in size, mass and friction, as real
 blocks do. It runs on Newton's MuJoCo-Warp solver. Perception is markerless. Real recordings tune the simulation offline
 (system identification), a planner and a benchmark run in simulation, and the loop closes on the real robot only through ROS 2
 code the owner has approved.
@@ -174,7 +174,7 @@ is deleted.
 **Scope.** The open list in [Work cell on Newton](OPEN-ITEMS.md#work-cell-on-newton): one articulation for arm and gripper,
 explicit drive gains, an RG2 closed chain that Newton can move (equality or mimic constraints), the flange force and torque
 read, finger contact reads from Newton's contact snapshot, per-engine friction profiles in the hardware configuration,
-wrist and overhead renders, then `workcell_smoke.py` on both engines.
+wrist renders (the overhead camera is not built), then `workcell_smoke.py` on both engines.
 
 **Exit criteria.**
 - `workcell__cell(action="quick_start")` builds on a Newton session; the refusal in `workcell/scene.py` is gone.
@@ -182,7 +182,7 @@ wrist and overhead renders, then `workcell_smoke.py` on both engines.
   0.3 mm).
 - The gripper reaches measured finger widths at open, mid and closed within 1 mm.
 - At rest the flange wrench equals the weight below the sensor within 5 percent, on both engines.
-- Cell, wrist and overhead renders exist for Newton; the PhysX smoke still passes; both run reports are kept.
+- Cell and wrist renders exist for Newton; the PhysX smoke still passes; both run reports are kept.
 
 **Status.** #112 met the build and tower criteria:
 - The refusal is gone, and the cell builds and holds on Newton.
