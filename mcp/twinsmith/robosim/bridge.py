@@ -57,9 +57,9 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-def _name(value):
+def _name(value, what="name"):
     if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", value):
-        raise ValueError("Use a name of 1–80 letters, digits, underscores or hyphens.")
+        raise ValueError(f"{what} must be 1–80 letters, digits, underscores or hyphens.")
     return value
 
 
@@ -104,6 +104,8 @@ class RoboSimBridge:
         path = self.runs / _name(run)
         if path.is_symlink() or path.resolve().parent != self.runs.resolve():
             raise ValueError("Run must be a direct, non-symlink bridge run folder.")
+        if not (path / "run.json").is_file():
+            raise ValueError(f"No run named {run}; status without run lists the runs.")
         ledger = json.loads((path / "run.json").read_text())
         if ledger.get("bridge") != "twinsmith-robosim-v1" or ledger.get("run") != run:
             raise ValueError("Not a bridge-owned RSS run.")
@@ -313,9 +315,9 @@ class RoboSimBridge:
                     if isinstance(max_trials, bool) or not isinstance(max_trials, int) or not 1 <= max_trials <= plan.TUNE_MAX_TRIALS:
                         raise ValueError(f"max_trials must be a whole number from 1 to {plan.TUNE_MAX_TRIALS}.")
                 if action in ("rollout", "compare_take", "tune_push"):
-                    _name(take)
+                    _name(take, "take")
                 if routine:
-                    _name(routine)
+                    _name(routine, "routine")
                 if action in ("rollout", "tune_push"):
                     taken = [take] if action == "rollout" else [f"{take}-{k}" for k in range(1, max_trials + 1)]
                     if any((path / f"{each}.json").exists() for each in taken):
