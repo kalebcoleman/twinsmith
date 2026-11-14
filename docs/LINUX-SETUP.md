@@ -194,10 +194,12 @@ viewport and URDF follow-ups have superseded some early pending checks, while th
 The host connection and `sim__stage(action="info")` do not require a robot or workstation, and NVIDIA's public robots
 (`ur5e`, `franka`, `unitree_g1`, ...) load by name from the running simulator's own asset root. The UR5e Jenga work cell uses
 [a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) (`ur5e-jenga-workcell/v1`) that you supply. The
-repository ships **no assets**, `install.sh` installs packages, not assets, and nothing is ever downloaded for you.
+repository ships **no assets** and `install.sh` installs packages, not assets. Nothing is downloaded for you unless you
+list your own packs to [pull](ASSET-PACKS.md#pulling-and-pushing-packs).
 
 Every pack lives in one **asset root**: `TWINSMITH_ASSET_ROOT`, else `<workspace>/assets`. See [asset packs](ASSET-PACKS.md) for the format and the tools.
-Copy the pack folder onto the machine, then check it:
+Pull it from your own repository (`twinsmith assets pull ur5e-workcell/v2`) or copy the pack folder onto the machine, then
+check it:
 
 ```bash
 export TWINSMITH_ASSET_ROOT=<asset-root>        # outside Git; set it for the MCP server and for any Kit you start yourself
@@ -384,11 +386,15 @@ To see at the start of every session whether a bridge is up, add a Claude Code h
    `<repo>/.venv`, which is found automatically. If you already have Isaac Sim, see
    [I already have Isaac Sim installed](#i-already-have-isaac-sim-installed).
 
-5. **Add your assets and check.** The asset root is `TWINSMITH_ASSET_ROOT`, else `<workspace>/assets`. Fill it with `scripts/assets.py adopt` or by copying a pack folder
-   in (see [ASSET-PACKS.md](ASSET-PACKS.md)).
+5. **Add your assets and check.** The asset root is `TWINSMITH_ASSET_ROOT`, else `<workspace>/assets`. Fill it with
+   `twinsmith assets pull --all` from your own repository, with `adopt`, or by copying a pack folder in (see
+   [ASSET-PACKS.md](ASSET-PACKS.md)). To pull: put the read token in `~/.config/agent-secrets/hf_token` (mode 600), copy
+   `pack-sources.toml` from a machine that has it into `~/.config/twinsmith/`, and add the `hub` extra
+   ([pulling packs](ASSET-PACKS.md#pulling-and-pushing-packs)).
 
    ```bash
    export TWINSMITH_ASSET_ROOT="$TWINSMITH_WORKSPACE/assets"
+   twinsmith assets pull --all     # only if you keep packs in a repository
    python3 scripts/assets.py list
    python3 scripts/env.py where
    ./run.sh --port 8766   # not if a Kit already holds this port; choose another with --port
@@ -489,8 +495,9 @@ Kit process.
 Paths differ between machines. The bytes must not.
 
 1. On the second machine, do [the setup above](#set-up-a-new-machine) steps 1 to 4.
-2. Copy the pack folders (each `<pack id>/<version>/` with its `pack.yaml`) to the asset root there.
-   Keep each version whole.
+2. Copy `~/.config/twinsmith/pack-sources.toml` and the read token file there, then `twinsmith assets pull --all`
+   ([pulling packs](ASSET-PACKS.md#pulling-and-pushing-packs)). Without a repository, copy the pack folders (each
+   `<pack id>/<version>/` with its `pack.yaml`) to the asset root there. Keep each version whole.
 3. Run on the second machine:
 
    ```bash

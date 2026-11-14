@@ -52,9 +52,10 @@ GROUPS: Dict[str, tuple] = {
         "tail": "sim__logs__tail", "mark": "sim__logs__mark", "summary": "sim__logs__summary"}),
     "assets__library": ("Your asset folders: approved roots, files in one, a search, one file's details.", {
         "roots": "assets__roots", "scan": "assets__scan", "search": "assets__search", "info": "assets__info"}),
-    "assets__pack": ("Named asset packs: list, check, dependencies, adopt a folder, pin, build.", {
+    "assets__pack": ("Named asset packs: list, check, dependencies, adopt a folder, pin, build, pull, push.", {
         "list": "assets__packs", "doctor": "assets__pack_doctor", "dependencies": "assets__dependencies",
-        "adopt": "assets__pack_adopt", "pin": "assets__pack_pin", "build": "assets__pack_build"}),
+        "adopt": "assets__pack_adopt", "pin": "assets__pack_pin", "build": "assets__pack_build",
+        "pull": "assets__pack_pull", "push": "assets__pack_push"}),
     "assets__mesh": ("Mesh preparation: inspect, decimate render meshes, collision shapes, split render and collision.", {
         "inspect": "assets__mesh_inspect", "decimate": "assets__mesh_decimate", "hulls": "assets__mesh_hulls",
         "split": "assets__mesh_split"}),

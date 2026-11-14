@@ -35,6 +35,8 @@ sysid-test = ["mujoco[sysid]==4.0.1; python_version >= '3.11'"]
 isaaclab = [
     "tensorboard>=2.14",
 ]
+# Pulling and pushing asset packs with a Hugging Face repository (twinsmith assets pull/push, assets__pack pull/push).
+hub = ["huggingface_hub>=1.0,<3"]
 # Mesh preparation and validation (assets__mesh, assets__validate): run in a subprocess of this interpreter.
 mesh = [
     "trimesh>=4,<5",

@@ -81,6 +81,10 @@ and names the next call. Call it once; the answer does not need repeating before
 the timeline stopped, and returns the new `session_id`, `stage_id`, the paths it made and the next steps. Add a robot by
 name (`robot="franka"`) or a whole scene (`environment="warehouse"`). More prompts are in [Examples](docs/EXAMPLES.md).
 
+**6. Bring your own assets (optional).** The repository ships none. If you keep your packs in a private Hugging Face
+repository, list them in `~/.config/twinsmith/pack-sources.toml` (format: `config/pack-sources.example.toml`) and pull them:
+`twinsmith assets pull --all`. See [pulling and pushing packs](docs/ASSET-PACKS.md#pulling-and-pushing-packs).
+
 If a step fails, see [troubleshooting the first connection](docs/LINUX-SETUP.md#troubleshooting-the-first-connection).
 
 ## Tool groups

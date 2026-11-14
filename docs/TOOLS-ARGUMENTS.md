@@ -1501,7 +1501,7 @@ No arguments.
 
 ## `assets`: Import and manage assets
 
-Toolset `assets` is off until you select it with `+assets`. Reference: [ASSET-IMPORT.md](ASSET-IMPORT.md). 16 tools, listed as 5: `assets__import_path`, `assets__library` (roots, scan, search, info), `assets__mesh` (inspect, decimate, hulls, split), `assets__pack` (list, doctor, dependencies, adopt, pin, build), `assets__validate`.
+Toolset `assets` is off until you select it with `+assets`. Reference: [ASSET-IMPORT.md](ASSET-IMPORT.md). 18 tools, listed as 5: `assets__import_path`, `assets__library` (roots, scan, search, info), `assets__mesh` (inspect, decimate, hulls, split), `assets__pack` (list, doctor, dependencies, adopt, pin, build, pull, push), `assets__validate`.
 
 ### `assets__dependencies`
 
@@ -1650,6 +1650,26 @@ Rewrite the sha256 values of an existing pack.yaml to match its files, and show 
 - `files` (array, optional): Pin only these relative paths, accepting their changes.
 - `force` (boolean, default `false`): Accept every changed file.
 - `dry_run` (boolean, default `false`): Show what would change and write nothing.
+
+### `assets__pack_pull`
+
+Listed as `assets__pack(action="pull")`.
+
+Download pack versions from the owner's sources file (~/.config/twinsmith/pack-sources.toml): each entry names a Hugging Face repository, a pinned commit and a folder. The folder is downloaded with the owner's read token file (never shown) into a hidden staging folder in the asset root, checked against its pack.yaml (every file hashed, nothing extra, no symlink) and moved into place only if it verifies. A version already present is compared by pack.yaml and never replaced. A vendor entry is reported, not downloaded. Needs the hub extra. NO_ACCESS means the repository is missing or the token cannot read it.
+
+- `pack` (string, optional): Pack as "<pack id>/<version>". Give this or all.
+- `all` (boolean, default `false`): Pull every entry of the sources file.
+
+### `assets__pack_push`
+
+Listed as `assets__pack(action="push")`.
+
+Upload a pack version that verifies to a Hugging Face repository and pin the new commit in the owner's sources file. Uses only the write token file (hub.write_token_file, default ~/.config/agent-secrets/hf_write_token), which only the owner creates. Refuses a public repository for a pack with files that are not redistributable, and a version the repository already holds with other contents. create makes the repository, always private. dry_run checks locally and contacts nothing.
+
+- `pack` (string, optional): Pack as "<pack id>/<version>". Default: the project file's pack.
+- `repo` (string, optional): Repository "<owner>/<name>". Default: the pack's entry, else hub.repo.
+- `create` (boolean, default `false`): Create the repository (private) if it does not exist.
+- `dry_run` (boolean, default `false`): Check the pack and the plan; upload and write nothing.
 
 ### `assets__packs`
 
