@@ -84,3 +84,12 @@ def test_installer_pins_a_version_and_a_sha256():
     assert version and digest
     assert "sha256sum -c" in text and not re.search(r"^[^#]*\bsudo\b", text, re.M)
     assert os.access(INSTALL, os.X_OK)
+
+
+def test_jsonc_reader_ends_on_an_unterminated_comment():
+    sys.path.insert(0, str(REGISTER.parent))
+    try:
+        from register_solidcraft_mcp import strip_jsonc
+    finally:
+        sys.path.pop(0)
+    assert strip_jsonc('{"mcp": {}} /* open') == {"mcp": {}}

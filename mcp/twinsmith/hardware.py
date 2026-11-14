@@ -351,9 +351,13 @@ class Hardware:
                                   after_run=True, stderr=message)
                 raise Refused("PART_FAILED", f"{step} failed (exit {done['exit_code']}); partial output kept in {out}.",
                               after_run=True, folder=str(out), stderr=message)
-        measure = json.loads((out / "measure.json").read_text(encoding="utf-8"))
-        bodies = [{"name": body.get("name"), "volume_mm3": round(body.get("volume_mm3", 0.0), 3),
-                   "bbox_mm": body.get("bbox"), "closed": body.get("closed")} for body in measure.get("bodies") or []]
+        try:
+            measure = json.loads((out / "measure.json").read_text(encoding="utf-8"))
+            bodies = [{"name": body.get("name"), "volume_mm3": round(body.get("volume_mm3", 0.0), 3),
+                       "bbox_mm": body.get("bbox"), "closed": body.get("closed")} for body in measure.get("bodies") or []]
+        except (OSError, ValueError, TypeError, AttributeError):
+            raise Refused("PART_FAILED", f"measure.json is not what solidcraft-cli eval writes; partial output kept in {out}.",
+                          after_run=True, folder=str(out)) from None
         warnings, usd = [], None
         try:
             from . import mesh_tools

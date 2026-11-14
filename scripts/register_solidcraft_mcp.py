@@ -46,7 +46,8 @@ def strip_jsonc(text: str) -> dict:
             i = len(text) if j < 0 else j
             continue
         elif text.startswith("/*", i):
-            i = text.find("*/", i) + 2
+            j = text.find("*/", i)
+            i = len(text) if j < 0 else j + 2
             continue
         else:
             out.append(c)
@@ -55,12 +56,18 @@ def strip_jsonc(text: str) -> dict:
 
 
 def atomic_write(path: str, text: str) -> None:
+    """Replace *path* with *text*. The temporary file has the original's mode from the start: these files can hold keys."""
     mode = os.stat(path).st_mode & 0o777
     tmp = path + ".solidcraft-tmp"
-    with open(tmp, "w") as f:
-        f.write(text)
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "w") as f:
+            os.fchmod(f.fileno(), mode)                 # the umask may have cleared bits the original has
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
 
 
 def add_opencode(path: str, command: list[str], dry_run: bool) -> str:
