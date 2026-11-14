@@ -162,6 +162,30 @@ def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_p
     assert bracket["local"]["translation_m"] == pytest.approx([0.02, 0.01, -0.03])   # the RG2 frame, seen from the wrist root
 
 
+def test_wrist_camera_tilt_is_carried_through_the_pose_math(config, tmp_path):
+    """A tilt about the camera's long axis needs no special case: the tool0 pose and the bracket's placement follow."""
+    config["wrist_camera"]["offset_in_rg2_m"] = [0.07, -0.03, 0.12]
+    config["wrist_camera"]["rotation_in_rg2_deg"] = [30.0, 0.0, -90.0]
+    report = build(config, tmp_path)
+    wrist = report["cameras"]["wrist"]
+    rg2_t, rg2_q, length = cameras.rg2_in_tool0(config)
+    optical = wrist["optical"]["quaternion_wxyz"]
+    half, sine, cosine = math.sqrt(0.5), math.sin(math.radians(30)), math.cos(math.radians(30))
+    # In the RG2 body frame the optical axis is (-sin, 0, cos); the body's +X is tool0 -Y and its +Y is tool0 +X.
+    assert cameras._rotate_vector(optical, [0, 0, 1]) == pytest.approx([0, sine, cosine])
+    assert cameras._rotate_vector(optical, [1, 0, 0]) == pytest.approx([-1, 0, 0])
+    assert cameras._rotate_vector(optical, [0, 1, 0]) == pytest.approx([0, -cosine, sine])
+    assert wrist["optical"]["translation_m"] == pytest.approx([-0.03, -0.07, 0.12 + length])
+    bracket = next(part for part in report["parts"] if part["role"] == "wrist_mount")["local"]
+    # The bracket asset is in the RG2 body frame: seen from the camera it is the inverse of the camera's pose there.
+    in_rg2 = cameras._euler_xyz_deg_to_quat([30.0, 0.0, -90.0])
+    assert bracket["quaternion_wxyz"] == pytest.approx(cameras._quat_conjugate(in_rg2))
+    back = cameras._rotate_vector(in_rg2, bracket["translation_m"])
+    assert [value + offset for value, offset in zip(back, [0.07, -0.03, 0.12])] == pytest.approx([0, 0, 0], abs=1e-12)
+    assert cameras._rotate_vector(in_rg2, [0, 0, 1]) == pytest.approx([-sine, 0, cosine])
+    assert half > 0 and rg2_q == pytest.approx([half, 0, 0, -half])
+
+
 def test_wrist_camera_follows_the_rg2_when_the_stack_changes(config, tmp_path):
     """The bracket is on the gripper: a longer stack moves the camera in tool0 and leaves it where it was on the RG2."""
     before = build(config, tmp_path)
@@ -349,9 +373,19 @@ def test_shipped_config_has_the_wrist_camera_only_on_the_rg2_bracket():
     assert abs(y) <= 0.1 and 0.07 <= z <= 0.148
     rotation = cameras._euler_xyz_deg_to_quat(wrist["rotation_in_rg2_deg"])
     forward = cameras._rotate_vector(rotation, [0.0, 0.0, 1.0])
-    assert forward[2] > 0.94                                    # within 20 degrees of the gripper's approach axis
-    assert abs(cameras._rotate_vector(rotation, [1.0, 0.0, 0.0])[1]) > 0.94      # long axis along the finger-opening axis
-    assert cameras._rotate_vector(rotation, [0.0, 1.0, 0.0])[0] > 0.94           # image down is away from the gripper
+    tilt = wrist["rotation_in_rg2_deg"][0]
+    assert wrist["rotation_in_rg2_deg"][1:] == [0.0, -90.0] and 10.0 <= tilt <= 40.0
+    # Tilted about its long axis toward the tool axis (the camera is on the body's +X side), so it sees the fingertips.
+    assert forward == pytest.approx([-math.sin(math.radians(tilt)), 0.0, math.cos(math.radians(tilt))])
+    assert cameras._rotate_vector(rotation, [1.0, 0.0, 0.0]) == pytest.approx([0.0, -1.0, 0.0])   # long axis along the finger-opening axis
+    assert cameras._rotate_vector(rotation, [0.0, 1.0, 0.0])[0] > 0.75           # image down is away from the gripper
+    # The optical axis crosses the tool axis beyond the fingertips (0.217 m from the RG2 origin), within reach of them.
+    crossing = z + x / math.tan(math.radians(tilt))
+    assert 0.217 < crossing < 0.40
+    fingertip = [-x, 0.0, 0.217 - z]                                # a fingertip on the tool axis, from the camera, RG2 axes
+    along = sum(a * b for a, b in zip(fingertip, forward))
+    down = sum(a * b for a, b in zip(fingertip, cameras._rotate_vector(rotation, [0.0, 1.0, 0.0])))
+    assert along > 0 and -wrist["color_fov_deg"][1] / 2 < math.degrees(math.atan2(down, along)) < 0     # in the upper half of the image
     report = cameras.plan_cameras(values, ROBOT)
     in_tool0 = report["cameras"]["wrist"]["optical"]["translation_m"]
     assert in_tool0[2] == pytest.approx(z + values["bota"]["length_m"] + values["quick_changer"]["standoff_m"])

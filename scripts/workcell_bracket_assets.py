@@ -52,13 +52,19 @@ def to_body(points):
 
 
 def camera_pose(config):
-    """The configured camera origin in the CAD frame, in millimetres; only the pose the CAD model covers is accepted."""
+    """The configured camera origin in the CAD frame (millimetres) and its tilt; only poses the CAD model covers pass.
+
+    ``rotation_in_rg2_deg`` must be ``[tilt, 0, -90]`` (extrinsic XYZ in the RG2 body frame): long axis along the
+    finger-opening axis, gripper toward the top of the image, tilted 0 to 45 degrees toward the tool axis.
+    """
     section = config["wrist_camera"]
     offset, rotation = section["offset_in_rg2_m"]["value"], section["rotation_in_rg2_deg"]["value"]
-    if [float(value) for value in rotation] != [0.0, 0.0, -90.0]:
-        raise SystemExit("the bracket model covers a camera looking along the RG2's +Z with optical +x along the body's -Y")
+    tilt, pitch, yaw = (float(value) for value in rotation)
+    if pitch != 0.0 or yaw != -90.0 or not 0.0 <= tilt <= 45.0:
+        raise SystemExit("the bracket model covers a camera with optical +x along the RG2 body's -Y, tilted 0 to 45 degrees "
+                         "about that axis toward the tool axis: rotation_in_rg2_deg = [tilt, 0, -90]")
     x, y, z = (float(value) * 1000.0 for value in offset)
-    return [y, -x, z]                                                    # the inverse of to_body
+    return [y, -x, z], tilt                                              # the inverse of to_body
 
 
 def d415_extent(path: Path):
@@ -71,11 +77,11 @@ def d415_extent(path: Path):
     return float(points[:, 2].min()), float((points[:, 0].min() + points[:, 0].max()) / 2)
 
 
-def run_cad(out: Path, camera_mm, back_mm, body_cx_mm):
+def run_cad(out: Path, camera_mm, tilt_deg, back_mm, body_cx_mm):
     # FreeCAD brings its own Python: this interpreter's variables (uv's virtual environment) must not reach it.
     clean = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "UV_"))}
     env = dict(clean, BRACKET_OUT=str(out), CAM_X_MM=str(camera_mm[0]), CAM_Y_MM=str(camera_mm[1]), CAM_Z_MM=str(camera_mm[2]),
-               BACK_MM=str(back_mm), BODY_CX_MM=str(body_cx_mm))
+               TILT_DEG=str(tilt_deg), BACK_MM=str(back_mm), BODY_CX_MM=str(body_cx_mm))
     done = subprocess.run(["freecadcmd", str(REPO / CAD)], env=env, capture_output=True, text=True, timeout=600)
     report = out / "bracket.json"
     if done.returncode or not report.is_file():
@@ -119,18 +125,18 @@ def add_collision(path: Path, report):
 
 def build_bracket(work: Path, d415_path: Path):
     config = json.loads((REPO / "exts/workcell/config/lab_hardware.json").read_text())
-    camera_mm = camera_pose(config)
+    camera_mm, tilt_deg = camera_pose(config)
     back_mm, body_cx_mm = d415_extent(d415_path)
     folder = work / "wrist_mount"
     folder.mkdir()
-    report = run_cad(folder, camera_mm, round(back_mm, 2), round(body_cx_mm, 2))
+    report = run_cad(folder, camera_mm, tilt_deg, round(back_mm, 2), round(body_cx_mm, 2))
     triangles = to_body(np.concatenate([camera_assets.read_stl(folder / f"{name}.stl") for name in PIECES])) * 0.001
     points, faces = camera_assets.weld(triangles)
     usd = folder / "wrist_mount.usdc"
     camera_assets.write_usd(usd, points, faces, {"Printed": (np.ones(len(faces), bool), PRINTED)},
                             f"FreeCAD model ({CAD}) moved to the pack's RG2 body frame; estimated from one photo, not measured")
     colliders = add_collision(usd, report)
-    return report, {"triangles": int(len(faces)), "colliders": colliders, "camera_in_cad_frame_mm": camera_mm,
+    return report, {"triangles": int(len(faces)), "colliders": colliders, "camera_in_cad_frame_mm": camera_mm, "tilt_deg": tilt_deg,
                     "d415_back_mm": round(back_mm, 2), "d415_body_centre_x_mm": round(body_cx_mm, 2)}
 
 

@@ -250,20 +250,21 @@ The current candidate contains:
 - The wrist D415 is on a printed bracket clamped to the RG2 body (not to the wrist and not between flange faces, so the
   tool stack is unchanged and the camera turns with the gripper). It sits off the RG2's back face, the face opposite
   the lab's AprilTag: body centred 66 mm behind the tool axis and 68 mm to one side, long axis along the
-  finger-opening axis, looking along the approach axis, with the gripper toward the top of the image. The pose is
-  configured in the RG2 body frame (`wrist_camera.offset_in_rg2_m`, `rotation_in_rg2_deg`) and the builder derives the
-  tool0 pose from the stack, so the camera follows the RG2 when the stack changes. It is an estimate from one photo
-  (about 15 mm and 15 degrees), not a measurement. With no tilt, as modelled, the camera looks past the gripper and
-  nothing of the robot is in the image; whether the real image shows the fingertips fixes the tilt. Tests build the
-  real pack and check that the collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate,
-  that bracket and camera stay out of the slab the finger linkage moves in, and that the image is clear of the arm.
+  finger-opening axis, tilted 25 degrees about that axis so it looks at the fingertips, with the gripper toward the
+  top of the image. The pose is configured in the RG2 body frame (`wrist_camera.offset_in_rg2_m`,
+  `rotation_in_rg2_deg`) and the builder derives the tool0 pose from the stack, so the camera follows the RG2 when the
+  stack changes. It is an estimate from one photo (about 15 mm and 8 degrees), not a measurement. In the simulated
+  image the fingertips are along the top edge; with the gripper fully open the finger on the far side leaves the
+  image ([capture](../../../docs/media/workcell-wrist-view-sim.jpg)). Tests build the real pack and check that the
+  collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate, that bracket and camera stay
+  out of the slab the finger linkage moves in, and that the image shows the fingertips and not the arm or the bracket.
   The bracket has a collider; the D415 body has none. The pack's bracket asset carries five convex hulls (`collar`,
-  `back_bar_upper`, `front_bar_extension`, `truss`, `camera_plate`, each with `physics:approximation = "convexHull"`),
+  `front_bar_extension`, `truss`, `plate_support`, `camera_plate`, each with `physics:approximation = "convexHull"`),
   and the builder references them under the RG2 body it clamps, at
   `<assembly>/rg2/onrobot_rg2_base_link/wrist_mount_collision`. Because they belong to that body, they cannot press on
   the gripper body they wrap (shapes of one body never collide; no pair is filtered), and a push on the bracket
   reaches the arm through the Bota joint, as on the real stack. No mass is added, so the bracket and camera still
-  weigh nothing in the wrench. Near the finger linkage the collider stops 2.8 to 12 mm short of the printed part, so
+  weigh nothing in the wrench. Near the finger linkage the collider stops 12 mm short of the printed front bar, so
   it stays at least 10.9 mm from the linkage over the whole stroke, more than two of Newton's 4 mm contact gaps; a
   test sweeps both driven joints over their limits against the links' own collision hulls and the pads. The render
   bracket and the camera body under tool0 stay visual only ([details and measurements](../cad/README.md#collision)).
@@ -294,7 +295,7 @@ configuration or a design envelope and are not vendor drawings.
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
 | Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; -0.033, -0.066, 0.165 m in tool0 with the shipped stack) | `unconfirmed`, estimated from photo |
-| Wrist camera rotation | 0, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): along the approach axis, long axis along the finger-opening axis, no tilt | `unconfirmed`, estimated from photo |
+| Wrist camera rotation | 25, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 25 degrees toward the tool axis | `unconfirmed`, estimated from photo |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |

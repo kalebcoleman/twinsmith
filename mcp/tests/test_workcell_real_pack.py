@@ -90,10 +90,9 @@ def _in_wrist_image(stage, report, camera_report, section, roots):
     return optical[inside]
 
 
-def test_wrist_view_is_clear_of_the_arm_the_bracket_and_the_camera_body(cell):
-    """With the pose read from the photo (no tilt) the camera looks past the gripper: nothing of the robot is drawn.
-
-    Whether the real image shows the fingertips is an open question for the lab: it fixes the bracket's tilt."""
+def test_wrist_view_shows_the_fingertips_and_not_the_arm_or_its_own_bracket(cell):
+    """The camera is tilted toward the tool axis: the fingertips are in the upper part of the image (image down is away
+    from the gripper), and the arm, the bracket and the camera's own body are out of it."""
     config, stage, report, camera_report, _ = cell
     section = config["wrist_camera"]
     root = camera_report["cameras"]["wrist"]["root_path"]
@@ -103,8 +102,9 @@ def test_wrist_view_is_clear_of_the_arm_the_bracket_and_the_camera_body(cell):
     own = _in_wrist_image(stage, report, camera_report, section, [f"{root}/bracket", f"{root}/body"])
     assert not len(own), f"{len(own)} bracket/camera-body vertices fall in the wrist image"
     gripper = _in_wrist_image(stage, report, camera_report, section, [report["gripper_path"]])
-    # Image down is away from the gripper, so anything of it that shows is in the upper half.
-    assert not len(gripper) or gripper[:, 1].max() < 0
+    assert len(gripper), "the RG2 fingertips are out of the wrist image"
+    assert gripper[:, 1].max() < 0, "the gripper should be in the upper half of the image"
+    assert gripper[:, 2].max() > 0.09                       # what shows reaches the fingertips, 0.1 m ahead
 
 
 def _rg2_frame(stage, report, config):
@@ -133,18 +133,26 @@ def test_bracket_clamps_the_rg2_waist_and_holds_the_camera_off_its_back_face(cel
     collar = bracket[(bracket[:, 2] >= 72 - 1e-6) & (bracket[:, 2] <= 98 + 1e-6)]
     assert collar[:, 0].min() < -27.3 and collar[:, 0].max() > 27.3 and collar[:, 1].min() < -18.3 and collar[:, 1].max() > 18.3
     assert not ((np.abs(bracket[:, 0]) < 27.0 - 1e-6) & (np.abs(bracket[:, 1]) < 18.0 - 1e-6)).any()
+    assert not ((np.abs(bracket[:, 0]) < 32.5) & (np.abs(bracket[:, 1]) < 18.0) & (bracket[:, 2] > 100.0)).any()    # the wider lower body
     assert bracket[:, 2].min() == pytest.approx(72.0, abs=0.01)                    # below the mounting bracket's arms
     arms = rg2[(np.abs(rg2[:, 0]) > 33.5) & (rg2[:, 2] < 72)]
     assert arms[:, 2].max() < 72.0
-    # The D415: long axis along X, back face on the plate, off the back face of the body.
-    size = body.max(0) - body.min(0)
-    assert size == pytest.approx([99.0, 23.0, 20.0], abs=0.6)
-    plate = bracket[bracket[:, 1] < -40.0]
-    assert body[:, 2].min() == pytest.approx(plate[:, 2].max(), abs=0.05)
-    assert body[:, 1].max() < -18.0 - 30.0
+    # The D415, in its own optical frame (the wrist root carries it): 99 x 23 x 20 mm, back face on the plate.
+    optical_body = _vertices_in_frame(stage, root, [f"{root}/body"]) * 1000.0
+    optical_bracket = _vertices_in_frame(stage, root, [f"{root}/bracket"]) * 1000.0
+    assert optical_body.max(0) - optical_body.min(0) == pytest.approx([99.0, 23.0, 20.0], abs=0.6)
+    behind = optical_bracket[(np.abs(optical_bracket[:, 1]) < 11.0) & (optical_bracket[:, 0] > 0) & (optical_bracket[:, 0] < 70)]
+    assert behind[:, 2].max() == pytest.approx(optical_body[:, 2].min(), abs=0.05)      # the plate's face meets the camera's back
+    footprint = optical_bracket[(np.abs(optical_bracket[:, 1]) < 11.5) & (optical_bracket[:, 0] > -14.5) & (optical_bracket[:, 0] < 84.4)]
+    assert footprint[:, 2].max() <= optical_body[:, 2].min() + 0.05                       # nothing of the bracket where the camera is
+    # Off the back face of the RG2 body, tilted toward the tool axis about the camera's long axis.
+    assert body[:, 1].max() < -18.0 - 25.0
     offset = np.array(config["wrist_camera"]["offset_in_rg2_m"]) * 1000.0
     assert body[:, 0].max() == pytest.approx(offset[1] + 14.5, abs=0.3)             # the colour sensor end is at CAD +X
     assert (body[:, 1].min() + body[:, 1].max()) / 2 == pytest.approx(-offset[0], abs=0.5)
+    tilt = np.radians(config["wrist_camera"]["rotation_in_rg2_deg"][0])
+    glass = body[body @ np.array([0.0, np.sin(tilt), np.cos(tilt)]) > (body @ np.array([0.0, np.sin(tilt), np.cos(tilt)])).max() - 0.3]
+    assert len(glass) > 50 and np.ptp(glass @ np.array([0.0, np.sin(tilt), np.cos(tilt)])) < 0.3     # the flat front faces that way
 
 
 def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
@@ -263,7 +271,7 @@ def _collision_points(stage, body, frame_matrix=None):
     return chunks
 
 
-BRACKET_SHAPES = {"collar", "back_bar_upper", "front_bar_extension", "truss", "camera_plate"}
+BRACKET_SHAPES = {"collar", "front_bar_extension", "truss", "plate_support", "camera_plate"}
 NEWTON_CONTACT_GAP_M = 0.004        # sim_tools.newton_support.collision_settings, on every collider of the cell
 
 

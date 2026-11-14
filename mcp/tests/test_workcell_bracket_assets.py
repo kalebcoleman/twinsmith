@@ -36,18 +36,25 @@ def test_cad_frame_to_the_packs_rg2_body_frame():
 
 
 def test_configured_pose_is_the_one_the_cad_model_covers():
-    camera = bracket.camera_pose(CONFIG)
+    camera, tilt = bracket.camera_pose(CONFIG)
     offset = CONFIG["wrist_camera"]["offset_in_rg2_m"]["value"]
     assert bracket.to_body(camera).tolist() == pytest.approx([value * 1000.0 for value in offset])
+    assert tilt == CONFIG["wrist_camera"]["rotation_in_rg2_deg"]["value"][0] and 10.0 <= tilt <= 40.0    # it looks at the fingertips
     # The CAD file's own defaults are that pose, so running it by hand gives the pack's bracket.
-    defaults = {name: float(value) for name, value in re.findall(r'env\("(CAM_[XYZ]_MM)", (-?[\d.]+)\)', CAD)}
-    assert [defaults[f"CAM_{axis}_MM"] for axis in "XYZ"] == pytest.approx(camera)
+    defaults = {name: float(value) for name, value in re.findall(r'env\("(CAM_[XYZ]_MM|TILT_DEG)", (-?[\d.]+)\)', CAD)}
+    assert [defaults[f"CAM_{axis}_MM"] for axis in "XYZ"] == pytest.approx(camera) and defaults["TILT_DEG"] == tilt
     assert camera[1] < -(36.0 / 2 + 23.0 / 2)                     # behind the RG2's back face, by more than half a camera
 
-    tilted = json.loads(json.dumps(CONFIG))
-    tilted["wrist_camera"]["rotation_in_rg2_deg"]["value"] = [10.0, 0.0, -90.0]
-    with pytest.raises(SystemExit, match="bracket model covers"):
-        bracket.camera_pose(tilted)
+    def with_rotation(rotation):
+        changed = json.loads(json.dumps(CONFIG))
+        changed["wrist_camera"]["rotation_in_rg2_deg"]["value"] = rotation
+        return changed
+
+    assert bracket.camera_pose(with_rotation([0.0, 0.0, -90.0]))[1] == 0.0          # any tilt the model covers is taken
+    assert bracket.camera_pose(with_rotation([40.0, 0.0, -90.0])) == (camera, 40.0)
+    for rotation in ([50.0, 0.0, -90.0], [-5.0, 0.0, -90.0], [25.0, 5.0, -90.0], [25.0, 0.0, 90.0]):
+        with pytest.raises(SystemExit, match="bracket model covers"):
+            bracket.camera_pose(with_rotation(rotation))
 
 
 def test_cad_file_separates_sourced_from_estimated_and_cites_the_vendors():
@@ -71,8 +78,8 @@ def test_collision_pieces_are_few_convex_and_named_the_same_everywhere():
     cameras = util.module_from_spec(spec)
     spec.loader.exec_module(cameras)
     assert bracket.COLLISION_SCOPE == cameras.COLLISION_SCOPE
-    pieces = re.findall(r'^    "(\w+)": (?:corners\(|\[\[x, y, z\])', CAD.split('report["collision_pieces_mm"] = {')[1].split("\n}\n")[0], re.M)
-    assert pieces == ["collar", "back_bar_upper", "front_bar_extension", "truss", "camera_plate"]
+    pieces = re.findall(r'^    "(\w+)": ', CAD.split('report["collision_pieces_mm"] = {')[1].split("\n}\n")[0], re.M)
+    assert pieces == ["collar", "front_bar_extension", "truss", "plate_support", "camera_plate"]
     assert '"collision_top_z_near_fingers": 104.0' in CAD
     source = (ROOT / "scripts/workcell_bracket_assets.py").read_text()
     assert 'CreateApproximationAttr("convexHull")' in source and "RigidBodyAPI" not in source and "MassAPI" not in source
