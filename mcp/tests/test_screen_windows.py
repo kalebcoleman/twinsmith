@@ -236,7 +236,7 @@ def test_raise_window_requests_and_verifies_window_manager_activation(monkeypatc
     monkeypatch.setattr(screen, "_match_window", lambda *_: {"id": 7, "title": "Sim"})
     monkeypatch.setattr(screen.xevent, "ClientMessage", lambda **kwargs: kwargs)
     server = FastMCP("screen-test")
-    screen.register_screen_tools(server, groups={"screen"})
+    screen.register_screen_tools(server, groups={"computer"})
     result = server._tool_manager._tools["raise_window"].fn(window_id=7)
     assert result == "activated: Sim (id=7)"
     root.send_event.assert_called_once()
@@ -248,7 +248,7 @@ def test_raise_window_refuses_an_unexpected_pid(monkeypatch):
 
     monkeypatch.setattr(screen, "_match_window", lambda *_: {"id": 7, "title": "Sim", "pid": 22})
     server = FastMCP("screen-test")
-    screen.register_screen_tools(server, groups={"screen"})
+    screen.register_screen_tools(server, groups={"computer"})
     with pytest.raises(ValueError, match="PID"):
         server._tool_manager._tools["raise_window"].fn(window_id=7, expected_pid=23)
 
@@ -264,7 +264,7 @@ def test_move_window_unmaximizes_moves_and_reports_geometry(monkeypatch):
     monkeypatch.setattr(screen, "_match_window", lambda *_: {"id": 7, "title": "RViz", "pid": 5})
     monkeypatch.setattr(screen.xevent, "ClientMessage", lambda **kwargs: kwargs)
     server = FastMCP("screen-test")
-    screen.register_screen_tools(server, groups={"screen"})
+    screen.register_screen_tools(server, groups={"computer"})
     tool = server._tool_manager._tools["move_window"].fn
     assert tool(x=960, y=40, width=900, height=1000, window_id=7).startswith("moved: RViz (id=7) now 900x1000+960+40")
     sent = [c.args[0] for c in disp.screen.return_value.root.send_event.call_args_list]
@@ -288,7 +288,7 @@ def test_move_window_waits_for_a_position_only_move(monkeypatch):
     monkeypatch.setattr(screen.xevent, "ClientMessage", lambda **kwargs: kwargs)
     monkeypatch.setattr(screen.time, "sleep", lambda s: None)
     server = FastMCP("screen-test")
-    screen.register_screen_tools(server, groups={"screen"})
+    screen.register_screen_tools(server, groups={"computer"})
     out = server._tool_manager._tools["move_window"].fn(x=960, y=40, width=900, height=1000, window_id=7)
     assert "now 900x1000+960+40" in out  # not the stale +0+0 read right after sending
 
@@ -364,7 +364,7 @@ def test_monitor_captures_warn_when_locked_and_window_captures_do_not(monkeypatc
     monkeypatch.setattr(screen, "_match_window", lambda *a, **k: window)
     monkeypatch.setattr(screen, "_grab_window_image", lambda win: screen.PILImage.new("RGB", (4, 2)))
     server = FastMCP("t")
-    screen.register_screen_tools(server, groups={"screen"})
+    screen.register_screen_tools(server, groups={"computer"})
     shot = server._tool_manager._tools["screenshot"].fn
     assert "screen is locked" in shot(monitor=1)[1]
     assert "screen is locked" not in shot(window_id=7)[1]

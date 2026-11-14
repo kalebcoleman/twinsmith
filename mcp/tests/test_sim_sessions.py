@@ -304,7 +304,7 @@ def test_session_lock_reports_non_linux_support(tmp_path, monkeypatch):
             pass
 
 
-# ---- sim__launch refused a free port after sim__stop --------------------------------
+# ---- launch_simulator refused a free port after stop_simulator --------------------------------
 
 TIME_WAIT, FIN_WAIT2, LISTEN = "06", "05", "0A"
 
@@ -364,7 +364,7 @@ def test_time_wait_failed_the_old_check_and_passes_the_new_one():
 
 
 def test_a_connection_the_client_has_not_closed_yet_does_not_block_the_port():
-    # The host keeps a persistent socket to its bridge, so after sim__stop the server side can sit
+    # The host keeps a persistent socket to its bridge, so after stop_simulator the server side can sit
     # in FIN_WAIT2 until the host next uses it.
     port, peer = _leftover_connection()
     with peer:
@@ -501,7 +501,7 @@ def _tool_server(env):
                 return fn
             return decorate
 
-    sim.register_sim_session_tools(Fake(), groups=["launch"], env=env)
+    sim.register_sim_session_tools(Fake(), groups=["computer"], env=env)
     return tools
 
 
@@ -514,7 +514,7 @@ EXTERNAL = {"pid": 4242, "port": 18800, "host": "localhost", "app": "BrickSim", 
 def test_list_includes_external_bridges_labeled_unmanaged(setup, monkeypatch):
     server = _tool_server(setup)
     monkeypatch.setattr(sim.client, "discover_bridges", lambda: [dict(EXTERNAL)])
-    entry = server["sim__list"]()["sessions"][0]
+    entry = server["list_simulators"]()["sessions"][0]
     assert entry["managed"] is False and entry["id"] == "external-4242-18800"
     assert (entry["pid"], entry["port"], entry["app"], entry["app_version"]) == (4242, 18800, "BrickSim", "5.1.0")
 
@@ -522,8 +522,8 @@ def test_list_includes_external_bridges_labeled_unmanaged(setup, monkeypatch):
 def test_listing_does_not_dial_an_external_bridge(setup, monkeypatch):
     server = _tool_server(setup)
     monkeypatch.setattr(sim.client, "discover_bridges", lambda: [dict(EXTERNAL)])
-    monkeypatch.setattr(sim.client, "call", lambda *a, **k: pytest.fail("sim__list must not call a bridge"))
-    assert server["sim__list"]()["sessions"]
+    monkeypatch.setattr(sim.client, "call", lambda *a, **k: pytest.fail("list_simulators must not call a bridge"))
+    assert server["list_simulators"]()["sessions"]
 
 
 def test_a_managed_session_is_not_also_listed_as_external(setup, monkeypatch):
@@ -531,7 +531,7 @@ def test_a_managed_session_is_not_also_listed_as_external(setup, monkeypatch):
     record = sim._launch(setup, 18766, 9, True, False)
     monkeypatch.setattr(sim.client, "discover_bridges", lambda: [{**EXTERNAL, "pid": record["pid"], "port": 18766}])
     monkeypatch.setattr(sim, "_alive", lambda session: True)
-    sessions = server["sim__list"]()["sessions"]
+    sessions = server["list_simulators"]()["sessions"]
     assert [s["managed"] for s in sessions] == [True] and sessions[0]["id"] == record["id"]
 
 
@@ -616,7 +616,7 @@ def test_no_tool_argument_can_name_a_command(setup):
     import inspect
 
     server = _tool_server(setup)
-    assert set(inspect.signature(server["sim__launch"]).parameters) == {
+    assert set(inspect.signature(server["launch_simulator"]).parameters) == {
         "port", "ros_domain", "headless", "allow_shared_domain", "enable_motion_bvh", "physics_backend"}
 
 
@@ -624,7 +624,7 @@ def test_launcher_setting_is_read_when_the_server_starts_not_at_each_call(setup,
     server = _tool_server(setup)
     monkeypatch.setenv("TWINSMITH_SIM_LAUNCHER", "/no/such/launcher")
     assert "TWINSMITH_SIM_LAUNCHER" not in setup
-    assert server["sim__launch"](port=18766, ros_domain=9)["managed"] is True
+    assert server["launch_simulator"](port=18766, ros_domain=9)["managed"] is True
 
 
 # ---- Newton on a build without it ----
@@ -670,10 +670,10 @@ def test_listing_bounds_old_exited_sessions_without_deleting_them(setup, tmp_pat
     base = Path(setup["TWINSMITH_SIM_SESSIONS_DIR"])
     folders = [_exited_record(base, f"{i:032x}", float(i)) for i in range(7)]
     server = _tool_server(setup)
-    listed = server["sim__list"]()
+    listed = server["list_simulators"]()
     assert [s["id"] for s in listed["sessions"]] == [f"{i:032x}" for i in (6, 5, 4)]
     assert listed["exited_omitted"] == 4 and "include_exited" in listed["note"]
-    assert len(server["sim__list"](include_exited=True)["sessions"]) == 7
+    assert len(server["list_simulators"](include_exited=True)["sessions"]) == 7
     assert all((f / "session.json").is_file() and (f / "sim.log").is_file() for f in folders)
     assert sim._status(setup, f"{0:032x}")["state"] == "exited"  # an unlisted one still answers
 
@@ -683,7 +683,7 @@ def test_listing_never_omits_a_live_session(setup, monkeypatch):
     for i in range(6):
         _exited_record(base, f"{i:032x}", float(i))
     monkeypatch.setattr(sim, "_alive", lambda session: session["id"] == f"{0:032x}")
-    listed = _tool_server(setup)["sim__list"]()
+    listed = _tool_server(setup)["list_simulators"]()
     assert listed["sessions"][0]["id"] == f"{0:032x}" and listed["sessions"][0]["state"] == "active"
 
 
@@ -1086,7 +1086,7 @@ def test_an_explicit_project_setting_is_kept_and_no_project_adds_nothing(setup, 
 
 
 def test_session_records_carry_the_argument_name_the_other_tools_take():
-    """sim__launch and sim__list say `id`, while sim__status and sim__stop ask for `session_id`: give both."""
+    """launch_simulator and list_simulators say `id`, while simulator_status and stop_simulator ask for `session_id`: give both."""
     record = sim._public({"id": "abc123", "pid": 5, "boot_id": "x", "start_ticks": 1})
     assert record["session_id"] == "abc123" and record["id"] == "abc123"
     assert "boot_id" not in record and "start_ticks" not in record
@@ -1136,7 +1136,7 @@ def test_newton_readiness_is_unknown_until_the_scene_tools_answer_and_physx_sess
     record = _record(setup, physics_backend="newton")
     _newton_kit(monkeypatch, stage_error=sim.client.BridgeError("unknown tool: 'sim.stage.info'"))
     physics = sim._status(setup, record["id"])["physics"]
-    assert physics["ready"] is None and "call sim__status again" in physics["note"]
+    assert physics["ready"] is None and "call simulator_status again" in physics["note"]
     plain = _record(setup, session_id="b" * 32, port=18999)
     _newton_kit(monkeypatch)
     assert "physics" not in sim._status(setup, plain["id"])

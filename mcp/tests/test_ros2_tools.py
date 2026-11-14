@@ -1,4 +1,4 @@
-"""ROS 2 / RViz support: sim.ros2.tf_setup graph layout, the RViz config writer and the TF doctor."""
+"""ROS 2 / RViz support: sim.ros2_tf graph layout, the RViz config writer and the TF doctor."""
 
 import importlib.util
 import sys
@@ -128,7 +128,7 @@ def test_the_tool_contract_is_registered():
     sys.path.insert(0, str(REPO / "mcp"))
     from twinsmith.scene_contracts import REGISTRY
 
-    params = REGISTRY["sim.ros2.tf_setup"]["parameters"]
+    params = REGISTRY["sim.ros2_tf"]["parameters"]
     assert {"session_id", "stage_id", "robot", "base", "world_frame", "link_frames", "extra_frames"} <= set(params)
     assert params["robot"]["required"] and not params["base"]["required"]
 
@@ -426,7 +426,7 @@ def test_the_contract_offers_clock_modes():
     sys.path.insert(0, str(REPO / "mcp"))
     from twinsmith.scene_contracts import REGISTRY
 
-    assert REGISTRY["sim.ros2.tf_setup"]["parameters"]["clock"]["default"] == "auto"
+    assert REGISTRY["sim.ros2_tf"]["parameters"]["clock"]["default"] == "auto"
 
 
 def test_doctor_flags_two_clock_publishers_and_backward_time():
@@ -598,7 +598,7 @@ def test_the_clock_option_is_an_enum_in_the_contract():
     sys.path.insert(0, str(REPO / "mcp"))
     from twinsmith.scene_contracts import REGISTRY
 
-    assert REGISTRY["sim.ros2.tf_setup"]["parameters"]["clock"]["enum"] == ["auto", "publish", "skip"]
+    assert REGISTRY["sim.ros2_tf"]["parameters"]["clock"]["enum"] == ["auto", "publish", "skip"]
 
 
 def test_stop_play_while_listening_is_not_a_skew_error():
@@ -969,7 +969,7 @@ def test_attach_to_with_a_renamed_base_is_refused():
 def test_contract_exposes_attach_to_as_a_string():
     from twinsmith.scene_contracts import REGISTRY
 
-    assert REGISTRY["sim.ros2.tf_setup"]["parameters"]["attach_to"]["type"] == "string"
+    assert REGISTRY["sim.ros2_tf"]["parameters"]["attach_to"]["type"] == "string"
 
 
 # ---- publishing into a joint state subscriber drives the robot from its own state ----

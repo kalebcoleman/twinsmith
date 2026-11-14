@@ -135,7 +135,7 @@ def test_extra_frames_are_published_as_prim_paths():
     from twinsmith.server import build_server
     import asyncio
 
-    tools = {tool.name: tool for tool in asyncio.run(build_server({"TWINSMITH_TOOLSETS": "default,+ros2"}).list_tools())}
-    items = tools["sim__ros2__tf_setup"].inputSchema["properties"]["extra_frames"]
+    tools = {tool.name: tool for tool in asyncio.run(build_server({"TWINSMITH_TOOLSETS": "default,+sim"}).list_tools())}
+    items = tools["sim__ros2_tf"].inputSchema["properties"]["extra_frames"]
     variants = items.get("anyOf", [items])
     assert any(v.get("items", {}).get("type") == "string" for v in variants)

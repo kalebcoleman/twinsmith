@@ -16,7 +16,7 @@ def status_tool(**kw):
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     fn = server._tool_manager._tools["isaaclab__runs_status"].fn
     out = fn(**kw)
     return json.loads(asyncio.run(out) if inspect.isawaitable(out) else out)

@@ -59,16 +59,17 @@ MCP clients see the change after `refresh_tools`.
 
 Prefer a small tool over asking an agent to reach into your modules with `run_python`: the
 arguments are typed, the rules live in one place, and the tool still works when `run_python` is
-hidden (`TWINSMITH_TOOLSETS=default,+extensions`, without `sim`) or refused (read-only mode). The template's `project_state` and
+refused (read-only mode). The template's `project_state` and
 `set_threshold` show the shape.
 
-## A narrower server for one project
+## A server for one project
 
-One bridge can serve several MCP servers. To give an agent core and uncatalogued project-extension tools:
+One bridge can serve several MCP servers. Tools of uncatalogued project extensions are part of the `sim` toolset, so a server
+that lists them also lists the scene tools and `run_python`:
 
 ```json
 { "mcpServers": { "robot_demo": { "command": "twinsmith",
-    "env": { "TWINSMITH_TOOLSETS": "default,+extensions" } } } }
+    "env": { "TWINSMITH_TOOLSETS": "default,+sim" } } } }
 ```
 
 These settings choose what is listed. To stop changes for every client, start Kit read-only.

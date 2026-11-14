@@ -1,4 +1,4 @@
-"""sim.ros2.tf_setup: one consistent ROS 2 clock/TF/joint-state graph for a robot.
+"""sim.ros2_tf: one consistent ROS 2 clock/TF/joint-state graph for a robot.
 
 The layout follows NVIDIA's own graph helpers shipped with Isaac Sim 6.2
 (``isaacsim.ros2.nodes`` ``impl/graph_api.py``: ``create_ros2_clock_graph``,
@@ -549,7 +549,7 @@ def joint_state_loop_report(stage):
                "are the same robot, it chases its own state and oscillates at its velocity limit once playing.",
         fix=f"The file was not changed. On a stopped timeline, call sim__prim__delete with path={graph}, allow_foreign=true and "
             "confirm=true: it deactivates that whole graph in the session layer, so its TF stops too. To publish TF and joint "
-            "states again, call sim__ros2__tf_setup with a namespace. sim__stage__save then writes a copy without the loop.",
+            "states again, call sim__ros2_tf with a namespace. sim__stage__save then writes a copy without the loop.",
     ))
 
 
@@ -925,7 +925,7 @@ def setup(scene, stage, a):
         rviz_fixed_frame=fixed,
         publishes_when="timeline is playing (OnPlaybackTick); stamps use simulation time",
         next_steps=[
-            "Play the timeline (sim__timeline__control action=play).",
+            "Play the timeline (sim__timeline action=play).",
             "Every ROS 2 node, RViz included, must use use_sim_time:=true and the same ROS_DOMAIN_ID.",
             f"python3 scripts/ros2_rviz_config.py --fixed-frame {fixed} --out <file>.rviz "
             + ("--robot-model " if rsp else "") + "then: rviz2 -d <file>.rviz --ros-args -p use_sim_time:=true",

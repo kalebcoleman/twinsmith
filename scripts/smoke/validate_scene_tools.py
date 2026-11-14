@@ -24,7 +24,7 @@ async def promised_tools(enabled):
     registers whose owner (mcp/twinsmith/toolsets.py) is an enabled toolset."""
     from twinsmith import server
 
-    universe = server.build_server(env={**os.environ, "TWINSMITH_TOOLSETS": "all,+input,+launch"})
+    universe = server.build_server(env={**os.environ, "TWINSMITH_TOOLSETS": "all,+computer"})
     return {tool.name for tool in await universe.list_tools() if toolsets.owner(tool.name) in enabled}
 
 
@@ -129,7 +129,7 @@ async def validate(port, output, backend=None):
             small = await invoke("sim__stage__tree", dict(**target, limit=1))
             assert small["truncated"]
             await invoke(
-                "sim__viewport__frame", dict(**target, path="/World/Parent/Robot")
+                "sim__viewport", dict(**target, path="/World/Parent/Robot")
             )
             await invoke(
                 "sim__prim__create",
@@ -149,7 +149,7 @@ async def validate(port, output, backend=None):
             before = await invoke(
                 "sim__prim__get", dict(**target, path="/World/Falling")
             )
-            await invoke("sim__timeline__control", dict(**target, action="play"))
+            await invoke("sim__timeline", dict(**target, action="play"))
             await invoke(
                 "sim__prim__set_transform", dict(**target, path="/World/Falling"), True
             )
@@ -158,7 +158,7 @@ async def validate(port, output, backend=None):
                 dict(**target, path="/World/Falling", include_dynamics=True),
             )
             await asyncio.sleep(0.6)
-            await invoke("sim__timeline__control", dict(**target, action="pause"))
+            await invoke("sim__timeline", dict(**target, action="pause"))
             after = await invoke(
                 "sim__body__state",
                 dict(**target, path="/World/Falling", include_dynamics=True),
@@ -187,7 +187,7 @@ async def validate(port, output, backend=None):
                 "sim__stage__save",
                 dict(**target, filename="paused-" + str(time.time_ns()) + ".usda"),
             )
-            await invoke("sim__timeline__control", dict(**target, action="stop"))
+            await invoke("sim__timeline", dict(**target, action="stop"))
             await invoke(
                 "sim__stage__save",
                 dict(**target, filename="smoke-" + str(time.time_ns()) + ".usda"),

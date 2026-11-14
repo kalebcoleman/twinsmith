@@ -114,7 +114,7 @@ def desktop_setup(monkeypatch):
 
     monkeypatch.setattr(desktop.xtest, "fake_input", fake_input)
     server = FastMCP("input-test")
-    desktop.register_desktop_input_tools(server, groups={"input"})
+    desktop.register_desktop_input_tools(server, groups={"computer"})
     funcs = {name: tool.fn for name, tool in server._tool_manager._tools.items()}
     return disp, funcs
 

@@ -1,6 +1,6 @@
 # Host MCP Server: `twinsmith`
 
-The project provides a single host-side Model Context Protocol (MCP) server that exposes Isaac Sim's scene and asset tools, Isaac Lab jobs and desktop capture to any MCP client. Its tools are grouped into [toolsets](TOOLSETS.md) that you switch on or off; one lab's UR5e work cell is a separate toolset.
+The project provides a single host-side Model Context Protocol (MCP) server that exposes Isaac Sim's scene and asset tools, Isaac Lab jobs and desktop capture to any MCP client. Its tools are grouped into [toolsets](TOOLSETS.md) that you switch on or off; one lab's UR5e work cell is part of the `sim` toolset.
 
 The server package is located at `mcp/` (Python package `twinsmith`). The primary CLI executable is `twinsmith`. There is one command name and no aliases.
 
@@ -12,13 +12,13 @@ Kit Process (Isaac Sim 6.2.0.0)
                                     │ NDJSON over TCP
                                     ▼
                         twinsmith (stdio MCP server)
-                          ├── workcell__*        the work cell (toolset `workcell`); executes through the shared bridge
+                          ├── workcell__*        the work cell (toolset `sim`); executes through the shared bridge
                           ├── use_bridge        switch target port at runtime
                           ├── sim__* / assets__*  generic scene tools, from the sim-tools extension
                           ├── refresh_tools     rediscover tools; can wait for a starting Kit
                           ├── isaaclab__*       Isaac Lab jobs, run on the host
                           ├── screenshot / screen_recording / windows / join_videos / doctor
-                          └── computer          desktop input (toolset `input`, opt-in)
+                          └── computer          desktop input (toolset `computer`, explicit-only)
 ```
 
 Inside Kit, `exts/workcell` registers on the `twinsmith.bridge` singleton alongside other packs. The launcher sets
@@ -59,25 +59,26 @@ unrelated file or symlink already occupies that path. Direct `uv tool install` d
 The tools a client is shown are the tools of the enabled [toolsets](TOOLSETS.md); `status` and `twinsmith toolsets` report which
 are on. Every tool and its arguments are in [TOOLS-ARGUMENTS.md](TOOLS-ARGUMENTS.md), one section per toolset. In short:
 
-- **Scene and assets** (`sim`, `assets`, and optionally `ros2`; off by default like every toolset but `core`): the generic
+- **Scene and assets** (`sim`, which also holds the ROS 2 tools, and `assets`; off by default like every toolset but `core`): the generic
   `sim__*` and `assets__*` tools are catalogue-listed once their toolset is on. `assets__library` (roots, scan, search) executes on the host; the others
   require `sim-tools` in the selected Kit. See [scene tools](TOOLS-SCENE.md) for trusted-root configuration and runtime
   prerequisites. The work cell's robot, sensor and bench files are packs in the asset root, which the host and Kit each resolve
   themselves: set `TWINSMITH_ASSET_ROOT` in the **Kit** environment too, or Kit looks in `<workspace>/assets`. See
   [Asset packs](ASSET-PACKS.md).
-- **Work cell** (`workcell`, off by default): the lab's UR5e Jenga cell. The host lists a packaged catalogue of its tools even
+- **Work cell** (part of `sim`): the lab's UR5e Jenga cell. The host lists a packaged catalogue of its tools even
   before a simulator runs; calls need an Isaac Sim session running `exts/workcell`, and the bridge's live metadata takes precedence
   once connected. See its [README](../exts/workcell/workcell/README.md).
 - **Bridge discovery** (`core`): `use_bridge` points the host at a different bridge port at runtime; `refresh_tools` forces
   rediscovery, and `refresh_tools(wait_s=120)` waits (up to 180 s) for a Kit that is still starting.
-- **Desktop and window capture** (`screen`): `doctor`, `screenshot`, `screen_recording`, `windows` and `join_videos`. Window
+- **Desktop and window capture** (`computer`): `doctor`, `screenshot`, `screen_recording`, `windows` and `join_videos`. Window
   capture reads that window's own pixels, so with a compositing window manager (GNOME, KDE) a covered window is still captured;
   without one the covered part is black, and `doctor` says so. Captures are written to `~/Pictures/twinsmith/` and
   `~/Videos/twinsmith/`; recordings contain no audio.
-- **Isaac Lab and script jobs** (`lab`, which holds `run_script` too): see the [Isaac Lab reference](TOOLS-ISAACLAB.md).
-- **Opt-in only** (`input`, `launch`): desktop input (`computer`) and managed simulator sessions (`sim__session`). Neither is
-  part of any profile, not even `all`; name them (`+input`, `+launch`). `real2sim` (RoboSimStudio, the `robosim` tool) is off
-  by default like `lab`; see [ROBOSIM.md](ROBOSIM.md). So are `planning` (Graph-as-Policy, the `gap` tool) and `eval` (VABAR,
+- **Isaac Lab and script jobs** (part of `sim`, with `run_script`): see the [Isaac Lab reference](TOOLS-ISAACLAB.md).
+- **Explicit-only** (`computer`): the capture tools above, desktop input (`computer`) and managed simulator sessions
+  (`simulators`). It is not part of any profile, not even `all`; the user names it at startup (`+computer`), and
+  `toolsets(action="enable")` refuses it. `real2sim` (RoboSimStudio, the `robosim` tool) is off
+  by default like `sim`; see [ROBOSIM.md](ROBOSIM.md). So are `planning` (Graph-as-Policy, the `gap` tool) and `eval` (VABAR,
   the `vabar` tool); see [planning and evaluation](PLANNING-EVAL.md).
 
 See the [host and bridge reference](TOOLS-HOST.md) for behaviour and limits.
@@ -89,8 +90,8 @@ before asking the user to repeat terminal or UI steps. `windows(action="list")` 
 the window and PID; `screenshot(window_id=...)` captures that window, even when
 covered if a compositing window manager runs (`doctor` reports it). Check the capture directory before writing if workspace rules restrict
 where files may be created. Screen tools are host-side and can work even when
-the simulator bridge is disconnected. Optional X11 mouse and keyboard controls can be enabled
-explicitly with `TWINSMITH_TOOLSETS=default,+input`; see the targeting rules and shared-desktop
+the simulator bridge is disconnected. Screen tools and the X11 mouse and keyboard controls are selected
+explicitly at startup with `TWINSMITH_TOOLSETS=default,+computer`; see the targeting rules and shared-desktop
 limitations in [host tools](TOOLS-HOST.md#optional-desktop-input).
 
 The host MCP server and the bridge inside Kit are separate processes. A working
@@ -170,7 +171,7 @@ In an MCP client, call `status`, then select and verify the intended process wit
 
 Two headless processes, Sim 5.1 and 6.2, were exercised together on a 16 GB RTX 5080 with small robot-import and physics workloads. This is not a capacity guarantee: scene complexity, sensors, renderers and training can require much more memory. Check available GPU and system memory before starting, monitor both workloads, and stop only sessions you own. Headless still uses GPU resources.
 
-For managed launches, `sim__session(action="launch")` chooses distinct free ports and ROS domains, applies resource checks and gives each session its own output folder; its [configuration and limits](TOOLS-HOST.md#optional-simulator-sessions) describe how to select interpreters and inspect/stop sessions. Isaac Lab has separate job and GPU guards; its [concurrency rules](TOOLS-ISAACLAB.md#concurrency-guards) explain explicit overrides. Do not treat a guard override as extra GPU capacity.
+For managed launches, `simulators(action="launch")` chooses distinct free ports and ROS domains, applies resource checks and gives each session its own output folder; its [configuration and limits](TOOLS-HOST.md#optional-simulator-sessions) describe how to select interpreters and inspect/stop sessions. Isaac Lab has separate job and GPU guards; its [concurrency rules](TOOLS-ISAACLAB.md#concurrency-guards) explain explicit overrides. Do not treat a guard override as extra GPU capacity.
 
 
 ---
@@ -182,7 +183,7 @@ Replace `<repo>` with your checkout (suggested: `<workspace>/twinsmith`; see
 variables for any client below:
 
 - `TWINSMITH_WORKSPACE=<workspace>` makes `<workspace>/assets` the asset root; without it the workspace is the folder that holds the checkout (when it has `envs/` or an asset folder), else `<home>/robotics-workspace`.
-- `TWINSMITH_SIM_ROOT=<repo>` tells managed `sim__session` launches which checkout holds `run.sh`;
+- `TWINSMITH_SIM_ROOT=<repo>` tells managed `simulators` launches which checkout holds `run.sh`;
   set it when the host is installed outside the checkout.
 - `TWINSMITH_SIM_PYTHON=<env>/bin/python` pins the Sim interpreter that `run.sh` uses.
 
@@ -294,8 +295,8 @@ Bridge tools such as `run_python` and the work cell's `workcell__*` tools reach 
 exists, whatever the host's local tools are set to. Decide per client how much of the server it should see, and be
 clear about which of the settings below limit what.
 
-Server side: choose [toolsets](TOOLSETS.md#choosing-toolsets), for example `TWINSMITH_TOOLSETS=default,+lab`. Disabled toolsets
-register no tools, listed or hidden; desktop input and process launch need `+input` and `+launch`. Toolsets are not a safety
+Server side: choose [toolsets](TOOLSETS.md#choosing-toolsets), for example `TWINSMITH_TOOLSETS=default,+sim`. Disabled toolsets
+register no tools, listed or hidden; screen capture, desktop input and process launch need `+computer` at startup. Toolsets are not a safety
 boundary: anything reaching the bridge socket directly is unaffected by host registration choices.
 
 **A simulator that cannot be changed.** Start Kit with `TWINSMITH_READ_ONLY=1`. The bridge then runs only the
@@ -399,7 +400,7 @@ differ: call `refresh_tools`.
 
 ### Attaching the MCP to a Kit that a script launched
 
-`sim__session` (toolset `launch`) is optional and manages only the Kit processes it started. Any other Kit can be used, because
+`simulators` (toolset `computer`) is optional and manages only the Kit processes it started. Any other Kit can be used, because
 the host only needs a bridge to dial. The mechanism, from `exts/twinsmith.bridge`:
 
 1. The Kit process must enable the extension: launch it with `--ext-folder <repo>/exts --enable twinsmith.bridge`
@@ -416,7 +417,7 @@ the host only needs a bridge to dial. The mechanism, from `exts/twinsmith.bridge
 
 So for a Kit started by your own script: set `TWINSMITH_PORT=<free port>` in that script's environment, enable the
 extension, wait for it to log `serving on`, then in the client call `status`, `use_bridge(port=<port>)` and
-`status` and confirm the PID. `sim__session(action="list")` shows such a bridge as `managed: false` (`external-<pid>-<port>`); `stop`
+`status` and confirm the PID. `simulators(action="list")` shows such a bridge as `managed: false` (`external-<pid>-<port>`); `stop`
 will not stop it. A host server started before Kit may need `refresh_tools(wait_s=120)`.
 
 ---

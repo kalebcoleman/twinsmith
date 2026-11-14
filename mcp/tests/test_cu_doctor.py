@@ -56,20 +56,20 @@ def desk(monkeypatch):
 
 
 def _state(*on, badge=False):
-    return SimpleNamespace(toolsets=frozenset({"core", "screen", *on}), runtime_enable=True,
+    return SimpleNamespace(toolsets=frozenset({"core", "computer", *on}), runtime_enable=True,
                            config=SimpleNamespace(cursor_badge=badge), client=None)
 
 
 def _doctor(state=None, port=8766):
     server = FastMCP("doctor-test")
-    screen.register_screen_tools(server, port_provider=lambda: port, groups={"screen"}, state=state)
+    screen.register_screen_tools(server, port_provider=lambda: port, groups={"computer"}, state=state)
     tool = server._tool_manager._tools["doctor"]
     return tool, (lambda: json.loads(tool.fn()))
 
 
 def test_doctor_is_a_read_only_screen_tool_without_arguments(desk):
     tool, _ = _doctor()
-    assert toolsets.owner("doctor") == "screen" and "doctor" in toolsets.MEMBERS["screen"]
+    assert toolsets.owner("doctor") == "computer" and "doctor" in toolsets.MEMBERS["computer"]
     assert tool.annotations.readOnlyHint is True
     assert tool.parameters.get("properties", {}) == {}
     assert len(tool.description) < 160 and "sim" not in tool.name
@@ -85,7 +85,7 @@ def test_display_backend(session, wayland, x_opens, backend):
 def test_an_ssh_session_without_display_reports_the_x_server_it_reaches(desk, monkeypatch):
     monkeypatch.setattr(screen, "ENV_DISPLAY", None)
     monkeypatch.setenv("XDG_SESSION_TYPE", "tty")
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert (report["backend"], report["display"], report["ready"]["computer"]) == ("x11", None, True)
 
 
@@ -94,7 +94,7 @@ def test_no_display_and_no_bridge_still_answers(desk, monkeypatch):
     monkeypatch.delenv("XDG_SESSION_TYPE")
     monkeypatch.setattr(screen, "_xdisplay", MagicMock(side_effect=RuntimeError("cannot open X display :0: ...")))
     monkeypatch.setattr(screen, "_probe_locked", lambda: None)
-    report = _doctor(_state("input"), port=None)[1]()
+    report = _doctor(_state(), port=None)[1]()
     assert (report["backend"], report["display"], report["locked"]) == ("none", None, None)
     assert report["x11"] == {"error": "cannot open X display :0"}
     assert report["bridge"] == {"port": None, "reachable": False, "reason": "no bridge is advertised and no port is set"}
@@ -108,7 +108,7 @@ def test_pure_wayland_is_named(desk, monkeypatch):
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
     monkeypatch.setattr(screen, "_xdisplay", MagicMock(side_effect=RuntimeError("cannot open X display :0")))
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["backend"] == "wayland" and report["ready"]["computer"] is False
     assert report["next"].startswith("computer: pure Wayland")
 
@@ -116,39 +116,29 @@ def test_pure_wayland_is_named(desk, monkeypatch):
 def test_xwayland_with_xtest_is_usable(desk, monkeypatch):
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["backend"] == "xwayland" and report["ready"]["computer"] is True
 
 
 def test_locked_screen_blocks_computer_and_points_to_sim_ui(desk, monkeypatch):
     monkeypatch.setattr(screen, "_probe_locked", lambda: True)
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["locked"] is True and report["ready"]["computer"] is False
     assert "locked" in report["next"] and "use sim__ui" in report["next"]
 
 
-def test_unlocked_desktop_with_input_on_is_ready(desk):
-    report = _doctor(_state("input", badge=True))[1]()
+def test_unlocked_desktop_is_ready(desk):
+    report = _doctor(_state(badge=True))[1]()
     assert report["x11"] == {"xtest": True, "shape": True, "compositing": True} and report["locked"] is False
-    assert report["ready"]["computer"] is True and report["input_toolset"] is True and report["cursor_badge"] is True
+    assert report["ready"]["computer"] is True and report["cursor_badge"] is True
     assert report["screenshot_max_width"] == 1600 and report["next"].startswith("sim__ui: no bridge answers")
     desk.close.assert_called_once()
 
 
 def test_missing_xtest_blocks_computer(desk):
     desk.has_extension.side_effect = lambda name: name == "SHAPE"
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["x11"] == {"xtest": False, "shape": True, "compositing": True} and "lacks XTEST" in report["next"]
-
-
-def test_input_toolset_is_read_when_called(desk):
-    state = _state()
-    _, run = _doctor(state)
-    report = run()
-    assert report["input_toolset"] is False and report["ready"]["computer"] is False
-    assert "input toolset is off" in report["next"] and "Explicit-only" in report["next"]
-    state.toolsets = state.toolsets | {"input"}
-    assert run()["ready"]["computer"] is True
 
 
 @pytest.mark.parametrize("error,reason", [
@@ -168,7 +158,7 @@ def test_bridge_up_with_readiness(desk, monkeypatch):
                          "headless": False}
     monkeypatch.setattr(screen, "_bridge_pid", lambda port: 4242 if port == 8766 else None)
     monkeypatch.setattr(screen, "window_for_pid", lambda pid: {"id": 77, "pid": pid, "title": "Isaac Sim 6.0"})
-    report = _doctor(_state("input", "sim"))[1]()
+    report = _doctor(_state("sim"))[1]()
     assert FakeClient.calls == [((None, 8766, screen.BRIDGE_PROBE_S), "sim.ui.find", {"readiness": True, "limit": 0})]
     assert screen.BRIDGE_PROBE_S <= 5
     assert report["bridge"] == {"port": 8766, "reachable": True, "ui_test_enabled": False, "dpi_scale": 1.5,
@@ -180,7 +170,7 @@ def test_bridge_up_with_readiness(desk, monkeypatch):
 
 def test_sim_ui_needs_sim(desk):
     FakeClient.answer = {"ui_test_enabled": True, "dpi_scale": 1.0, "main_window": {}, "headless": False}
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["ready"]["sim__ui"] is False
     assert 'toolsets(action="enable", names=["sim"])' in report["next"]
 
@@ -209,7 +199,7 @@ def test_headless_kit_blocks_sim_ui(desk, answer):
 
 def test_doctor_without_state_uses_the_registered_toolsets(desk):
     report = _doctor()[1]()
-    assert report["input_toolset"] is False and report["cursor_badge"] is False
+    assert report["cursor_badge"] is False and "computer_toolset" not in report
 
 
 def test_kit_readiness_reads_and_never_enables(monkeypatch):
@@ -252,11 +242,11 @@ def test_kit_readiness_reads_and_never_enables(monkeypatch):
 
 
 def test_notes_say_what_works_with_a_limit(desk, monkeypatch):
-    assert _doctor(_state("input"))[1]()["notes"] == []
+    assert _doctor(_state())[1]()["notes"] == []
     monkeypatch.setattr(screen, "_probe_locked", lambda: None)
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     desk.get_selection_owner.return_value = screen.X.NONE
-    report = _doctor(_state("input"))[1]()
+    report = _doctor(_state())[1]()
     assert report["locked"] is None and report["ready"]["computer"] is True and report["backend"] == "xwayland"
     assert [note.split(":")[0] for note in report["notes"]] == [
         "lock state unknown (no screen saver service answered)", "XWayland", "no compositing manager"]

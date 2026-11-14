@@ -18,7 +18,7 @@ PNG = Image(data=b"\x89PNG fake", format="png")
 def _computer_click(arguments):
     """Call the listed ``computer`` group (action=click) through an MCP client, as an agent would."""
     app = FastMCP("act-and-see")
-    desktop.register_desktop_input_tools(app, groups={"input"})
+    desktop.register_desktop_input_tools(app, groups={"computer"})
     grouped_tools.sync(app)
 
     async def run():

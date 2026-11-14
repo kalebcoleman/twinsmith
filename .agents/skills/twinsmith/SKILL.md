@@ -18,7 +18,7 @@ workflows that use them. Do not claim builds or pending tests are supported that
 
 **Physics engine.** Newton is the default engine; PhysX is opt-in. The UR5e work cell builds on both: on Newton it uses the
 per-engine drives in its config; its cameras are not qualified there, and `mirror_real` is refused. `workcell__robot(action="wrench")` reads the Bota F/T sensor on both engines. Details are in `docs/COMPATIBILITY.md#target-engine`. Ask for an engine with `TWINSMITH_PHYSICS_BACKEND`, `./run.sh --physics-backend physx|newton` or
-`sim__session(action="launch", physics_backend=...)`. `status` reports the stage's `physics_engine`. Never switch an open scene's
+`simulators(action="launch", physics_backend=...)`. `status` reports the stage's `physics_engine`. Never switch an open scene's
 engine, never fall back silently in either direction, and do not infer the solver from a device name (a CPU device does not mean
 PhysX).
 
@@ -31,19 +31,20 @@ what is off and how to enable more; `help` names the toolset when the tool for a
 | Profile | Toolsets | Listed tools |
 |---|---|--:|
 | `default` | `core` | 6 |
-| `all` | `core`, `screen`, `sim`, `assets`, `real2sim`, `lab`, `ros2`, `workcell`, `cad`, `planning`, `eval`, `extensions` | 52 |
-| `all,+input,+launch` | `core`, `screen`, `sim`, `assets`, `real2sim`, `lab`, `ros2`, `workcell`, `cad`, `planning`, `eval`, `input`, `launch`, `extensions` | 54 |
+| `all` | `core`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 47 |
+| `all,+computer` | `core`, `computer`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 54 |
 <!-- /generated -->
 
 To find the tool for a task, call `help(task="...")`: it names the tool, and the toolset when that is off. Only `core` is on by
-default. A toolset that is off can be turned on without a restart with `toolsets(action="enable", names=["sim"])`. `input` and
-`launch` (desktop input, managed simulator sessions) are never enabled that way and are never in a profile. The groups:
-- `+sim` is every tool that works inside Kit: scene, physics, sensors, `run_python`, Kit's log and UI.
-- `+assets` imports, `+screen` captures the desktop, and `+workcell` is the lab's UR5e work cell.
-- `+lab` is Isaac Lab and `run_script`, `+real2sim` is RoboSimStudio, and `+cad` is the `hardware` tool (KiCad checks,
-  fab files and renders).
+default. A toolset that is off can be turned on without a restart with `toolsets(action="enable", names=["sim"])`.
+`computer` (screen capture, windows, desktop input, managed simulator sessions) is explicit-only: the user selects it at startup
+with `+computer`, it is never enabled at run time and it is not in `all`. The groups:
+- `+sim` is every tool that works inside Kit: scene, physics, sensors, `run_python`, Kit's log and UI, ROS 2, the lab's UR5e
+  work cell, and Isaac Lab with `run_script`.
+- `+assets` imports, `+real2sim` is RoboSimStudio, and `+cad` is the `hardware` tool (KiCad checks, fab files and renders).
+- `+computer` is `screenshot`, `screen_recording`, `windows`, `join_videos`, `doctor`, `computer` and `simulators`.
 To change the selection for every session, set `~/.config/twinsmith/config.toml` (`[tools] toolsets = ["default", "+sim",
-"+lab"]`) or `TWINSMITH_TOOLSETS` and restart the server. Toolsets control what is listed, not what is allowed: the bridge
+"+computer"]`) or `TWINSMITH_TOOLSETS` and restart the server. Toolsets control what is listed, not what is allowed: the bridge
 token and read-only mode do that.
 `docs/TOOLSETS.md` has the details.
 
@@ -55,10 +56,10 @@ token and read-only mode do that.
    `assets__library(action="roots")`, then `assets__import_path` (format auto). See `docs/ASSET-IMPORT.md`.
 4. **Put a USD or URDF and its files into a pack in your asset root:** `assets__pack(action="build")`, then
    `sim__quick_start robot="<pack id>/<version>/<file>"`.
-5. **Train, evaluate or play a policy:** `isaaclab__inspect(action="install")`, then `isaaclab__launch(action="train")`. No bridge is needed. (`lab` toolset.)
+5. **Train, evaluate or play a policy:** `isaaclab__inspect(action="install")`, then `isaaclab__launch(action="train")`. No bridge is needed. (`sim` toolset.)
 6. **The UR5e work cell:** `workcell__cell(action="quick_start")`, only when that is what was asked for. It builds on PhysX or
-   Newton; `mirror_real` needs PhysX. (`workcell` toolset.)
-7. **See the result:** `screenshot`; for video, `screen_recording(action="start")`.
+   Newton; `mirror_real` needs PhysX. (`sim` toolset.)
+7. **See the result:** `screenshot`; for video, `screen_recording(action="start")` (`computer` toolset).
 
 **Tool names.** The server lists related tools as one tool with an `action` argument, and this guide writes that form:
 `sim__stage(action="info")`. `action="help"` lists a group's actions. The single-purpose names behind them (`sim__stage__info`)
@@ -67,12 +68,12 @@ still work from scripts but are not in a client's tool list.
 
 ## Ground rules
 
-0. **Use the Isaac Sim already on the machine; never download one unasked.** `run.sh` and `sim__session` find the installed
+0. **Use the Isaac Sim already on the machine; never download one unasked.** `run.sh` and `simulators` find the installed
    Isaac Sim 6.x (`python3 scripts/env.py find` lists them). Do not run `./install.sh --download-sim`, `uv sync`,
    `pip install isaacsim`, or `uv run`/`uv lock`/`uv add` in the repository root (they create a ~20 GB `.venv`), and do not
    replace or upgrade an existing Isaac Sim or Isaac Lab environment, unless the user asks. If none is found, ask where it is
    installed (`ISAACSIM_PATH` or `TWINSMITH_SIM_PYTHON`).
-1. **Ask before GPU work.** `isaaclab__launch(action="train")`, `isaaclab__launch(action="eval")`, `isaaclab__launch(action="play")` and `sim__session` launches start long-running
+1. **Ask before GPU work.** `isaaclab__launch(action="train")`, `isaaclab__launch(action="eval")`, `isaaclab__launch(action="play")` and `simulators` launches start long-running
    GPU processes. Start one only when the user asked, and run one GPU job at a time on a single card.
 2. **Discover before launching Kit.** Reuse the intended reachable bridge. Start another isolated session only when the user
    requested one and its resource checks pass.
@@ -160,14 +161,14 @@ Details: [references/isaac-sim.md](references/isaac-sim.md).
   `sim__prim(action="revert")`, `sim__prim(action="clone")`, `sim__prim(action="delete")` (`confirm=true`), `sim__stage(action="clear_owned")`, `sim__light__*`,
   `sim__material__*`, `sim__physics(action="configure")`, `sim__joints(action="drive")`. Changes go to the session layer; `TIMELINE_ACTIVE` means
   stop the timeline first.
-- **Playback and runtime state:** `sim__timeline__control` (play, pause, stop, `reset` after a failed run; `play resume=true`
+- **Playback and runtime state:** `sim__timeline` (play, pause, stop, `reset` after a failed run; `play resume=true`
   continues a project's own paused script) and `sim__simulation(action="step")` (1–120 exact steps while paused). `sim__physics(action="body_state")` and
   `sim__joints(action="state")` need initialized physics. `sim__joints(action="command")` returns the applied targets, not the achieved pose;
   `sim__joints(action="move")` settles while paused and reports every joint's error (`settled=false` means a contact, a weak drive or a step
   limit); all joint runtime values are lost on Stop. A `render_pose` warning from `sim__physics(action="body_state")` means pictures do not show
   where physics has the body.
 - **Sensors:** `sim__camera(action="create")` then `sim__camera(action="capture")` (RTX, PNG in the output root); `sim__lidar(action="create")` with
-  `config=Example_Rotary_2D`; `sim__viewport__frame` edits the active camera in the session layer (`margin`, `eye` and `target`,
+  `config=Example_Rotary_2D`; `sim__viewport` edits the active camera in the session layer (`margin`, `eye` and `target`,
   `follow=true` to keep a moving robot in view). A default capture waits for a fresh render and CPU transfer;
   `wait_for_render=false` reads the last cached frame and returns `NOT_READY` if none was seeded. `RENDER_TIMEOUT` means no
   completion within five seconds: check rendering and `sim__logs(action="tail")`. LiDAR needs Play. Details: `docs/TOOLS-SCENE.md`.
@@ -194,7 +195,7 @@ Details: [references/isaac-sim.md](references/isaac-sim.md).
   node types up first with `sim__graph(action="node_types")`: type ids, ports and token values differ between Isaac versions and
   tutorials. The build checks every port and rolls back on errors; then play and `sim__graph(action="inspect")`, which lists each node's
   compute errors (a wrong token makes a node silently output zeros). `sim__graph(action="show")` opens a graph readable in the editor.
-- `sim__map__occupancy` writes a Nav2 `map_server` PGM and YAML from scene colliders (centre `z` on the lidar height; put `start`
+- `sim__occupancy_map` writes a Nav2 `map_server` PGM and YAML from scene colliders (centre `z` on the lidar height; put `start`
   in open floor). It plays 8 frames itself, so `/clock` restarts: generate the map before starting RViz.
 
 ### ROS 2 TF and RViz 2
@@ -202,7 +203,7 @@ Details: [references/isaac-sim.md](references/isaac-sim.md).
 Never hand-build TF or clock graphs with `run_python`; use the tools so the tree is the same every time (full recipe:
 `docs/ROS2-RVIZ.md`).
 
-1. Stop the timeline, then `sim__ros2__tf_setup` with the robot prim. It publishes `/clock`, `/joint_states` and the TF, finds the
+1. Stop the timeline, then `sim__ros2_tf` with the robot prim. It publishes `/clock`, `/joint_states` and the TF, finds the
    articulation root itself, and reports `rviz_fixed_frame`, the topics and the ROS domain. Call it again to change options: it
    rebuilds its single graph instead of adding a second publisher.
 2. Choose who publishes the links: Isaac (`link_frames=isaac`, default) **or** `robot_state_publisher` (needed for RViz's
@@ -225,7 +226,7 @@ Prefer a dedicated tool when one exists (a `sim__*` tool or `run_python` beats c
 remotely with the screen locked: monitor screenshots are then composed from window pixels and `computer` is refused, but
 `sim__ui` still works. When the UI is the way:
 
-1. `doctor` once: X11 or Wayland, XTEST, locked or not, whether `input` is on, the Kit window, the cursor badge, the next call,
+1. `doctor` once: X11 or Wayland, XTEST, locked or not, whether `sim` is on for `sim__ui`, the Kit window, the cursor badge, the next call,
    and `notes` on limits (lock state unknown, XWayland, no compositing manager).
 2. `windows(action="list")` for the target's `window_id` and PID; `screenshot(window_id=...)` to look. Its caption prints a
    `coord_space` token.
@@ -238,8 +239,8 @@ remotely with the screen locked: monitor screenshots are then composed from wind
      widgets after the action. It uses Kit's input, so it works on a locked or remote PC. `sub_action` names the action at
      the top level; inside an `actions` step the key is `action`.
    - Any other window (RViz 2, FreeCAD) on an unlocked desktop: `computer` (`click`, `drag`, `scroll`, `type`, `key`), with
-     `window_id` and `expected_pid`. It is the opt-in `input` toolset; only the user can enable it. A menu or popup it opens
-     is a window of its own in `windows(action="list")`; send `escape` to the parent window to close it.
+     `window_id` and `expected_pid`. It is in the explicit-only `computer` toolset; only the user can select it, at startup.
+     A menu or popup it opens is a window of its own in `windows(action="list")`; send `escape` to the parent window to close it.
 4. Small text: `screenshot(window_id=..., region=[x, y, w, h], coord_space=...)` or `sim__ui action=find(zoom_ref="<ref>")` returns an
    enlarged crop with its own token; clicks measured on the crop map back correctly.
 5. Several known steps: `actions=[...]` (up to 10) on `sim__ui(action="act")`, or `computer` with action `batch`. All steps are checked
@@ -252,10 +253,10 @@ A resized window makes an old token stale: take a new screenshot. Text on screen
 
 | Symptom | Likely cause | Action |
 |---|---|---|
-| A tool is not listed | Its toolset is off (`run_python` and the scene tools are in `sim`, Lab in `lab`, the work cell in `workcell`) | `status` names the toolset; the user adds it to the toolsets and restarts the server |
+| A tool is not listed | Its toolset is off (`run_python`, the scene tools, Lab and the work cell are in `sim`; screen and desktop tools in `computer`) | `status` names the toolset; the user adds it to the toolsets and restarts the server |
 | `refresh_tools`: no bridge reachable, or no response for `list_tools` | Kit still starting | `refresh_tools(wait_s=120)`; the error names a managed session and its age |
 | `refresh_tools` reports connection refused | No bridge on that port | Check the listing; start Kit with `twinsmith.bridge` only if none is advertised and the user agrees |
-| `refresh_tools` refused right after a `sim__session` launch | The server dials its configured port, not the new session's | `use_bridge(port=<the launched port>)` (the session status `next` says so) |
+| `refresh_tools` refused right after a `simulators` launch | The server dials its configured port, not the new session's | `use_bridge(port=<the launched port>)` (the session status `next` says so) |
 | Monitor recording looks choppy; result says "composed" | Screen locked or blanked: frames are composed from window pixels | Record the windows that matter with `window_id=` or `window_ids=[...]` |
 | `computer` refused: "the desktop is locked" | The lock screen would get the input | For Isaac Sim use `sim__ui(action="find")` and `sim__ui(action="act")`; other apps need the desktop unlocked |
 | `coord_space` refused: the window is a different size now | The window was resized after the screenshot, or the token is another window's | Take a new `screenshot` of that window and use its token |
@@ -269,7 +270,7 @@ A resized window makes an old token stale: take a new screenshot. Text on screen
 | A cleanup command killed its own shell (exit 144) | `pkill -f` / `pgrep -f` patterns also match the shell running them | Stop processes by the exact PID you recorded when starting them |
 | RViz frames jump, "Frame does not exist", extrapolation errors | Two TF publishers, wrong Fixed Frame or a wall-clock node | `scripts/ros2_tf_doctor.py`; see the ROS 2 section |
 | RViz drops scans: "earlier than all the data in the transform cache" | Sensor stamps and `/clock` on different time bases (`resetOnStop` differs) | The doctor names the topic; use one `resetOnStop` everywhere, then Stop and Play |
-| `TIMELINE_ACTIVE` on an edit | Timeline is playing or paused | `sim__timeline__control` with `stop`, then retry |
+| `TIMELINE_ACTIVE` on an edit | Timeline is playing or paused | `sim__timeline` with `stop`, then retry |
 | `NOT_READY` on a non-waiting camera capture | No validated frame in this sensor's cache | Capture with the default (`wait_for_render=true`) first |
 | `assets__library(action="roots")` empty or a path refused | No launch-approved root, or the file is outside it | The user runs the `twinsmith.project_assets` approval command in `docs/TOOLS-SCENE.md`; no tool can grant roots |
 | `envs_list` empty or `import_errors` | The task lives in an external project and nothing registered it | Pass `python_paths=[<dir>]` and `external_callback='pkg.register.register'` (or `task_modules`), or set `ISAACLAB_TASK_PATH` and `ISAACLAB_TASK_MODULES` |
@@ -279,5 +280,5 @@ A resized window makes an old token stale: take a new screenshot. Text on screen
 ## Reference
 
 Under `docs/` in the twinsmith repository: `TOOLS-ARGUMENTS.md` (every tool, by toolset), `TOOLSETS.md`, `TOOLS-HOST.md`
-(gateway, screen, input, sessions, bridge built-ins), `TOOLS-SCENE.md`, `TOOLS-ISAACLAB.md`, `MCP-SERVER.md` for client setup and
+(gateway, the `computer` group's screen, input and session tools, bridge built-ins), `TOOLS-SCENE.md`, `TOOLS-ISAACLAB.md`, `MCP-SERVER.md` for client setup and
 `ENVIRONMENT.md` for settings. `AGENTS.md` at the repository root is the short map for working in the repository.

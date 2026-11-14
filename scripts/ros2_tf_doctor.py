@@ -160,12 +160,12 @@ def analyze(edges, fixed_frame, *, clock_seen, tf_publishers=(), clock_publisher
                       "Start every node with use_sim_time:=true.")
     if "sim" in domains and not clock_seen:
         errors.append("TF uses simulation time but nothing publishes /clock; nodes with use_sim_time:=true "
-                      "will wait forever. sim__ros2__tf_setup publishes /clock.")
+                      "will wait forever. sim__ros2_tf publishes /clock.")
     clock_pubs = sorted(set(clock_publishers))
     if len(clock_pubs) > 1:
         errors.append(f"{len(clock_pubs)} nodes publish /clock ({', '.join(clock_pubs)}): time jumps back and forth, "
                       "so RViz keeps resetting ('Detected jump back in time') and TF is cleared. Keep one; "
-                      "sim__ros2__tf_setup reuses an existing clock.")
+                      "sim__ros2_tf reuses an existing clock.")
     else:
         resets, back = clock_jumps(list(clock_times))
         if back:
@@ -185,7 +185,7 @@ def analyze(edges, fixed_frame, *, clock_seen, tf_publishers=(), clock_publisher
             errors.append(f"{len(off)} frame(s) differ from /clock by more than {CLOCK_SKEW:g} s of sim time "
                           f"(worst: {worst} {off[worst]:+.1f} s; {', '.join(sorted(off)[:8])}): they use a different "
                           "time source (one restarts at 0 on stop/play, the other keeps counting), so use_sim_time "
-                          "nodes cannot look them up. Re-run sim__ros2__tf_setup (clock=auto).")
+                          "nodes cannot look them up. Re-run sim__ros2_tf (clock=auto).")
     if "wall" in domains and "sim" not in domains and clock_seen:
         warnings.append("/clock is published but TF uses wall-clock time; the TF publishers are not using "
                         "simulation time.")
@@ -361,7 +361,7 @@ def isaac_ros_env(env=None):
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--fixed-frame", required=True, help="RViz Fixed Frame (sim__ros2__tf_setup: rviz_fixed_frame)")
+    p.add_argument("--fixed-frame", required=True, help="RViz Fixed Frame (sim__ros2_tf: rviz_fixed_frame)")
     p.add_argument("--seconds", type=float, default=3.0, help="how long to listen (default 3)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--topic", action="append", default=[], metavar="TOPIC",

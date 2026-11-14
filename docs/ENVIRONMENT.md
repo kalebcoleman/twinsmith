@@ -45,7 +45,7 @@ A project's `twinsmith.json` is a different file, read for asset packs and the I
 |---|---|---|---|
 | `TWINSMITH_TOOLSETS` | `default` | host | Toolset profile and adjustments. Overrides the files; `--toolsets` overrides it. See [toolsets](TOOLSETS.md). |
 | `TWINSMITH_RUNTIME_ENABLE` | `1` | host | `0` stops the `toolsets` tool from enabling or disabling toolsets while the server runs; `[tools] runtime_enable = false` does the same. See [toolsets](TOOLSETS.md#enabling-a-toolset-while-the-server-runs). |
-| `TWINSMITH_CURSOR_BADGE` | `0` | host | `1` draws a small click-through badge that glides to where `computer` and `sim__ui__act` input lands, then hides; it is hidden from every screenshot but shows in monitor recordings. Overrides `[screen] cursor_badge = true` in the configuration files. |
+| `TWINSMITH_CURSOR_BADGE` | `0` | host | `1` draws a small click-through badge that glides to where `computer` and `sim__ui__act` input lands, then hides; it is hidden from every screenshot but shows in monitor recordings. Overrides `[computer] cursor_badge = true` in the configuration files. |
 | `TWINSMITH_PHYSICS_BACKEND` | `newton` | host, `run.sh`, Kit | Physics engine for a new simulator, `physx` or `newton`. It overrides `[sim] physics_backend` in the configuration files; `--physics-backend` overrides it. The managed launch tool, `run.sh` and `scripts/run_kit.py` all read the same setting. Never falls back to the other engine; the UR5e work cell needs `physx`. See [compatibility](COMPATIBILITY.md#target-engine). |
 | `TWINSMITH_NAME` | `twinsmith` | host | Name the server reports to the client. |
 | `TWINSMITH_INSTRUCTIONS` | built in | host | Replaces the instructions text the server sends to the client. |
@@ -73,25 +73,25 @@ Toolsets are visibility preferences, not security: the token and read-only mode 
 | `TWINSMITH_CRASH_UPLOAD` | unset | `run.sh`, host | `1` keeps Kit's default of uploading a crash's minidump to NVIDIA. Otherwise `run.sh` and the Isaac Lab jobs the host starts keep dumps on this machine, because a minidump can contain process memory. |
 | `TWINSMITH_PRINT_PYTHON` | unset | `run.sh` | `1` prints the interpreter `run.sh` chose and exits. |
 | `OMNI_KIT_ACCEPT_EULA` | unset | installer, `run.sh`, host | `YES` accepts NVIDIA's EULA. `run.sh` and the Lab jobs the host starts set it when they start Kit; the installer needs it or `--accept-eula` before it downloads a simulator. |
-| `TWINSMITH_SCENE_OUTPUT` | a per-process temp directory | Kit, host | Output root for `sim__stage__save`, `sim__camera__capture` and `sim__map__occupancy`. **Set it to keep results across restarts.** A managed session sets it to its own folder. |
+| `TWINSMITH_SCENE_OUTPUT` | a per-process temp directory | Kit, host | Output root for `sim__stage__save`, `sim__camera__capture` and `sim__occupancy_map`. **Set it to keep results across restarts.** A managed session sets it to its own folder. |
 | `TWINSMITH_ENABLE_SCENE_SCRIPTS` | unset | Kit | `1` enables `sim__controller` and a Python (`module:function`) controller in `sim__simulation(action="run")`, which run arbitrary Python in Kit. A `tcp://127.0.0.1:<port>` controller needs no setting. |
 | `ROS_DOMAIN_ID` | `0` | Kit, host, `scripts/ros_env.sh` | ROS domain. External ROS clients must match; a managed session gets its own. |
 | `ROS_DISTRO` | `humble` on Ubuntu 22.04, else `jazzy` | `run.sh`, `scripts/ros_env.sh` | Which of Isaac Sim's bundled ROS 2 libraries `run.sh` puts on the library path. |
 | `ISAAC_ROS_SEARCH` | `/opt/ros:$HOME/ros2` | `scripts/ros_env.sh` | Colon-separated roots where `scripts/ros_env.sh` looks for a ROS 2 install. |
 | `TWINSMITH_EXTS` | `<repo>/exts` | the Isaac Lab bridge template | Extensions folder used by the [Isaac Lab bridge template](../mcp/templates/isaaclab_bridge_launch.py). |
 
-## Managed simulator sessions (`launch` toolset)
+## Managed simulator sessions (`computer` toolset)
 
 | Variable | Default | Read by | Meaning |
 |---|---|---|---|
 | `TWINSMITH_SIM_ROOT` | the repository root when available | host | Checkout containing `run.sh`. Set it when the host is installed outside a checkout. |
 | `TWINSMITH_SIM_SESSIONS_DIR` | `~/.local/share/twinsmith/sim-sessions` | host | Session metadata, logs and output. |
-| `TWINSMITH_PORT_RANGE` | unset | host | Ports `sim__session` may use, as `18800-18899`. An omitted port is chosen inside it; a stated port outside it is refused. |
+| `TWINSMITH_PORT_RANGE` | unset | host | Ports `simulators` may use, as `18800-18899`. An omitted port is chosen inside it; a stated port outside it is refused. |
 | `TWINSMITH_ROS_DOMAIN_RANGE` | unset | host | ROS domains it may use, as `40-49`, with the same rule. |
 | `TWINSMITH_SIM_MAX_INSTANCES` | `2` | host | Maximum known bridge, managed Sim and Lab-job processes. `0` disables the limit. |
 | `TWINSMITH_SIM_MIN_FREE_VRAM_MIB` | `8192` | host | Minimum free GPU memory at launch. |
 | `TWINSMITH_SIM_MIN_FREE_RAM_MIB` | `4096` | host | Minimum available system RAM at launch. |
-| `TWINSMITH_SIM_LAUNCHER` | unset | host | An absolute path to a project's own launcher for `sim__session(action="launch")`. Only from here, never from a tool argument or project file. The file must be executable and owned by you or root. |
+| `TWINSMITH_SIM_LAUNCHER` | unset | host | An absolute path to a project's own launcher for `simulators(action="launch")`. Only from here, never from a tool argument or project file. The file must be executable and owned by you or root. |
 
 ## Isaac Lab
 

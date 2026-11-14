@@ -21,10 +21,10 @@ def test_scene_client_keeps_exported_tool_groups_and_still_pins_the_port(monkeyp
     monkeypatch.delenv("TWINSMITH_TOOLSETS", raising=False)
     monkeypatch.setenv("TWINSMITH_PORT", "1")
     env = client.parameters(18781).env
-    assert env["TWINSMITH_TOOLSETS"] == "default,+sim,+assets,+screen,+extensions"
+    assert env["TWINSMITH_TOOLSETS"] == "default,+sim,+assets"
     assert env["TWINSMITH_PORT"] == "18781"
-    monkeypatch.setenv("TWINSMITH_TOOLSETS", "default,+input")
-    assert client.parameters(18781).env["TWINSMITH_TOOLSETS"] == "default,+input"
+    monkeypatch.setenv("TWINSMITH_TOOLSETS", "default,+computer")
+    assert client.parameters(18781).env["TWINSMITH_TOOLSETS"] == "default,+computer"
 
 
 def test_scene_client_sends_single_purpose_names_as_the_listed_group_with_an_action(monkeypatch):
@@ -32,10 +32,10 @@ def test_scene_client_sends_single_purpose_names_as_the_listed_group_with_an_act
     assert client.listed("sim__prim__create", {"path": "/World/A"}) == ("sim__prim", {"action": "create", "path": "/World/A"})
     assert client.listed("sim__body__state", {"path": "/p"}) == ("sim__physics", {"action": "body_state", "path": "/p"})
     assert client.listed("sim__ui__act", {"action": "click"}) == ("sim__ui", {"action": "act", "sub_action": "click"})
-    assert client.listed("sim__timeline__control", {"action": "stop"}) == ("sim__timeline__control", {"action": "stop"})
+    assert client.listed("sim__timeline", {"action": "stop"}) == ("sim__timeline", {"action": "stop"})
     monkeypatch.delenv("TWINSMITH_TOOLSETS", raising=False)
-    assert client.parameters(1, "all,+launch").env["TWINSMITH_TOOLSETS"] == "all,+launch"
-    monkeypatch.setenv("TWINSMITH_TOOLSETS", "default,+input")
+    assert client.parameters(1, "all,+computer").env["TWINSMITH_TOOLSETS"] == "all,+computer"
+    monkeypatch.setenv("TWINSMITH_TOOLSETS", "default,+computer")
     assert client.parameters(1, "all").env["TWINSMITH_TOOLSETS"] == "all"
 
 

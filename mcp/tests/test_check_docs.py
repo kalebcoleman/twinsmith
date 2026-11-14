@@ -129,7 +129,7 @@ def test_listed_counts_match_the_server():
     """The generator reads the registry without the MCP SDK; the server must list the same tools."""
     from twinsmith import server, toolsets
     from twinsmith.config import select
-    instance = server.build_server({"TWINSMITH_TOOLSETS": "all,+input,+launch"})
+    instance = server.build_server({"TWINSMITH_TOOLSETS": "all,+computer"})
     listed = {tool.name for tool in asyncio.run(instance.list_tools())}
     expected = {name for names in gen_tool_reference.listed_by_toolset().values() for name in names}
     assert listed == expected

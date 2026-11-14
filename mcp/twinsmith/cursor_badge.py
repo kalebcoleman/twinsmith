@@ -1,7 +1,7 @@
 """Opt-in cursor badge: a small click-through disc that shows where ``computer`` input lands.
 
 XTEST moves the real pointer, but a person watching the desktop (or a recording) easily misses where a
-click went. With ``[screen] cursor_badge = true`` or ``TWINSMITH_CURSOR_BADGE=1`` a small override-redirect
+click went. With ``[computer] cursor_badge = true`` or ``TWINSMITH_CURSOR_BADGE=1`` a small override-redirect
 window glides to the target before each click, drag or scroll, follows a drag, and hides after a short
 linger. It sits a few pixels below and right of the hotspot and has an empty input shape, so it never
 covers the target pixel and the covered-window check never sees it. Kit draws its own badge for

@@ -208,7 +208,7 @@ class SensorTools:
                     "To publish /scan, pass ros2_scan_graph to sim__graph__build: it targets sensor_path, the OmniLidar, "
                     "and makes its own render product at Play, which survives a save. render_product is this "
                     "session's own, for sim__lidar__read; saves drop it. Scans are stamped with the sensor's own frame: pass "
-                    "sensor_path in sim__ros2__tf_setup extra_frames so that frame is in the tree."
+                    "sensor_path in sim__ros2_tf extra_frames so that frame is in the tree."
                 ),
                 tick_rate_hz=sensor["tick_rate_hz"],
                 scan_rate_hz=sensor["scan_rate_hz"],

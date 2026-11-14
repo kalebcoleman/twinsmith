@@ -46,7 +46,7 @@ this repository, so they are **not yet verified live here**.
 | A Franka joint move (`sim__joints(action="move")`) | **Does not yet settle within the PhysX tolerance.** |
 | Raycast (`sim__physics(action="raycast")`) | **Not available**: refused with `RAYCAST_UNSUPPORTED`. |
 | Occupancy-map start checks | Skipped (they are PhysX overlap queries); the result lists them in `checks_skipped`. |
-| Work cell (`workcell` toolset) | **PhysX and Newton.** On Newton it authors the config's per-engine arm drives (stiffness, damping, armature) and the tower's solver settings; live-checked on Isaac Sim 6.2 / Newton 1.6.1 for hold, steps, fingers and tower. The force/torque read passes the static gravity check on both engines (`scripts/workcell_static_wrench.py`); cameras and `mirror_real` are not qualified on Newton. See its [README](../exts/workcell/workcell/README.md#newton) and the [open item](OPEN-ITEMS.md#work-cell-on-newton). |
+| Work cell (`workcell__*` tools, `sim` toolset) | **PhysX and Newton.** On Newton it authors the config's per-engine arm drives (stiffness, damping, armature) and the tower's solver settings; live-checked on Isaac Sim 6.2 / Newton 1.6.1 for hold, steps, fingers and tower. The force/torque read passes the static gravity check on both engines (`scripts/workcell_static_wrench.py`); cameras and `mirror_real` are not qualified on Newton. See its [README](../exts/workcell/workcell/README.md#newton) and the [open item](OPEN-ITEMS.md#work-cell-on-newton). |
 
 Earlier records, kept as they were observed. Narrow 6.2 Newton experiments used MuJoCo Warp on CPU; earlier tests also produced
 native crashes, invalid state, rendering and contact failures. On 2026-11-06 a 6.2 headless Newton session reported the MuJoCo
@@ -133,14 +133,14 @@ package-version segment, so use the package metadata to distinguish exact builds
 NVIDIA also documents Help > About and the installation's `VERSION` file.
 
 An existing separate environment can be selected with `TWINSMITH_SIM_PYTHON=/absolute/path/to/sim-env/bin/python` for
-`./run.sh`, or in the MCP server's environment before using `sim__session(action="launch")`. Selecting an interpreter is not a version
+`./run.sh`, or in the MCP server's environment before using `simulators(action="launch")`. Selecting an interpreter is not a version
 or dependency check. Keep the locked 6.2 environment intact when experimenting, use a disposable scene and an
 unused bridge port and ROS domain, and verify the selected PID before scene-changing calls. See
 [host tools](TOOLS-HOST.md#optional-simulator-sessions) for managed-session safeguards and
 [verification](VERIFICATION.md) for what each live check changes.
 
 For a simulated ROS check on the tested Ubuntu/Jazzy setup, select the disposable bridge, run `sim__quick_start` with a robot,
-call `sim__ros2__tf_setup`, then play the scene. In a separate terminal, from the repository root, use the same ROS domain as
+call `sim__ros2_tf`, then play the scene. In a separate terminal, from the repository root, use the same ROS domain as
 the simulator and source the shared DDS configuration:
 
 ```bash
@@ -254,7 +254,7 @@ With the compute node, target the robot's top prim, and check the frames with `r
 `[PoseTree] parent getObjectType eInvalid for '/World'` each frame while still publishing `World`
 as the parent; leaving `parentPrim` empty (World) avoided the warning.
 
-`sim__ros2__tf_setup` builds its own TF graphs and reports the frames; prefer it over hand-built
+`sim__ros2_tf` builds its own TF graphs and reports the frames; prefer it over hand-built
 graphs unless the lab asks for its own graph.
 
 ### Other things labs run into

@@ -74,7 +74,8 @@ def test_backend_mismatch_refuses_before_checks(tmp_path, monkeypatch, capsys, a
     first = result["checks"][0]
     assert first["status"] == "fail" and first["backend"] == actual
     assert first["simulator_build"] == "test-build" and first["seconds"] >= 0
-    assert all(row["status"] == "not_run" for row in result["checks"][1:])
+    assert all(row["status"] == "not_run" for row in result["checks"][1:] if row["check"] not in module.ON_REQUEST)
+    assert [row["status"] for row in result["checks"] if row["check"] in module.ON_REQUEST] == ["skipped", "skipped"]
     assert module.os.environ["TWINSMITH_HOST"] == "original"
 
 
@@ -183,7 +184,7 @@ class _Bridge(_Engine):
         if name == "run_python" and "new_stage" in arguments["code"]:
             self.new_stages += 1
             return {"result": True}
-        if name == "sim.timeline.control":
+        if name == "sim.timeline":
             self.stops += 1
             assert arguments == {"action": "stop", "session_id": "s", "stage_id": "t"}
             return {}
@@ -265,10 +266,10 @@ def test_a_python_without_the_mcp_sdk_is_told_the_command_that_has_it(monkeypatc
 def test_the_work_cell_check_needs_no_pxr_on_the_host_and_the_command_is_quoted(monkeypatch, capsys):
     module = runner()
     monkeypatch.setattr(module.importlib.util, "find_spec", lambda name: None)   # neither mcp nor pxr here
-    assert module.main(["workcell", "--output-dir", "/tmp/my runs;x", "--check", "workcell_smoke"]) == 2
+    assert module.main(["sim", "--output-dir", "/tmp/my runs;x", "--check", "workcell_smoke"]) == 2
     err = capsys.readouterr().err
     assert "has no mcp," in err and "pxr" not in err    # the check's pxr code runs inside Kit
-    assert err.rstrip().endswith("smoke.py workcell --output-dir '/tmp/my runs;x' --check workcell_smoke")
+    assert err.rstrip().endswith("smoke.py sim --output-dir '/tmp/my runs;x' --check workcell_smoke")
 
 
 def test_the_one_check_that_imports_pxr_on_the_host_is_probed_for_it(monkeypatch, capsys):

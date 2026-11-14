@@ -136,7 +136,7 @@ async def validate(port, output, directory, robot):
             opening = await invoke("sim__stage__info")
             opening_target = {k: opening[k] for k in ("session_id", "stage_id")}
             if not opening["stopped"]:
-                await invoke("sim__timeline__control", **opening_target, action="stop")
+                await invoke("sim__timeline", **opening_target, action="stop")
             await invoke("sim__stage__open", **opening_target, path=str(scene_file),
                          discard_changes=True)
             info = await invoke("sim__stage__info")
@@ -201,13 +201,13 @@ async def validate(port, output, directory, robot):
             assert posed["world_position"] == [0.25, 0, 1.2]
 
             # A body edit while the timeline runs is refused.
-            await invoke("sim__timeline__control", **target, action="play")
+            await invoke("sim__timeline", **target, action="play")
             await asyncio.sleep(0.4)
             running = await invoke("sim__prim__set_transform", error=True, **target,
                                    path="/World/Table", position=[0, 0, 0.5], frame="world")
             assert running["code"] == "TIMELINE_ACTIVE", running
             await asyncio.sleep(2.6)
-            await invoke("sim__timeline__control", **target, action="pause")
+            await invoke("sim__timeline", **target, action="pause")
             resting = await invoke("sim__body__state", **target, path="/World/Object",
                                    include_dynamics=True)
             z = resting["world_position"][2]
@@ -215,16 +215,16 @@ async def validate(port, output, directory, robot):
             assert resting["dynamics"]["mass"] > 0
             report["steps"]["falls_onto_table"] = dict(z=z, mass=resting["dynamics"]["mass"],
                                                        expected_rest_z=0.625)
-            await invoke("sim__timeline__control", **target, action="stop")
+            await invoke("sim__timeline", **target, action="stop")
 
             # Mass authored on pack-created cubes is what the runtime reports.
             await invoke("sim__prim__create", **target, path="/World/MassA", kind="Cube",
                          size=0.2, rigid=True, mass=2.5, position=[-0.6, 0, 1.5])
             await invoke("sim__prim__create", **target, path="/World/MassB", kind="Cube",
                          size=0.2, rigid=True, mass=5.0, position=[-0.9, 0, 1.5])
-            await invoke("sim__timeline__control", **target, action="play")
+            await invoke("sim__timeline", **target, action="play")
             await asyncio.sleep(3.0)
-            await invoke("sim__timeline__control", **target, action="pause")
+            await invoke("sim__timeline", **target, action="pause")
             first = await invoke("sim__body__state", **target, path="/World/MassA",
                                  include_dynamics=True)
             second = await invoke("sim__body__state", **target, path="/World/MassB",
@@ -238,7 +238,7 @@ async def validate(port, output, directory, robot):
                 runtime=[first["dynamics"]["mass"], second["dynamics"]["mass"]],
                 runtime_kg=[first["dynamics"]["mass_kg"], second["dynamics"]["mass_kg"]],
             )
-            await invoke("sim__timeline__control", **target, action="stop")
+            await invoke("sim__timeline", **target, action="stop")
 
             # A body under a body is refused, on a prim the pack created this time.
             await invoke("sim__prim__create", **target, path="/World/Object/Core", kind="Xform")
@@ -304,7 +304,7 @@ async def validate(port, output, directory, robot):
                 moved_to=robot_moved["world_position"],
                 restored=robot_reverted["removed"],
             )
-            await invoke("sim__timeline__control", **robot_target, action="stop")
+            await invoke("sim__timeline", **robot_target, action="stop")
             print(json.dumps(dict(passed=True, calls=len(records), **report)))
 
 

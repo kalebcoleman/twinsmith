@@ -24,7 +24,7 @@ def report(port=None):
         client.call("status", {}, port=port, timeout=3)
         state = "a simulator bridge answers"
     except Exception as exc:  # unreachable, several bridges, or an error envelope
-        state = f"no bridge answered ({type(exc).__name__}); start one with sim__launch or ./run.sh"
+        state = f"no bridge answered ({type(exc).__name__}); start one with launch_simulator or ./run.sh"
     return ("twinsmith: " + state + ". Load its tools with ToolSearch 'mcp__twinsmith', call help(task), and use them for "
             "screenshots, recordings, contacts and Isaac Lab runs before writing your own scripts.")
 

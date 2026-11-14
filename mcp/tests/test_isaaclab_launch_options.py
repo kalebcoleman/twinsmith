@@ -136,7 +136,7 @@ def test_tools_declare_cwd_and_task_modules():
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     listed = {t.name: t for t in asyncio.run(server.list_tools())}
     for name in ("train", "eval", "play", "env_check", "record"):
         assert {"cwd", "task_modules"} <= set(listed[name if name == "run_script" else f"isaaclab__{name}"].inputSchema["properties"]), name
@@ -193,7 +193,7 @@ def test_python_paths_is_the_documented_argument_and_python_path_its_alias(tmp_p
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     listed = {t.name: t for t in asyncio.run(server.list_tools())}
     for name in ("train", "eval", "play", "env_check", "record", "envs_list"):
         assert {"python_paths", "python_path"} <= set(listed[f"isaaclab__{name}"].inputSchema["properties"]), name
@@ -360,7 +360,7 @@ def test_install_info_lists_known_installs_and_tools_declare_install(two_install
     names = {r["name"] for r in install.known_installs()}
     assert names == {"lab-3.0.0", "lab-2.3.2"}
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     listed = {t.name: t for t in asyncio.run(server.list_tools())}
     for name in ("train", "eval", "play", "env_check", "record", "envs_list", "run_script", "install_info"):
         assert "install" in listed[name if name == "run_script" else f"isaaclab__{name}"].inputSchema["properties"], name

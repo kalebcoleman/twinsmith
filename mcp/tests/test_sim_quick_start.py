@@ -637,7 +637,7 @@ def test_quick_start_with_a_file_plays_after_the_import_not_before(monkeypatch):
     result = quick_start(monkeypatch, calls, play=True)
     assert "play" not in calls.named("sim.quick_start")[0]
     order = [n for n, _ in calls.calls]
-    assert order.index("assets.import_path") < order.index("sim.timeline.control")
+    assert order.index("assets.import_path") < order.index("sim.timeline")
     assert result["playing"] is True and result["stopped"] is False
 
 
@@ -678,7 +678,7 @@ def test_quick_start_preserves_an_explicit_position_in_an_environment(monkeypatc
 def test_quick_start_reports_play_failure_after_import(monkeypatch):
     class PlayFails(Calls):
         def __call__(self, name, params, state=None):
-            if name == "sim.timeline.control":
+            if name == "sim.timeline":
                 return json.dumps(dict(status="error", code="NOT_READY", message="not initialized"))
             return super().__call__(name, params, state)
 
@@ -691,7 +691,7 @@ def test_quick_start_with_a_file_runs_ros_after_the_import(monkeypatch):
     calls = Calls()
     result = quick_start(monkeypatch, calls, ros=True)
     assert "ros" not in calls.named("sim.quick_start")[0]
-    assert calls.named("sim.ros2.tf_setup")[0]["robot"] == "/World/go2" and calls.named("sim.ros2.tf_setup")[0]["base"] == "mobile"
+    assert calls.named("sim.ros2_tf")[0]["robot"] == "/World/go2" and calls.named("sim.ros2_tf")[0]["base"] == "mobile"
     assert result["ros"]["status"] == "ok"
 
 

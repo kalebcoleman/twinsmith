@@ -42,7 +42,7 @@ async def straight(args: dict, dispatch, is_playing, now, next_frame) -> dict:
     if args.get("move") is not True:
         refuse("INVALID_VALUE", "speed needs move=true: a path moves the arm.")
     if not is_playing():
-        refuse("PHYSICS_NOT_READY", "A path needs a playing timeline: sim__timeline__control action=play.")
+        refuse("PHYSICS_NOT_READY", "A path needs a playing timeline: sim__timeline action=play.")
     goal = args["position"]
     if not isinstance(goal, (list, tuple)) or len(goal) != 3 or not all(type(v) in (int, float) and math.isfinite(v) for v in goal):
         refuse("INVALID_VALUE", "position must be three finite numbers.")

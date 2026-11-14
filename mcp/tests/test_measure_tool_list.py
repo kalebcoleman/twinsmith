@@ -9,7 +9,7 @@ import sys
 def test_measure_tool_list():
     script = Path(__file__).resolve().parents[2] / "scripts" / "measure_tool_list.py"
     result = subprocess.run(
-        [sys.executable, str(script), "--json", "TWINSMITH_TOOLSETS=default,+screen,+lab"],
+        [sys.executable, str(script), "--json", "TWINSMITH_TOOLSETS=default,+computer,+sim"],
         check=True, capture_output=True, text=True,
     )
     report = json.loads(result.stdout)

@@ -6,7 +6,7 @@ the same way on any machine. Labs written for Isaac Sim 6.0 should also read the
 
 | Step | Tool | Runs where |
 |---|---|---|
-| 1. Publish `/clock`, `/joint_states` and the robot's TF | `sim__ros2__tf_setup` (MCP) | inside Isaac Sim |
+| 1. Publish `/clock`, `/joint_states` and the robot's TF | `sim__ros2_tf` (MCP) | inside Isaac Sim |
 | 2. Write an RViz config with the right Fixed Frame | `python3 scripts/ros2_rviz_config.py` | anywhere (stdlib only) |
 | 3. Check the live TF tree before trusting RViz | `python3 scripts/ros2_tf_doctor.py` | with ROS 2, or `--isaac-ros` |
 
@@ -94,7 +94,7 @@ Keep the result: `sensor_path` is the OmniLidar inside that asset, and `ros2_sca
 
 **3. Connect ROS 2.** TF, odometry, `/clock` and `/joint_states`. `world_frame` is empty because AMCL publishes `map -> odom`. `extra_frames` puts the LiDAR's frame in the tree: use `sensor_path` from step 2.
 
-Tool `sim__ros2__tf_setup`:
+Tool `sim__ros2_tf`:
 
 ```json
 {"robot": "/World/Create3", "base": "mobile", "world_frame": "", "base_link": "base_link", "extra_frames": ["/World/Create3/base_link/Lidar2D/RPLidar_S2E"]}
@@ -104,7 +104,7 @@ Then call `sim__graph(action="build")` twice: once with every field of `robot.cm
 
 **4. Make the map.** This plays a few frames, then stops, so the robot returns to its start. `clear` removes the robot's own footprint, so use at least the robot's radius.
 
-Tool `sim__map__occupancy`:
+Tool `sim__occupancy_map`:
 
 ```json
 {"min": [-3.5, -3.5], "max": [3.5, 3.5], "clear": [[0, 0, 0.3]], "start": [-1, -1], "basename": "room"}
@@ -114,7 +114,7 @@ The result's `yaml` is the map file for step 7. If `room` already exists, the ca
 
 **5. Play, and check the robot from ROS 2.**
 
-Tool `sim__timeline__control`:
+Tool `sim__timeline`:
 
 ```json
 {"action": "play"}
@@ -148,13 +148,13 @@ The robot prim's own position agrees with `/odom`; `sim__physics(action="body_st
 
 **6. Back to the start.** Stopping returns the robot to its start pose. Nav2 will assume it starts there.
 
-Tool `sim__timeline__control`:
+Tool `sim__timeline`:
 
 ```json
 {"action": "stop"}
 ```
 
-Tool `sim__timeline__control`:
+Tool `sim__timeline`:
 
 ```json
 {"action": "play"}
@@ -196,7 +196,7 @@ Tool `sim__camera`:
 
 **9. Clean up and save.** `pkill -INT -f '[p]arams_file:=/tmp/isaac_nav2.yaml'` (use the path you gave `nav2_params.py`) stops this Nav2 and not anyone else's; the brackets stop it matching your own shell. If it keeps running (a launch started with `setsid nohup` from a script ignored SIGINT in one run), `kill -TERM` the launch's PID, then its direct children (`pgrep -P <pid>`). A launch backgrounded by a script can ignore SIGINT, and SIGTERM on the launch alone can leave its nodes running, so confirm with `ros2 node list` and stop any left by PID. Then stop the timeline and save a copy. The flag removes this session's render handles from the copy; without it, the save refuses and says so. In the saved file, the drive and LiDAR graphs make their own render products at Play, so `/scan` comes back when you open it with `sim__stage(action="open")`.
 
-Tool `sim__timeline__control`:
+Tool `sim__timeline`:
 
 ```json
 {"action": "stop"}
@@ -312,7 +312,7 @@ Every "the map is wrong", "frames jump" or "RobotModel is white" problem we have
 2. **One clock.** Isaac stamps everything with simulation time and publishes `/clock`, from
    exactly one node. Two `/clock` publishers (for example two graphs that each
    publish one) disagree by a few frames, so time keeps jumping back: RViz logs "Detected
-   jump back in time", resets and clears TF many times a second. `sim__ros2__tf_setup` reuses
+   jump back in time", resets and clears TF many times a second. `sim__ros2_tf` reuses
    an existing clock (`clock=auto`), or else publishes one shared clock
    (`/Graph/twinsmith_ros2_clock`) for every robot it sets up, and matches its TF stamps to that
    clock's stop/play behaviour. If another graph adds a second
@@ -338,7 +338,7 @@ graph (`/Graph/twinsmith_ros2`, or `/Graph/twinsmith_ros2_<namespace>_<hash>`), 
 published twice by it. The static `world -> base_link` (or `world -> <odom>`) is the pose at setup
 time: call it again after moving the robot.
 
-Tool `sim__ros2__tf_setup`, with the IDs from `sim__stage(action="info")`:
+Tool `sim__ros2_tf`, with the IDs from `sim__stage(action="info")`:
 
 ```json
 {"session_id": "<from sim__stage info>", "stage_id": "<from sim__stage info>", "robot": "/World/UR5e"}
@@ -513,7 +513,7 @@ Frame naming rules in `IsaacComputeTransformTree` preserve existing ROS consumer
 
 - **A `ROS_LOCALHOST_ONLY is deprecated` line at every node start on Jazzy** is harmless: `config/ros_dds.env` keeps that setting so Humble and Jazzy clients agree.
 - **`ros2 topic echo --once` on a costmap can return an old sample:** Nav2's costmap publisher is quiet with no subscriber, so keep a subscriber running while you look.
-- **`sim__map__occupancy` writes to a temporary folder** that goes away with the simulator: copy the `.pgm` and `.yaml` out if you want to keep them.
+- **`sim__occupancy_map` writes to a temporary folder** that goes away with the simulator: copy the `.pgm` and `.yaml` out if you want to keep them.
 
 | Symptom | Cause | Fix |
 |---|---|---|
@@ -528,14 +528,14 @@ Frame naming rules in `IsaacComputeTransformTree` preserve existing ROS consumer
 | LaserScan shown in RViz but no points visible | Isaac's 2D lidar publishes zero intensities and the display colours by intensity | use `Color Transformer: FlatColor` (`ros2_rviz_config.py` writes that) |
 | ROS 2 node fails: "SharedMemory: unknown element" / "rmw handle is invalid" | an old `cyclonedds.xml` with `<SharedMemory>` and a Cyclone build without it | use this repository's current `config/cyclonedds.xml` |
 | Wheels turn at v/r, chassis doesn't move | wheels are `Cylinder` colliders on a very flat box floor | [use Quick Start's ground](#wheels-spin-but-the-robot-stays-put) |
-| Costmaps: "The tf tree is invalid because it contains a loop" | two publishers for one edge, or an older `sim__ros2__tf_setup` on a `base_footprint` robot | doctor shows `TF loop`; rerun the current tool, stopped |
+| Costmaps: "The tf tree is invalid because it contains a loop" | two publishers for one edge, or an older `sim__ros2_tf` on a `base_footprint` robot | doctor shows `TF loop`; rerun the current tool, stopped |
 | `/scan` silent, Kit logs "not attached to RTX Lidar" | the render product targets the wrapper prim, not the OmniLidar | use `ros2_scan_graph` from `sim__lidar(action="create")`, whose target is its `sensor_path` |
 | `/scan` silent after reopening a saved scene | the helper was wired to the tool's own `IsaacMCP_*` product, which saves drop | use `ros2_scan_graph`, which makes its own product at Play |
 | `/scan` is all `-1.0` | no return for those beams: `-1.0` means nothing in range. A few are normal | put something within the sensor's range, on its scan plane |
 | Kit logs "no usable time-code range" | a hand-written file has no `startTimeCode`/`endTimeCode` | add `startTimeCode = 0` and `endTimeCode = 1000000` to its header. `sim__stage(action="open")` reports this. Measured: driving still worked on 6.2 and 5.1, and `/scan` on 6.2 |
 | Nav2 "Control loop missed its desired rate", "Costmap timed out" | headless Kit runs faster than real time | `./run.sh --headless --realtime` |
 | Frames stop after reset | timeline stopped | play again; RViz resets once if `/clock` restarts from 0 |
-| Robot vanishes after stop/play, "extrapolation into the past" | TF and `/clock` from different time sources | doctor reports the skew; re-run `sim__ros2__tf_setup` (`clock=auto`) |
+| Robot vanishes after stop/play, "extrapolation into the past" | TF and `/clock` from different time sources | doctor reports the skew; re-run `sim__ros2_tf` (`clock=auto`) |
 
 Validated on Isaac Sim 6.2 (UR5e + RG2 + camera: 17 frames, one root; NVIDIA Jetbot mobile
 base: `map -> odom -> chassis -> wheels` with `/odom`), with the doctor using the bundled ROS 2.

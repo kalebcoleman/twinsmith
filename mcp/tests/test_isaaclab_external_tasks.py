@@ -188,7 +188,7 @@ def test_tools_declare_the_options():
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     listed = {t.name: t for t in asyncio.run(server.list_tools())}
     for name in ("train", "eval", "play", "env_check", "record", "envs_list"):
         props = listed[f"isaaclab__{name}"].inputSchema["properties"]

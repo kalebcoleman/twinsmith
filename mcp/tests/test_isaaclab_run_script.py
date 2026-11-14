@@ -251,7 +251,7 @@ def test_tool_layer_json_and_errors(tmp_path, monkeypatch):
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     afn = server._tool_manager._tools["run_script"].fn
 
     def fn(**kw):  # the tool is async so a VRAM wait cannot block the event loop

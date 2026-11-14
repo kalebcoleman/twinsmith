@@ -39,8 +39,12 @@ def test_flag_is_off_by_default_and_read_from_screen_table_and_env(tmp_path):
     assert config.resolve(env={}, cwd=tmp_path, home=home).cursor_badge is False
     assert config.resolve(env={"TWINSMITH_CURSOR_BADGE": "1"}, cwd=tmp_path, home=home).cursor_badge is True
     (home / ".config/twinsmith").mkdir(parents=True)
-    (home / ".config/twinsmith/config.toml").write_text("[screen]\ncursor_badge = true\n")
+    (home / ".config/twinsmith/config.toml").write_text("[computer]\ncursor_badge = true\n")
     assert config.resolve(env={}, cwd=tmp_path, home=home).cursor_badge is True
+    (home / ".config/twinsmith/config.toml").write_text("[screen]\ncursor_badge = true\n")    # renamed, no alias
+    with pytest.raises(ValueError, match=r"\[screen\] section is now \[computer\]"):
+        config.resolve(env={}, cwd=tmp_path, home=home)
+    (home / ".config/twinsmith/config.toml").write_text("[computer]\ncursor_badge = true\n")
     assert config.resolve(env={"TWINSMITH_CURSOR_BADGE": "off"}, cwd=tmp_path, home=home).cursor_badge is False
     with pytest.raises(ValueError, match="TWINSMITH_CURSOR_BADGE"):
         config.resolve(env={"TWINSMITH_CURSOR_BADGE": "maybe"}, cwd=tmp_path, home=home)

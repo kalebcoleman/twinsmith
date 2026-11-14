@@ -83,11 +83,12 @@ GROUPS: Dict[str, tuple] = {
         "start": "start_screen_recording", "stop": "stop_screen_recording", "status": "screen_recording_status"}),
     "windows": ("Desktop windows: info, list, raise, move, tile.", {
         "info": "screen_info", "list": "list_windows", "raise": "raise_window", "move": "move_window", "tile": "tile_windows"}),
-    "computer": ("Mouse and keyboard into one X11 window, named by its id and PID (opt-in group).", {
+    "computer": ("Mouse and keyboard into one X11 window, named by its id and PID (computer group).", {
         "click": "computer_click", "drag": "computer_drag", "scroll": "computer_scroll", "type": "computer_type",
         "key": "computer_key", "batch": "computer_batch"}),
-    "sim__session": ("Simulators this server manages (opt-in group): launch, list, status, stop.", {
-        "launch": "sim__launch", "list": "sim__list", "status": "sim__status", "stop": "sim__stop"}),
+    "simulators": ("Simulators this server manages (computer group): launch, list, status, stop.", {
+        "launch": "launch_simulator", "list": "list_simulators", "status": "simulator_status",
+        "stop": "stop_simulator"}),
 }
 
 # Tools whose answer, or whose error, quotes the caller's own data, code or a log: returned exactly

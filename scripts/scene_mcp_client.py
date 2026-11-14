@@ -22,14 +22,14 @@ from twinsmith import tool_groups  # noqa: E402  (pure data; needs no MCP SDK)
 
 def parameters(port, toolsets=None):
     """Server parameters for one bridge. ``toolsets`` (an TWINSMITH_TOOLSETS value such as
-    "all" or "default,+sim,+lab") overrides the environment; without it an exported
+    "all" or "default,+sim,+assets") overrides the environment; without it an exported
     TWINSMITH_TOOLSETS opts in, else a scene-only client is started."""
     return StdioServerParameters(
         command=sys.executable,
         args=["-m", "twinsmith.server"],
         env={
-            # Defaults for a scene-only client; an exported value opts in (e.g. default,+input).
-            "TWINSMITH_TOOLSETS": "default,+sim,+assets,+screen,+extensions",
+            # Defaults for a scene-only client; an exported value opts in (e.g. default,+computer).
+            "TWINSMITH_TOOLSETS": "default,+sim,+assets",
             **os.environ,
             **({"TWINSMITH_TOOLSETS": toolsets} if toolsets else {}),
             "PYTHONPATH": str(ROOT / "mcp"),

@@ -39,8 +39,8 @@ def refusal(call, *args, **kw):
 def test_attribution_only_credits_or_blames_when_it_can_tell():
     assert attribute_change(None, STAGE_TOOLS)["origin"] == "unknown"
     assert attribute_change({"sim.stage.open": True}, STAGE_TOOLS) == dict(origin="tool", source="sim__stage__open")
-    assert attribute_change({"sim.timeline.control": True}, TIMELINE_TOOLS)["source"] == "sim__timeline__control"
-    assert attribute_change({"sim.map.occupancy": True}, TIMELINE_TOOLS)["origin"] == "tool"
+    assert attribute_change({"sim.timeline": True}, TIMELINE_TOOLS)["source"] == "sim__timeline"
+    assert attribute_change({"sim.occupancy_map": True}, TIMELINE_TOOLS)["origin"] == "tool"
     # A run_python new_stage one second after sim__stage__open.
     recent = attribute_change({"sim.stage.open": False, "run_python": True}, STAGE_TOOLS)
     assert recent["origin"] == "unattributed" and "run_python" in recent["source"]
@@ -116,10 +116,10 @@ def test_mutation_while_playing_names_the_stop_call_for_every_mutation(scene):
     info = scene.stage_info()
     scene.timeline.stopped = False
     error = refusal(scene.target, info["session_id"], info["stage_id"], mutation=True)
-    assert error.code == "TIMELINE_ACTIVE" and "sim__timeline__control action=stop" in str(error)
+    assert error.code == "TIMELINE_ACTIVE" and "sim__timeline action=stop" in str(error)
     assert "start pose" in str(error)
     assert error.details["before_retry"] == dict(
-        tool="sim__timeline__control",
+        tool="sim__timeline",
         arguments=dict(session_id=info["session_id"], stage_id=info["stage_id"], action="stop"))
     assert "retry_with" not in error.details
 

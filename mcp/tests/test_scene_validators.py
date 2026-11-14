@@ -31,7 +31,7 @@ def test_sensor_validator_waits_on_simulated_time_with_a_bound(monkeypatch):
     times = iter([0.2, 0.6, 3.1])
 
     async def invoke(name, **args):
-        assert name == "sim__timeline__control" and args["action"] == "play"
+        assert name == "sim__timeline" and args["action"] == "play"
         return dict(time_s=next(times))
 
     assert asyncio.run(sensors.wait_simulated(invoke, {}, 3, poll=0))["time_s"] == 3.1
@@ -57,10 +57,11 @@ def test_tool_listing_check_compares_the_listing_with_the_toolset_registry():
 
     default = config.select("default,+sim,+assets")
     listed = asyncio.run(tools.promised_tools(default))
-    assert {"sim__prim", "run_python", "status", "sim__logs"} <= listed and not {"isaaclab__launch", "workcell__cell"} & listed
+    assert {"sim__prim", "run_python", "status", "sim__logs", "isaaclab__launch", "workcell__cell"} <= listed
+    assert not {"computer", "hardware"} & listed
     assert asyncio.run(tools.check_registry(listed, default))["listed"] == len(listed)
     with pytest.raises(AssertionError, match="listed_but_not_promised"):
-        asyncio.run(tools.check_registry(listed | {"workcell__cell"}, default))
+        asyncio.run(tools.check_registry(listed | {"hardware"}, default))
     with pytest.raises(AssertionError, match="promised_but_not_listed"):
         asyncio.run(tools.check_registry(listed - {"sim__prim"}, default))
     assert toolsets.owner("sim__prim") in default

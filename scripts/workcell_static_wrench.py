@@ -61,7 +61,7 @@ def main():
     with BridgeClient(host=args.host, port=args.port, timeout=300) as bridge:
         before = bridge.call("sim.stage.info", {})
         if not before.get("stopped"):
-            bridge.call("sim.timeline.control", {"session_id": before["session_id"], "stage_id": before["stage_id"],
+            bridge.call("sim.timeline", {"session_id": before["session_id"], "stage_id": before["stage_id"],
                                                  "action": "stop"})
         build = {"discard_changes": args.discard_changes, **({"config_path": args.config} if args.config else {})}
         summary = bridge.call("workcell.workcell_quick_start", build, timeout=300)
@@ -70,7 +70,7 @@ def main():
         stage = bridge.call("sim.stage.info", {})
         ids = {"session_id": stage["session_id"], "stage_id": stage["stage_id"]}
         for action in ("play", "pause"):
-            bridge.call("sim.timeline.control", {**ids, "action": action})
+            bridge.call("sim.timeline", {**ids, "action": action})
         results = {}
         for name, degrees in POSES.items():
             targets = {joint: math.radians(value) for joint, value in zip(ARM, degrees)}
@@ -85,7 +85,7 @@ def main():
             result["max_joint_error_deg"] = max(abs(math.degrees(reached.get(joint, float("nan"))) - value)
                                                 for joint, value in zip(ARM, degrees))
             results[name] = result
-        bridge.call("sim.timeline.control", {**ids, "action": "stop"})
+        bridge.call("sim.timeline", {**ids, "action": "stop"})
     passed = all(result["pass"] for result in results.values())
     print(json.dumps({"backend": backend, "poses": results, "pass": passed}, indent=2, default=str))
     print(f"{'PASS' if passed else 'FAIL'} ({backend}): static Bota force equals the weight it carries in "

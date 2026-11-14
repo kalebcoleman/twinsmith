@@ -23,7 +23,7 @@ MAX_LISTED_PARAMETER_DESCRIPTION = 120  # what a client is shown
 # Tool or "tool.parameter": a limit that must be exceeded for a safety rule to stay in the listing.
 # Keep this small, and say why next to each entry.
 EXCEPTIONS: dict[str, int] = {}
-ALL_GROUPS = "all,+input,+launch"
+ALL_GROUPS = "all,+computer"
 
 
 def _listing(monkeypatch, tmp_path, single_purpose):
@@ -115,7 +115,7 @@ def test_destructive_tools_say_so(single):
     listed = single
     hints = {t.name: t.annotations for t in listed}
     for name in ("run_python", "put_file", "workcell__workcell_quick_start", "workcell__jenga_build", "job_cancel",
-                 "computer_click", "sim__stop"):
+                 "computer_click", "stop_simulator"):
         assert hints[name].destructiveHint is True, name
     for name in ("status", "get_file", "stat_file", "workcell__workcell_status", "screen_info"):
         assert hints[name].readOnlyHint is True and hints[name].destructiveHint is False, name

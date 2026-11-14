@@ -14,34 +14,27 @@ class Toolset:
 
 TOOLSETS = {
     "core": Toolset("Connection, discovery, help, jobs and toolsets", True),
-    "screen": Toolset("Capture, record and arrange windows"),
-    "sim": Toolset("Scenes, physics, sensors, code, Kit log and UI in Isaac Sim"),
+    "computer": Toolset("Screen, windows, recordings, mouse and keyboard, simulator processes", explicit_only=True),
+    "sim": Toolset("Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs"),
     "assets": Toolset("Import and manage assets"),
-    "real2sim": Toolset("RoboSimStudio real-to-sim and MuJoCo sysid"),
-    "lab": Toolset("Isaac Lab and script jobs"),
-    "ros2": Toolset("ROS 2 TF, graphs and occupancy maps"),
-    "workcell": Toolset("UR5e work cell"),
     "cad": Toolset("PCB checks, fab files, renders"),
+    "real2sim": Toolset("RoboSimStudio real-to-sim and MuJoCo sysid"),
     "planning": Toolset("Graph-as-Policy skill graphs"),
     "eval": Toolset("VABAR benchmark"),
-    "input": Toolset("Desktop mouse and keyboard", explicit_only=True),
-    "launch": Toolset("Start and stop simulators", explicit_only=True),
-    "extensions": Toolset("Tools of uncatalogued Kit extensions"),
 }
 
+# One line per group: the tools a client is listed when the group is on. Grouped tools name their
+# actions in tool_groups.GROUPS. Edit only your group's line, so parallel branches rebase cleanly.
 _ROOTS = {
     "core": "status help refresh_tools use_bridge jobs toolsets",
-    "screen": "screenshot screen_recording windows join_videos doctor",
-    "sim": ("sim__quick_start sim__stage sim__prim sim__timeline__control sim__light sim__material "
-            "sim__physics sim__joints sim__arm sim__simulation sim__camera sim__lidar sim__viewport__frame "
-            "run_python files reload_tools sim__controller sim__ui sim__logs"),
+    "computer": "screenshot screen_recording windows join_videos doctor computer simulators",
+    "sim": ("sim__quick_start sim__stage sim__prim sim__timeline sim__light sim__material "
+            "sim__physics sim__joints sim__arm sim__simulation sim__camera sim__lidar sim__viewport "
+            "run_python files reload_tools sim__controller sim__ui sim__logs "
+            "sim__ros2_tf sim__graph sim__occupancy_map run_script"),
     "assets": "assets__import_path assets__library assets__pack assets__mesh assets__validate",
-    "real2sim": "robosim sysid",
-    "lab": "run_script",
-    "ros2": "sim__ros2__tf_setup sim__graph sim__map__occupancy",
-    "input": "computer",
-    "launch": "sim__session",
     "cad": "hardware",
+    "real2sim": "robosim sysid",
     "planning": "gap",
     "eval": "vabar",
 }
@@ -66,29 +59,23 @@ def owner(name: str, namespace: str | None = None,
     name = name.replace(".", "__")
     if name in _OWNERS:
         return _OWNERS[name]
-    if name.startswith("workcell__"):
-        return "workcell"
-    if name.startswith("isaaclab__"):
-        return "lab"
-    if namespace and namespace not in catalog_namespaces:
-        return "extensions"
+    if name.startswith(("workcell__", "isaaclab__")) or (namespace and namespace not in catalog_namespaces):
+        return "sim"  # the work cell, Isaac Lab, and tools of uncatalogued Kit extensions
     raise ValueError(f"Tool {name!r} has no toolset")
 
 
 STARTUP = "Add +name to tools.toolsets in ~/.config/twinsmith/config.toml or set TWINSMITH_TOOLSETS, then restart the MCP server."
 EXPLICIT = ("Explicit-only toolsets ({names}) cannot be enabled at run time: the user adds them at startup "
             "(+name in TWINSMITH_TOOLSETS, tools.toolsets in config.toml, or --toolsets).")
-_UNGROUPED = {"lab": ("isaaclab__checkpoint_register",)}
+_UNGROUPED = ("isaaclab__checkpoint_register",)
 
 
-def listed_count(name: str):
-    """How many tools a client is shown for a toolset (grouped tools count once); None when it varies."""
-    if name == "extensions":
-        return None
+def listed_count(name: str) -> int:
+    """How many catalogued tools a client is shown for a toolset (grouped tools count once). In
+    ``sim`` the work cell's and Isaac Lab's tools are counted; an uncatalogued Kit extension adds more."""
     roots = set(_ROOTS.get(name, "").split())
-    prefix = {"lab": "isaaclab__", "workcell": "workcell__"}.get(name)
-    if prefix:
-        roots |= {group for group in GROUPS if group.startswith(prefix)} | set(_UNGROUPED.get(name, ()))
+    if name == "sim":
+        roots |= {group for group in GROUPS if group.startswith(("isaaclab__", "workcell__"))} | set(_UNGROUPED)
     return len(roots)
 
 

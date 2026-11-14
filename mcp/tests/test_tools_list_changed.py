@@ -56,8 +56,8 @@ def host(monkeypatch):
     # The tool manager is process-global: restore it so other tests see 21 tools.
     monkeypatch.setattr(gw.mcp._tool_manager, "_tools",
                         dict(gw.mcp._tool_manager._tools))
-    # The fake bridge serves a project's own namespace, listed only with extensions on (off by default).
-    monkeypatch.setattr(gw._DEFAULT_STATE, "toolsets", gw._DEFAULT_STATE.toolsets | {"extensions"})
+    # The fake bridge serves a project's own namespace, listed only with sim on (off by default).
+    monkeypatch.setattr(gw._DEFAULT_STATE, "toolsets", gw._DEFAULT_STATE.toolsets | {"sim"})
     return bridge
 
 

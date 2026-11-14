@@ -858,7 +858,7 @@ async def act(a):
         hit = target[2]
         if hit is not None and not hit["enabled"] and action != "move":
             raise UIRefusal("DISABLED", "That widget is disabled (greyed out); it would ignore the input.")
-        if a.get("badge"):  # internal: the host's [screen] cursor_badge; adds no wait to the action
+        if a.get("badge"):  # internal: the host's [computer] cursor_badge; adds no wait to the action
             badge(target[0], target[1], a["badge"])
 
     menu = menu_path(a.get("menu")) if action == "menu" else None

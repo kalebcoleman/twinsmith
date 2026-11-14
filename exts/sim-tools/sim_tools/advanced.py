@@ -34,7 +34,7 @@ MUTATIONS = {
     "sim.lidar.create",
     "sim.controller.create",
     "sim.controller.update",
-    "sim.ros2.tf_setup",
+    "sim.ros2_tf",
 }
 
 
@@ -73,8 +73,8 @@ HANDLERS = {
     "sim.graph.build": "tool_graph_build",
     "sim.graph.inspect": "tool_graph_inspect",
     "sim.graph.show": "tool_graph_inspect",
-    "sim.map.occupancy": "tool_graph_inspect",
-    "sim.ros2.tf_setup": "tool_ros2_tf_setup",
+    "sim.occupancy_map": "tool_graph_inspect",
+    "sim.ros2_tf": "tool_ros2_tf",
     "sim.controller.create": "tool_controller",
     "sim.controller.update": "tool_controller",
 }
@@ -160,7 +160,7 @@ class Advanced(JointTools, PrimTools, SensorTools, ArmTools, RobotImport, StepTo
             return {"_finish": "sim.graph.show", "ready": ready}  # extension.py completes it
         return graph.occupancy_map(s, stage, a)
 
-    def tool_ros2_tf_setup(self, name, stage, a, camera_frame=None):
+    def tool_ros2_tf(self, name, stage, a, camera_frame=None):
         s = self.s
         from .ros2 import setup
 

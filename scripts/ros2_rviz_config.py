@@ -9,7 +9,7 @@ Standard library only; no ROS installation is needed to write the file.
 
 The layout follows NVIDIA's isaac_tutorials RViz configs (IsaacSim-ros_workspaces,
 ``camera_lidar.rviz``): a Grid and TF display, then one display per topic, with the
-Fixed Frame set to the root of the TF tree that ``sim__ros2__tf_setup`` reports
+Fixed Frame set to the root of the TF tree that ``sim__ros2_tf`` reports
 (``rviz_fixed_frame``). ``--robot-model`` adds a RobotModel that reads
 ``/robot_description``; it needs robot_state_publisher running with the URDF.
 
@@ -197,7 +197,7 @@ def render(fixed_frame: str, robot_model: bool, description_topic: str, topics: 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--fixed-frame", required=True,
-                   help="root of the TF tree (sim__ros2__tf_setup reports it as rviz_fixed_frame)")
+                   help="root of the TF tree (sim__ros2_tf reports it as rviz_fixed_frame)")
     p.add_argument("--out", required=True, help="new .rviz file to write")
     p.add_argument("--robot-model", action="store_true",
                    help="add a RobotModel from --description-topic (needs robot_state_publisher)")

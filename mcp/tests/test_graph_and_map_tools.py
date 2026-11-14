@@ -1,4 +1,4 @@
-"""sim.graph.node_types / inspect / show and sim.map.occupancy: the parts that run without Kit."""
+"""sim.graph.node_types / inspect / show and sim.occupancy_map: the parts that run without Kit."""
 
 import importlib.util
 import json
@@ -100,7 +100,7 @@ def test_contracts_registered_with_the_expected_fields():
     assert {"contains", "limit", "ports"} <= set(REGISTRY["sim.graph.node_types"]["parameters"])
     assert {"path", "limit"} <= set(REGISTRY["sim.graph.inspect"]["parameters"])
     assert {"path", "layout", "width", "height"} <= set(REGISTRY["sim.graph.show"]["parameters"])
-    occ = REGISTRY["sim.map.occupancy"]["parameters"]
+    occ = REGISTRY["sim.occupancy_map"]["parameters"]
     assert occ["min"]["required"] and occ["max"]["required"] and occ["cell_size"]["default"] == 0.05
     assert "clear" in occ and not occ["clear"]["required"]
     assert "start" in occ and not occ["start"]["required"]

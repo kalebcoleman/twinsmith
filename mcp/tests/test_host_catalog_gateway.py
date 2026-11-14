@@ -257,7 +257,7 @@ def test_a_client_that_never_refreshes_still_sees_them_after_a_failed_startup_di
     assert set(PROXIES) <= set(listed)
 
 
-@pytest.mark.parametrize("groups", ["all", "default,+workcell", "default,+sim,+workcell"])
+@pytest.mark.parametrize("groups", ["all", "default,+sim", "all,+computer"])
 def test_local_tool_groups_filter_only_local_tools(groups):
     server = build({"TWINSMITH_TOOLSETS": groups})
     assert set(PROXIES) <= set(server._tool_manager._tools)
@@ -492,26 +492,26 @@ def test_toolsets_filter_proxies():
     server = build({"TWINSMITH_TOOLSETS": "default"})
     assert not set(PROXIES) & set(server._tool_manager._tools)
     assert gw.offline_tools(server) == []
-    assert set(PROXIES) <= set(build({"TWINSMITH_TOOLSETS": "default,+workcell"})._tool_manager._tools)
+    assert set(PROXIES) <= set(build({"TWINSMITH_TOOLSETS": "default,+sim"})._tool_manager._tools)
 
 
 def test_a_namespace_filter_that_hides_ur5e_keeps_other_tools_and_survives_switches(monkeypatch):
-    server = build({"TWINSMITH_TOOLSETS": "default,+extensions"})
+    server = build({"TWINSMITH_TOOLSETS": "default,+assets"})
     with LiveBridge() as live:
         attach_workcell(live)
         live.bridge.register_owner("demo", "demo").add(ToolDefinition(
             name="inspect", description="inspect", parameters={}, handler=lambda: {"ok": 1}))
         run(server, call("use_bridge", {"port": live.port}))
         (listed,) = run(server, tools)
-    assert "demo__inspect" in listed and not set(PROXIES) & set(listed)
-    assert set(gw.registered_tools(server)) == {"demo.inspect", "status", "job_status", "job_cancel"}
+    assert "demo__inspect" not in listed and not set(PROXIES) & set(listed)
+    assert set(gw.registered_tools(server)) == {"status", "job_status", "job_cancel"}
     assert gw.offline_tools(server) == []
 
 
 def test_changing_the_filter_is_applied_at_the_next_switch(monkeypatch):
     server = build()
     assert gw.offline_tools(server)
-    gw._state_for(server).toolsets = frozenset({"core", "extensions"})
+    gw._state_for(server).toolsets = frozenset({"core"})
     with LiveBridge() as live:
         live.bridge.register_owner("demo", "demo").add(ToolDefinition(
             name="inspect", description="inspect", parameters={}, handler=lambda: {}))
@@ -543,12 +543,12 @@ def test_filter_changes_notify_for_catalog_tools(monkeypatch, action, one_live_t
         async with session(server, notes) as client:
             await client.initialize()
             before = await tools(client)
-            gw._state_for(server).toolsets = frozenset({"core", "extensions"})
+            gw._state_for(server).toolsets = frozenset({"core"})
             hidden = await call(action, args)(client)
             hidden_names, hidden_notes = await tools(client), len(notes)
             again = await call(action, args)(client)
             unchanged_notes = len(notes)
-            gw._state_for(server).toolsets = frozenset({"core", "extensions", "workcell"})
+            gw._state_for(server).toolsets = frozenset({"core", "sim"})
             shown = await call(action, args)(client)
             return before, hidden, hidden_names, hidden_notes, again, unchanged_notes, shown, await tools(client)
 
@@ -613,7 +613,7 @@ def test_failed_switch_still_notifies_when_it_changes_offline_proxies(monkeypatc
     async def go():
         async with session(server, notes) as client:
             await client.initialize()
-            gw._state_for(server).toolsets = frozenset({"core", "extensions"})
+            gw._state_for(server).toolsets = frozenset({"core"})
             answer = await call("use_bridge", {"port": 9})(client)
             return answer, await tools(client)
 
@@ -623,13 +623,13 @@ def test_failed_switch_still_notifies_when_it_changes_offline_proxies(monkeypatc
 
 
 def test_the_builtins_gate_does_not_hide_catalog_tools(monkeypatch):
-    server = build({"TWINSMITH_TOOLSETS": "default,+workcell"})
+    server = build({"TWINSMITH_TOOLSETS": "default,+sim"})
     assert set(PROXIES) <= set(server._tool_manager._tools)
     with LiveBridge() as live:
         attach_workcell(live)
         monkeypatch.setenv("TWINSMITH_PORT", str(live.port))
         refreshed, listed = run(server, call("refresh_tools"), tools)
-    assert "run_python" not in listed and set(PROXIES) <= set(listed)
+    assert "run_python" in listed and set(PROXIES) <= set(listed)          # sim holds both
 
 
 
@@ -672,13 +672,13 @@ def test_the_host_tool_collision_check_still_protects_local_tools(monkeypatch):
 
 
 def test_the_offline_proxies_carry_hints_from_their_own_table():
-    server = build({"TWINSMITH_TOOLSETS": "default,+workcell"})
+    server = build({"TWINSMITH_TOOLSETS": "default,+sim"})
     tool = server._tool_manager._tools[STATUS]
     assert tool.annotations.readOnlyHint is True and tool.annotations.destructiveHint is False
 
 
 def test_a_tool_from_a_projects_own_extension_gets_no_hints():
-    server = build({"TWINSMITH_TOOLSETS": "default,+workcell"})
+    server = build({"TWINSMITH_TOOLSETS": "default,+sim"})
     gw.register_dynamic_tool(server, "demo__ping", "demo.ping", {"description": "d", "parameters": {}, "fields": []})
     assert server._tool_manager._tools["demo__ping"].annotations is None
 
@@ -727,7 +727,7 @@ def test_jenga_is_accepted_by_real_mcp_schema_and_forwarded(monkeypatch, argumen
         run(server, exercise)
 
 
-# ---- refresh_tools(wait_s) waited on the pinned port, not sim__launch's ----------
+# ---- refresh_tools(wait_s) waited on the pinned port, not launch_simulator's ----------
 
 def dead_port():
     with socket.socket() as probe:
@@ -737,8 +737,8 @@ def dead_port():
 
 @pytest.fixture()
 def managed(monkeypatch, tmp_path):
-    """A server with sim__launch whose launches are faked as session records of a live process."""
-    env = {"TWINSMITH_TOOLSETS": "all,+launch",
+    """A server with launch_simulator whose launches are faked as session records of a live process."""
+    env = {"TWINSMITH_TOOLSETS": "all,+computer",
            "TWINSMITH_SIM_SESSIONS_DIR": str(tmp_path / "sessions")}
 
     def write_session(port, pid=None):
@@ -759,7 +759,7 @@ def managed(monkeypatch, tmp_path):
         return gw._state_for(server).get_client().port
 
     return SimpleNamespace(server=server, write_session=write_session, selected=selected, pid_box=pid_box,
-                           launch=lambda port: call("sim__launch", {"port": port, "ros_domain": 9}),
+                           launch=lambda port: call("launch_simulator", {"port": port, "ros_domain": 9}),
                            state=gw._state_for(server))
 
 

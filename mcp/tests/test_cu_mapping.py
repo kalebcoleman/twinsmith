@@ -153,7 +153,7 @@ def computer(monkeypatch):
 
     monkeypatch.setattr(desktop_input.xtest, "fake_input", fake_input)
     server = FastMCP("cu-mapping-test")
-    desktop_input.register_desktop_input_tools(server, groups={"input"})
+    desktop_input.register_desktop_input_tools(server, groups={"computer"})
     grouped_tools.sync(server)
 
     def call(**arguments):

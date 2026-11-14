@@ -1251,7 +1251,7 @@ def environment_warnings(host: dict, kit: dict) -> list[str]:
                    "see the packs the host lists.")
     if host.get("project_file") != kit.get("project_file"):
         out.append(f"This host uses the project file {host.get('project_file')!r} but the connected Kit uses {kit.get('project_file')!r}. "
-                   "Start Kit with sim__launch from this host, or set TWINSMITH_PROJECT to the project for Kit.")
+                   "Start Kit with launch_simulator from this host, or set TWINSMITH_PROJECT to the project for Kit.")
     return out
 
 

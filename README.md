@@ -12,7 +12,7 @@ and other MCP clients can use it.
 [![Host Python 3.10+, Sim Python 3.12](docs/media/badges/python.svg)](docs/LINUX-SETUP.md#which-environment-does-what)
 [![License and asset notices](docs/media/badges/license.svg)](docs/VENDORING.md)
 
-[Quick start](#quick-start) · [Toolsets](#toolsets) · [Examples](docs/EXAMPLES.md) · [How it works](docs/ARCHITECTURE.md) ·
+[Quick start](#quick-start) · [Tool groups](#tool-groups) · [Examples](docs/EXAMPLES.md) · [How it works](docs/ARCHITECTURE.md) ·
 [Documentation index](docs/README.md) · [For agents](AGENTS.md)
 
 ## Quick start
@@ -65,7 +65,7 @@ Only `core` is on by default. Turn on the simulator tools for every client in `~
 
 ```toml
 [tools]
-toolsets = ["default", "+sim", "+assets", "+screen"]
+toolsets = ["default", "+sim", "+assets"]
 ```
 
 Start a new client session. The client should list the `core` tools and those of the toolsets you added (see the table
@@ -83,37 +83,34 @@ name (`robot="franka"`) or a whole scene (`environment="warehouse"`). More promp
 
 If a step fails, see [troubleshooting the first connection](docs/LINUX-SETUP.md#troubleshooting-the-first-connection).
 
-## Toolsets
+## Tool groups
 
-Tools are grouped into toolsets that you switch on or off. A client is shown only the tools of the enabled toolsets,
-which keeps the tool list small. Only `core` is on by default. Related tools share one grouped tool with an `action`
-argument.
+Tools come in groups (toolsets) that you switch on or off. A client is shown only the tools of the enabled groups, which
+keeps the tool list small. Only `core` is on by default. Related tools share one grouped tool with an `action` argument.
+`sim__` marks a tool that runs inside Isaac Sim; the desktop tools have plain names and work on any X11 window.
 
 <!-- generated:toolsets-full -->
-| Toolset | Default | Listed tools |
-|---|---|---|
-| `core`: Connection, discovery, help, jobs and toolsets | on | `help`, `jobs`, `refresh_tools`, `status`, `toolsets`, `use_bridge` |
-| `screen`: Capture, record and arrange windows | off | `doctor`, `join_videos`, `screen_recording`, `screenshot`, `windows` |
-| `sim`: Scenes, physics, sensors, code, Kit log and UI in Isaac Sim | off | `files`, `reload_tools`, `run_python`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__simulation`, `sim__stage`, `sim__timeline__control`, `sim__ui`, `sim__viewport__frame` |
-| `assets`: Import and manage assets | off | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
-| `real2sim`: RoboSimStudio real-to-sim and MuJoCo sysid | off | `robosim`, `sysid` |
-| `lab`: Isaac Lab and script jobs | off | `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `run_script` |
-| `ros2`: ROS 2 TF, graphs and occupancy maps | off | `sim__graph`, `sim__map__occupancy`, `sim__ros2__tf_setup` |
-| `workcell`: UR5e work cell | off | `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
-| `cad`: PCB checks, fab files, renders | off | `hardware` |
-| `planning`: Graph-as-Policy skill graphs | off | `gap` |
-| `eval`: VABAR benchmark | off | `vabar` |
-| `input`: Desktop mouse and keyboard | explicit only | `computer` |
-| `launch`: Start and stop simulators | explicit only | `sim__session` |
-| `extensions`: Tools of uncatalogued Kit extensions | off | none |
+| Group | Default | What it holds | Listed tools |
+|---|---|---|---|
+| **`core`** | always on | Connection, discovery, help, jobs and toolsets | `help`, `jobs`, `refresh_tools`, `status`, `toolsets`, `use_bridge` |
+| **`computer`** | explicit only | Screen, windows, recordings, mouse and keyboard, simulator processes | `computer`, `doctor`, `join_videos`, `screen_recording`, `screenshot`, `simulators`, `windows` |
+| **`sim`** | off | Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs | `files`, `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `reload_tools`, `run_python`, `run_script`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__graph`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__occupancy_map`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__ros2_tf`, `sim__simulation`, `sim__stage`, `sim__timeline`, `sim__ui`, `sim__viewport`, `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
+| **`assets`** | off | Import and manage assets | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
+| **`cad`** | off | PCB checks, fab files, renders | `hardware` |
+| **`real2sim`** | off | RoboSimStudio real-to-sim and MuJoCo sysid | `robosim`, `sysid` |
+| **`planning`** | off | Graph-as-Policy skill graphs | `gap` |
+| **`eval`** | off | VABAR benchmark | `vabar` |
 <!-- /generated -->
 
 Turn one on in `~/.config/twinsmith/config.toml`, with `TWINSMITH_TOOLSETS` or with `--toolsets`:
 
 ```toml
 [tools]
-toolsets = ["default", "+sim", "+lab", "+ros2"]
+toolsets = ["default", "+sim", "+real2sim", "+computer"]
 ```
+
+`computer` (screen, mouse and keyboard, simulator launch) is explicit only: it is left out of `all`, and an agent cannot
+turn it on with `toolsets(action="enable")`; only you can, at startup.
 
 [TOOLSETS.md](docs/TOOLSETS.md) has the precedence, the syntax and the measured size of each profile. Every tool and
 argument is in [TOOLS-ARGUMENTS.md](docs/TOOLS-ARGUMENTS.md), generated from the code.

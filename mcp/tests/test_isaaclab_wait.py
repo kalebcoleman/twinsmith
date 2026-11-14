@@ -32,7 +32,7 @@ def status_fn():
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     return server._tool_manager._tools["isaaclab__runs_status"].fn
 
 

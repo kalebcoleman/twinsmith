@@ -111,8 +111,8 @@ async def validate(port, output, cycles=3):
                         target=[80, 0, 1.3],
                         frame="world",
                     )
-                    await invoke("sim__timeline__control", **target, action="play")
-                    await invoke("sim__timeline__control", **target, action="pause")
+                    await invoke("sim__timeline", **target, action="play")
+                    await invoke("sim__timeline", **target, action="pause")
                     times = await invoke("sim__stage__info")
 
                     async def capture(phase):
@@ -167,7 +167,7 @@ async def validate(port, output, cycles=3):
                     assert after - before > height * 0.15, metric
                     # This verifies the runtime observation as well as pixels.
                     assert abs(body["world_position"][2] - 0.125) < 0.02, body
-                    await invoke("sim__timeline__control", **target, action="stop")
+                    await invoke("sim__timeline", **target, action="stop")
                     await invoke("sim__prim__delete", **target, path=path, confirm=True)
     print(json.dumps(dict(passed=True, captures=len(metrics) * 2, cycles=cycles)))
 

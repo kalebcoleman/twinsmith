@@ -143,7 +143,7 @@ def test_an_explicitly_named_isaac_sim_is_used_and_saved_for_the_client(tmp_path
     assert "using the Isaac Sim already installed" in result.stdout
     assert not _sim_synced(log) and _host_locked(log)  # no ~20 GB download
     assert "not the tested 6.2 release" in result.stderr
-    assert f"TWINSMITH_SIM_PYTHON={env['TWINSMITH_SIM_PYTHON']}" in _calls(log)  # sim__launch will find it
+    assert f"TWINSMITH_SIM_PYTHON={env['TWINSMITH_SIM_PYTHON']}" in _calls(log)  # launch_simulator will find it
 
 
 def test_an_isaac_sim_next_to_the_checkout_is_found_without_any_variable(tmp_path):

@@ -177,8 +177,8 @@ def test_frames_this_server_cannot_read_are_kept_and_the_reply_says_how_to_encod
 
 # ---- help ----
 
-# The toolsets that were on by default before only core was: what these help answers assume.
-EVERYDAY = frozenset({"core", "sim", "assets", "screen", "extensions"})
+# A usual selection for scene work: what these help answers assume.
+EVERYDAY = frozenset({"core", "sim", "assets", "computer"})
 
 def gaps(tmp_path):
     file = tmp_path / "state" / "help-gaps.jsonl"
@@ -186,7 +186,7 @@ def gaps(tmp_path):
 
 
 def test_a_drone_controller_question_gets_the_controller_runner_not_the_arm_tools(tmp_path):
-    answer = gw._help("run my own controller on a drone", enabled=EVERYDAY | {"lab"})
+    answer = gw._help("run my own controller on a drone", enabled=EVERYDAY)
     assert "sim__simulation__run" in answer and "tcp://127.0.0.1" in answer and "job_status" in answer
     assert "sim__arm__ik" not in answer and "sim__joints__move" not in answer
     assert "help(task=..., no_fit=true)" in answer and gaps(tmp_path) == [], "an answered question is not a gap"
@@ -197,9 +197,9 @@ def test_replay_and_job_questions_name_their_tools():
     assert "sim__trajectory__replay" in replay and "video_path" in replay
     waiting = gw._help("is it done yet, how do I wait for a long loop", enabled=EVERYDAY)
     assert "job_status(job_id, wait_s=30)" in waiting and "background=true" in waiting
-    assert "run_script" in gw._help("run a script as a managed job outside isaac", enabled=EVERYDAY | {"lab"})
+    assert "run_script" in gw._help("run a script as a managed job outside isaac", enabled=EVERYDAY)
     assert "action=reset" in gw._help("the timeline was left playing, reset to a clean state", enabled=EVERYDAY)
-    assert "Available: status" in gw._help("where am i, what is running", enabled=EVERYDAY)
+    assert "Available: status" in gw._help("where am i, what is running", enabled=EVERYDAY - {"computer"})
 
 
 def test_an_unanswered_question_says_so_gives_the_pattern_and_is_recorded_locally(tmp_path):
@@ -339,6 +339,6 @@ def test_the_check_in_does_not_reread_jobs_and_sessions_that_have_ended(tmp_path
     "computer use",
 ])
 def test_help_knows_the_computer_use_tools(task):
-    answer = gw._help(task, enabled=toolsets.DEFAULT | {"input", "sim", "screen"})
+    answer = gw._help(task, enabled=toolsets.DEFAULT | {"computer", "sim"})
     assert not answer.startswith("No twinsmith tool is known to fit")
     assert "doctor" in answer and "computer" in answer and "sim__ui" in answer and "coord_space" in answer

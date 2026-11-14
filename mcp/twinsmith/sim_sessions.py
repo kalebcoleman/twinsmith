@@ -44,7 +44,7 @@ _DEFAULT_ROOT = Path(__file__).resolve().parents[2]
 _PIDFD_SIGNAL_PROCESS_GROUP = 1 << 2
 # How far above a refused bridge port to look for a free one to suggest.
 _PORT_SEARCH_SPAN = 64
-# sim__list shows this many exited sessions by default, newest first.
+# list_simulators shows this many exited sessions by default, newest first.
 _RECENT_EXITED_LISTED = 3
 # Where an automatic port search starts with no TWINSMITH_PORT_RANGE: the bridge's own default.
 _DEFAULT_PORT = 8766
@@ -405,7 +405,7 @@ def _public(session: dict) -> dict:
     """Keep boot and kernel identity tokens internal to session management."""
     public = {key: value for key, value in session.items() if key not in {"boot_id", "start_ticks"}}
     if "id" in public:
-        public["session_id"] = public["id"]  # the argument name sim__status and sim__stop take
+        public["session_id"] = public["id"]  # the argument name simulator_status and stop_simulator take
     return public
 
 
@@ -842,7 +842,7 @@ def _launch(env: Mapping[str, str], port: int | None = None, ros_domain: int | N
         return {**_public(record), "managed": True, "state": "starting",
                 # Inherited, and deliberately not an argument: a pack in the asset root imports without approval.
                 "asset_root": os.environ.get("TWINSMITH_ASSET_ROOT") or "default: <workspace>/assets; set TWINSMITH_ASSET_ROOT in the MCP server's environment",
-                "note": (f"Use sim__status to confirm bridge readiness, then use_bridge(port={port}) "
+                "note": (f"Use simulator_status to confirm bridge readiness, then use_bridge(port={port}) "
                          "to send tool calls to this simulator. If this is the only managed session "
                          "and the configured port does not answer, refresh_tools(wait_s=120) waits "
                          "for this session and selects it instead.")}
@@ -885,13 +885,13 @@ def _external_status(session_id: str) -> dict:
     bridge = next((b for b in client.discover_bridges() if _external_id(b) == session_id), None)
     if bridge is None:
         raise ValueError(f"no advertised bridge has PID {pid} and port {port}; it may have exited or restarted. "
-                         "Call sim__list.")
+                         "Call list_simulators.")
     state, response = _bridge_state(bridge.get("host"), port, pid)
     result = {"id": session_id, "managed": False, "pid": pid, "port": port, "host": bridge.get("host"),
               "app": response.get("app") or bridge.get("app"),
               "app_version": response.get("app_version") or bridge.get("app_version"),
               "headless": bridge.get("headless"), "started_at": bridge.get("started"), "state": state,
-              "stop": "sim__stop does not stop this: it was started outside twinsmith, so stop it where it was started."}
+              "stop": "stop_simulator does not stop this: it was started outside twinsmith, so stop it where it was started."}
     if state in ("running", "readiness_unknown"):
         result["next"] = f"use_bridge(port={port}) sends tool calls to this simulator, after you confirm it is the one you mean."
     return result
@@ -903,7 +903,7 @@ def _newton_readiness(port: int) -> dict:
     try:
         runtime = client.call("sim.stage.info", host="127.0.0.1", port=port, timeout=5).get("runtime") or {}
     except (client.BridgeError, OSError, RuntimeError) as exc:
-        return {"ready": None, "note": f"Could not read the engine from Kit yet ({str(exc)[:160]}); call sim__status again."}
+        return {"ready": None, "note": f"Could not read the engine from Kit yet ({str(exc)[:160]}); call simulator_status again."}
     engine = runtime.get("physics_engine")
     extensions = runtime.get("extensions") or {}
     tensors = (extensions.get("isaacsim.physics.newton.tensors") or {}).get("enabled")
@@ -947,12 +947,12 @@ def _status(env: Mapping[str, str], session_id: str) -> dict:
 def _stop(env: Mapping[str, str], session_id: str, expected_pid: int, confirm_discard: bool,
           force: bool = False) -> dict:
     if isinstance(session_id, str) and _EXTERNAL_ID.fullmatch(session_id):
-        raise ValueError(f"{session_id} is not a managed session: twinsmith did not start it, so sim__stop will not "
+        raise ValueError(f"{session_id} is not a managed session: twinsmith did not start it, so stop_simulator will not "
                          "stop it. Stop it where it was started.")
     if not confirm_discard:
         force_arg = ", force=true" if force else ""
         raise ValueError(f"Stopping can discard unsaved scene changes. After saving, retry: "
-                         f"sim__stop(session_id={session_id!r}, expected_pid={expected_pid!r}, confirm_discard=true{force_arg}).")
+                         f"stop_simulator(session_id={session_id!r}, expected_pid={expected_pid!r}, confirm_discard=true{force_arg}).")
     base = _sessions_dir(env)
     with _launch_lock(base):
         session = _read(base, session_id)
@@ -972,12 +972,12 @@ def _stop(env: Mapping[str, str], session_id: str, expected_pid: int, confirm_di
 def register_sim_session_tools(server: FastMCP, groups: Iterable[str] | None = None,
                                env: Mapping[str, str] | None = None,
                                on_launch: Callable[[dict], None] | None = None) -> None:
-    """``on_launch`` receives each record sim__launch creates, so the host can tell the sessions it
+    """``on_launch`` receives each record launch_simulator creates, so the host can tell the sessions it
     launched from others in the shared session directory."""
     mcp = ScopedTools(server, groups)
     settings = dict(os.environ if env is None else env)
 
-    @mcp.tool(name="sim__launch", annotations=PYTHON_EXECUTION)
+    @mcp.tool(name="launch_simulator", annotations=PYTHON_EXECUTION)
     def sim_launch(port: Annotated[int | None, Field(description="Bridge TCP port 1024-65535. Omit for the first free, unclaimed port in TWINSMITH_PORT_RANGE, or upward from the configured port.")] = None,
                    ros_domain: Annotated[int | None, Field(description="ROS_DOMAIN_ID 0-231. Omit for the first free, unclaimed domain in TWINSMITH_ROS_DOMAIN_RANGE, or upward from this server's domain.")] = None,
                    headless: Annotated[bool, Field(description="true: no window.")] = False,
@@ -989,7 +989,7 @@ def register_sim_session_tools(server: FastMCP, groups: Iterable[str] | None = N
         Omit port and ros_domain to take the first free, unclaimed value inside the configured range;
         the result says what was chosen, and a value outside its range is refused. Checks an instance
         limit, the port, known ROS domains and free resources; these are snapshots, not reservations.
-        Returns before the bridge is ready: poll sim__status, then use_bridge.
+        Returns before the bridge is ready: poll simulator_status, then use_bridge.
         Launching runs configured local code: run.sh, or the launcher in the server's
         TWINSMITH_SIM_LAUNCHER setting. No tool argument can name a command.
         """
@@ -998,12 +998,12 @@ def register_sim_session_tools(server: FastMCP, groups: Iterable[str] | None = N
             on_launch(record)
         return record
 
-    @mcp.tool(name="sim__list", annotations=PYTHON_EXECUTION)
+    @mcp.tool(name="list_simulators", annotations=PYTHON_EXECUTION)
     def sim_list(include_exited: Annotated[bool, Field(description="List every exited session, not only the most recent few.")] = False) -> dict:
         """List simulators: managed sessions (managed=true), including those started before this server
         restarted, and advertised bridges started some other way (managed=false; PID, port, app, version).
 
-        Use each entry's id with sim__status. sim__stop refuses managed=false entries.
+        Use each entry's id with simulator_status. stop_simulator refuses managed=false entries.
         Exited sessions are kept on disk with their logs, and only the most recent few are
         listed unless include_exited=true.
         """
@@ -1021,18 +1021,18 @@ def register_sim_session_tools(server: FastMCP, groups: Iterable[str] | None = N
                               "include_exited=true lists them. Their records and logs stay on disk.")
         return result
 
-    @mcp.tool(name="sim__status", annotations=PYTHON_EXECUTION)
-    def sim_status(session_id: Annotated[str, Field(description="id from sim__list or sim__launch.")]) -> dict:
-        """Report a simulator's process and Kit readiness, by an id from sim__list.
+    @mcp.tool(name="simulator_status", annotations=PYTHON_EXECUTION)
+    def sim_status(session_id: Annotated[str, Field(description="id from list_simulators or launch_simulator.")]) -> dict:
+        """Report a simulator's process and Kit readiness, by an id from list_simulators.
 
         A managed session also reports current resources. An external one (id external-<pid>-<port>)
         reports its live PID, port, app and version; the PID must match its advertisement.
         """
         return _status(settings, session_id)
 
-    @mcp.tool(name="sim__stop", annotations=PYTHON_EXECUTION)
-    def sim_stop(session_id: Annotated[str, Field(description="id from sim__list or sim__launch.")],
-                 expected_pid: Annotated[int, Field(description="PID from sim__status; a different process is refused.")],
+    @mcp.tool(name="stop_simulator", annotations=PYTHON_EXECUTION)
+    def sim_stop(session_id: Annotated[str, Field(description="id from list_simulators or launch_simulator.")],
+                 expected_pid: Annotated[int, Field(description="PID from simulator_status; a different process is refused.")],
                  confirm_discard: Annotated[bool, Field(description="true: accept losing unsaved changes.")] = False,
                  force: Annotated[bool, Field(description="true: SIGKILL its process group; only if normal shutdown failed.")] = False) -> dict:
         """Stop only the identified managed process; unsaved changes can be lost. Refuses external bridges.

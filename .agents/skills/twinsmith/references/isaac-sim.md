@@ -29,7 +29,7 @@ processes: screen and Isaac Lab tools working says nothing about the bridge.
 - `use_bridge` lasts until the host restarts. Re-check `status` after switching.
 - Reuse the intended reachable bridge. Start an additional isolated simulator only when the
   user requested one and resource checks pass. With the
-  optional `launch` toolset, `sim__session(action="launch")` starts an isolated session (own port, ROS domain,
+  explicit-only `computer` toolset (selected at startup), `simulators(action="launch")` starts an isolated session (own port, ROS domain,
   output directory) after resource checks; poll its `status` action until `state` is `running`, then
   `use_bridge` to its port. The `stop` action needs `expected_pid` and `confirm_discard=true`.
 
@@ -88,20 +88,22 @@ Rules of thumb:
 - `screenshot` without a selector picks the Isaac Sim / Isaac Lab window. A covered window is still
   captured when a compositing window manager runs; without one the covered part is black (`doctor` says which). `windows(action="list", filter="Isaac")` gives ids for `window_id`.
 - `screen_recording` (`start`, `stop`, `status`) records a window or monitor to MP4 (no audio).
-- The optional `input` toolset's `computer` (`click`, `drag`, `scroll`, `type`, `key`, `batch`) acts inside one window. It needs
+- `computer` (`click`, `drag`, `scroll`, `type`, `key`, `batch`) acts inside one window. It needs
   `expected_width` / `expected_height` from a fresh screenshot, so take one first. Pass the screenshot's printed `coord_space`
   token to give `x`, `y` in image pixels, and `screenshot_after=true` to see the result in the same call. Prefer `run_python` or
   a named tool over clicking UI; for Isaac Sim's own widgets use `sim__ui` (the main skill's computer-use section).
-- `doctor` checks the desktop (X11, XTEST, lock, input toolset, Kit window) before any of this.
+- `doctor` checks the desktop (X11, XTEST, lock, Kit window) before any of this.
+- These tools are the explicit-only `computer` toolset: the user selects it at startup with `+computer`; it cannot be
+  enabled at run time.
 
 ## Generic scene and project assets (`sim__*`, `assets__*`)
 
-The scene, physics, sensors and assets toolsets carry these tools, and `run.sh` enables `sim-tools`. The workflow, refusal codes
+The `sim` and `assets` toolsets carry these tools, and `run.sh` enables `sim-tools`. The workflow, refusal codes
 and the camera, save and import rules are in [the main skill](../SKILL.md#isaac-sim-inspect-and-change-a-live-scene); the contracts
 are in `docs/TOOLS-SCENE.md`. After reopening a scene, adopt cameras and LiDARs for capture; generic edits require a stopped
 timeline.
 
-## Work cell (`workcell__*`, toolset `workcell`)
+## Work cell (`workcell__*`, toolset `sim`)
 
 The work cell uses external pack assets. `workcell__cell(action="quick_start")` builds a stopped scene; status tools expose the build report. Real-to-sim, planning and evaluation are interface-only. See `exts/workcell/workcell/README.md`.
 
@@ -132,7 +134,7 @@ Lessons from the TurtleBot3/Nav2 lab.
 - The harness kills a tool call's process group when it ends: start RViz and other long-lived
   processes with `setsid nohup <cmd> > log 2>&1 < /dev/null &`, record `$!`, stop that PID.
 - Save your scene before stopping a managed simulator, then call
-  `sim__session(action="stop", session_id=<managed session id>, expected_pid=<its pid>, confirm_discard=true)`.
+  `simulators(action="stop", session_id=<managed session id>, expected_pid=<its pid>, confirm_discard=true)`.
 - Bound every ROS command: `ros2 topic pub --times N`, `timeout -s KILL <s> ...`. A plain
   `timeout 6 ros2 topic pub ... | tail` hung 120 s while the robot drove into a wall.
 - Keyboard teleop needs a TTY. Drive with `python3 scripts/cmd_vel_sequence.py "0.15,0,5;0,0.5,3"`

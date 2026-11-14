@@ -165,7 +165,7 @@ def test_step_after_outside_play_gives_the_exact_next_calls(scene):
     assert details["then"][0]["arguments"]["session_id"] == scene.session_id
     assert "outside the MCP tools" in str(error.value)
     assert "monotonic" not in details["timeline_change"]
-    scene.record_event("timeline", "timeline paused", dict(origin="tool", source="sim__timeline__control"))
+    scene.record_event("timeline", "timeline paused", dict(origin="tool", source="sim__timeline"))
     with pytest.raises(AssetError) as later:  # a later pause by the tools does not hide who pressed Play
         scene.check_runtime_edit(stage)
     assert "outside the MCP tools" in str(later.value)

@@ -50,7 +50,7 @@ restoring realized initial poses without resetting velocities or solver state.
 - Workcell configuration, fidelity gaps and pack creation: [workcell README](../workcell/README.md)
 - Hardware inventory and recorded prices: [BOM](../workcell/BOM.md)
 - Tools and behavior: [workcell tools](../../../docs/TOOLS-WORKCELL.md)
-- Arguments: [tool arguments](../../../docs/TOOLS-ARGUMENTS.md#ur5e-twin-workcell__)
+- Arguments: [tool arguments](../../../docs/TOOLS-ARGUMENTS.md#sim)
 - Generic scenes: [scene tools](../../../docs/TOOLS-SCENE.md)
 - Asset policy: [asset packs](../../../docs/ASSET-PACKS.md)
 

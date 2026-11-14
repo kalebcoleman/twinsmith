@@ -60,5 +60,5 @@ class RuntimeEditRestorer:
         except Exception as exc:
             self.report_error(
                 "Could not restore the physics edit target after Stop; inspect "
-                "the selected layer and retry sim.timeline.control(stop): " + str(exc)
+                "the selected layer and retry sim.timeline(stop): " + str(exc)
             )

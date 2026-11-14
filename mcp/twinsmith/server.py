@@ -16,10 +16,10 @@ bridge tool ``<namespace>.<tool>`` is ``<namespace>__<tool>`` to MCP, which allo
 Environment:
 
     TWINSMITH_PORT, TWINSMITH_HOST   the bridge to use. Unset: the one advertised on this machine.
-    TWINSMITH_TOOLSETS               profile and adjustments (default,+sim,+lab).
+    TWINSMITH_TOOLSETS               profile and adjustments (default,+sim,+assets).
     TWINSMITH_NAME, TWINSMITH_INSTRUCTIONS   the server's name and instructions.
 
-Nothing here starts a simulator unless the explicit ``launch`` toolset is selected.
+Nothing here starts a simulator unless the explicit-only ``computer`` toolset is selected.
 """
 
 import functools
@@ -62,7 +62,7 @@ SERVER_INSTRUCTIONS = (
     "Call status first, once: it identifies the bridge, running work and stage IDs, and lists enabled and "
     "disabled toolsets. The twinsmith://toolsets resource reports the same selection. "
     "Use help(task=...) to find a tool; a needed toolset that is off can be turned on with "
-    "toolsets(action=\"enable\", names=[...]), except input and launch. Prefer listed tools over custom code. Confirm the intended simulator "
+    "toolsets(action=\"enable\", names=[...]), except computer, which only the user selects at startup. Prefer listed tools over custom code. Confirm the intended simulator "
     "before changing a scene; do not start extra GPU work or stop unrelated processes without authorization. "
     "Tool visibility is not a security boundary. Respect bridge authentication and read-only refusals.")
 
@@ -319,7 +319,8 @@ def discover_and_register_tools(server: FastMCP) -> List[str]:
     try:
         tools = {name: meta for name, meta in result["tools"].items() if _visible(name, meta, state)}
     except ValueError as error:
-        raise RuntimeError(str(error)) from error
+        raise RuntimeError(f"{error}: this bridge serves a tool this server does not know. Run the MCP server and Kit "
+                           "from the same twinsmith checkout, and restart Kit after updating it.") from error
     names = {}
     for canonical, meta in tools.items():
         if "fields" not in meta:
@@ -478,7 +479,7 @@ def _offline_note(server: Any) -> str:
 _BRIDGE_HELP = (
     "To use it: find a bridge that loaded the requested tool extension (workcell or sim-tools) with "
     + LIST_BRIDGES_HELP + ", and select it with use_bridge(port), or start "
-    "Kit yourself (`./run.sh --headless`, or sim__launch when simulator launch is enabled) "
+    "Kit yourself (`./run.sh --headless`, or simulators action=launch when the computer toolset is on) "
     "and call refresh_tools. This server never starts a simulator "
     "on its own.")
 
@@ -512,8 +513,8 @@ def _catalog_error(canonical: str, error: BaseException, state: Optional[_Bridge
                 "simulator state before retrying. If Kit was just started it may still be loading "
                 f"(2-3 minutes on a first start). {_wait_advice(state or _DEFAULT_STATE, error)} Otherwise find a "
                 f"running bridge with {LIST_BRIDGES_HELP}, and select it with "
-                "use_bridge(port), or start Kit (`./run.sh --headless`, or sim__launch when "
-                "simulator launch is enabled). This server never starts a simulator on its own.")
+                "use_bridge(port), or start Kit (`./run.sh --headless`, or simulators action=launch when "
+                "the computer toolset is on). This server never starts a simulator on its own.")
     return (f"Error: {canonical} is not available: no Isaac Sim bridge could be reached ({error}). "
             "If the connection failed after dispatch, the tool may have run; check the "
             f"simulator state before retrying. {_BRIDGE_HELP}")
@@ -590,7 +591,7 @@ def _build_tool_function(name: str, canonical: str, description: str,
                 annotation = list[str] if strings else list[float]
                 if (canonical, f["name"]) in (("sim.prim.create_many", "items"), ("sim.ui.act", "actions")):
                     annotation = list[dict[str, Any]]  # prim specs: objects, not numbers
-                if canonical == "sim.map.occupancy" and f["name"] == "clear":
+                if canonical == "sim.occupancy_map" and f["name"] == "clear":
                     # A list of [x, y, radius] circles; list[float] rejected every valid value.
                     annotation = list[Annotated[list[float], Field(min_length=3, max_length=3)]]
                 lengths = {"position": 3, "offset": 3, "orientation": 4, "scale": 3,
@@ -865,11 +866,11 @@ def _where_am_i(params: Dict[str, Any], state: _BridgeState) -> Dict[str, Any]:
         elif around["bridges"]:
             message = (f"Nothing answers on the port this server is set to use ({error}), but other bridges are "
                        f"advertised: call use_bridge(port={around['bridges'][0]['port']}) after confirming which "
-                       "simulator you mean. The robosim (real2sim), isaaclab (lab) and screen tools need no bridge.")
+                       "simulator you mean. The robosim (real2sim), isaaclab (sim) and computer tools need no bridge.")
         else:
             message = ("Nothing is running: no Isaac Sim bridge answers. Start your configured simulator, then "
                        "refresh_tools(wait_s=120). See toolsets for available host tools and optional launch support. "
-                       "The robosim (real2sim), isaaclab (lab) and screen tools need no bridge.")
+                       "The robosim (real2sim), isaaclab (sim) and computer tools need no bridge.")
         return {"running": False, "message": message, **around, "host": _host_brief(),
                 "physics": _physics_status(state), "toolsets": toolsets.describe(state.toolsets, state.runtime_enable)}
     if not isinstance(identity, dict):
@@ -1131,7 +1132,7 @@ def _quick_start_with_import(params: Dict[str, Any], state) -> str:
         if '"status": "ok"' not in str(moved) and '"status":"ok"' not in str(moved):
             result["robot"]["placement_note"] = f"It could not be moved to the environment's start: {str(moved)[:300]}"
     if params.get("ros") and "robot" in result:
-        wired = _dispatch("sim.ros2.tf_setup", dict(ids, robot=prim, **({"base": "mobile", "world_frame": ""} if imported.get("base") == "floating" else {})), state)
+        wired = _dispatch("sim.ros2_tf", dict(ids, robot=prim, **({"base": "mobile", "world_frame": ""} if imported.get("base") == "floating" else {})), state)
         try:
             result["ros"] = json.loads(wired)
         except ValueError:
@@ -1139,7 +1140,7 @@ def _quick_start_with_import(params: Dict[str, Any], state) -> str:
     elif params.get("ros"):
         result["ros"] = dict(status="error", message="This file is not a robot, so there is nothing to publish.")
     if params.get("play"):
-        played = _dispatch("sim.timeline.control", dict(ids, action="play"), state)
+        played = _dispatch("sim.timeline", dict(ids, action="play"), state)
         try:
             play_result = json.loads(played)
             result["playing"] = play_result.get("status") == "ok"
@@ -1325,7 +1326,7 @@ async def _change_toolsets(server: FastMCP, action: str, names: Optional[List[st
                         f"TWINSMITH_RUNTIME_ENABLE=0), so {action} did nothing. The user changes the selection at "
                         f"startup. {toolsets.STARTUP}")
     if not isinstance(names, list) or not names or not all(isinstance(name, str) for name in names):
-        raise ToolError(f'{action} needs names, a list of toolset names, e.g. names=["lab"]. '
+        raise ToolError(f'{action} needs names, a list of toolset names, e.g. names=["sim"]. '
                         f"Valid names: {', '.join(toolsets.TOOLSETS)}.")
     names = list(dict.fromkeys(name.strip() for name in names))
     unknown = [name for name in names if name not in toolsets.TOOLSETS]
@@ -1567,14 +1568,14 @@ def _wait_advice(state: _BridgeState, error: BaseException) -> str:
         ports = ", ".join(str(s["port"]) for s in sessions)
         guess = " several managed sessions are live, so it will not guess;" if len(sessions) > 1 else ""
         return (f"refresh_tools keeps dialling port {current} and does not select port(s) {ports}:{guess} "
-                f"check readiness with sim__status, then call use_bridge(port={sessions[0]['port']}).")
+                f"check readiness with simulator_status, then call use_bridge(port={sessions[0]['port']}).")
     target = f" port {current}" if current is not None else ""
     return f"Wait until it is ready (refresh_tools(wait_s=120) polls{target} for you)."
 
 
 def _starting_hint(server: FastMCP, error: BaseException, session_detail: Optional[str] = None) -> str:
     """Explain a discovery failure that usually means Kit is still starting, with any managed
-    simulator session's age (sim__launch records ``started_at``)."""
+    simulator session's age (launch_simulator records ``started_at``)."""
     import time
     state = _state_for(server)
     current = _screen_port(state)
@@ -1589,7 +1590,7 @@ def _starting_hint(server: FastMCP, error: BaseException, session_detail: Option
                if session.get("started_at") else "")
         where = "the configured port" if session["port"] == current else "call use_bridge(port) to select it"
         lines.append(f"port {session['port']} (PID {session['pid']}{age}; {where})")
-    managed = ("" if not lines else " Managed simulators started with sim__launch are running on "
+    managed = ("" if not lines else " Managed simulators started with launch_simulator are running on "
                + ", ".join(lines) + ".")
     detail = f" Last check: {session_detail}." if session_detail else ""
     if isinstance(error, TimeoutError):
@@ -1601,13 +1602,13 @@ def _starting_hint(server: FastMCP, error: BaseException, session_detail: Option
                  "yet, or is still starting (a first start can take 2-3 minutes before the bridge "
                  "answers).")
     return (cause + managed + detail + " " + _wait_advice(state, error) + " If nothing is running, start "
-            "it (sim__launch when simulator launch is enabled, or ./run.sh), then call refresh_tools "
+            "it (simulators action=launch when the computer toolset is on, or ./run.sh), then call refresh_tools "
             f"again. List running bridges with {LIST_BRIDGES_HELP}.")
 
 
 def _other_sessions_note(server: FastMCP) -> str:
     """After a successful refresh: say so if a managed session is live on another port, so a client
-    that just called sim__launch does not assume the answering bridge is its new simulator."""
+    that just called launch_simulator does not assume the answering bridge is its new simulator."""
     state = _state_for(server)
     current = _screen_port(state)
     others = [s for s in live_sessions(getattr(state, "env", None)) if s["port"] != current]
@@ -1801,7 +1802,7 @@ _HELP_TOPICS = (
      ("replay", "trajectory", "flight", "playback", "saved", "labelled", "labeled", "label", "caption", "pose driver"),
      "sim__camera__create, then sim__trajectory__replay(trajectory, prim, camera, label): drives the poses from a CSV or "
      "JSON file and job_status gives video_path, an MP4 with the label on it. Works headless. For a screen recording "
-     "instead: sim__viewport__frame(layout='clean', caption=...) and start_screen_recording."),
+     "instead: sim__viewport(layout='clean', caption=...) and start_screen_recording."),
     ("follow, wait for or stop long work",
      ("job", "wait", "progress", "cancel", "done", "finished", "background", "long", "poll", "is it done", "async"),
      "job_status(job_id, wait_s=30) waits for any job and job_cancel stops it: simulator jobs (run_python(background=true), "
@@ -1812,7 +1813,7 @@ _HELP_TOPICS = (
      "run_script(script, args, python): your own Python script as a job with a log, timeout, progress and cancel; no "
      "simulator or Isaac Lab needed. Follow it with isaaclab__runs_status / runs_tail / runs_cancel, which manage every job."),
     ("get back to a clean state after a failed run", ("reset", "recover", "clean", "left playing", "still playing", "restart"),
-     "sim__timeline__control action=reset: cancels running simulator jobs, stops the timeline and returns robots to "
+     "sim__timeline action=reset: cancels running simulator jobs, stops the timeline and returns robots to "
      "their start pose. Then sim__stage__info."),
     ("train or evaluate a policy", ("train", "rl", "policy", "reward", "eval", "isaac lab", "isaaclab", "play", "checkpoint", "job", "wait", "baseline", "register", "summar", "pass count", "run dir", "exit code"),
      "isaaclab__envs_list, isaaclab__train, isaaclab__runs_status, isaaclab__runs_tail, isaaclab__metrics_summary, "
@@ -1847,7 +1848,7 @@ _HELP_TOPICS = (
      "sim__ui__act on a ref with screenshot_after=true."),
     ("start, check or recover a simulator", ("start", "launch", "bridge", "kit", "hang", "stuck kit", "status", "connect", "where am i", "running"),
      "status (one call: the bridge, what is running, the stage IDs; says so when nothing runs), refresh_tools(wait_s=120), "
-     "use_bridge, sim__launch, sim__status, sim__stop, sim__logs__tail."),
+     "use_bridge, launch_simulator, simulator_status, stop_simulator, sim__logs__tail."),
 )
 
 _RUN_PYTHON_PATTERN = (
@@ -1997,9 +1998,9 @@ def _register_gateway_tools(server: FastMCP, groups: Iterable[str], state: Optio
 
     @mcp.tool(name="toolsets", annotations=IDEMPOTENT_WRITE)
     async def toolsets_tool(action: Annotated[Literal["list", "enable", "disable"], Field(description="list: what is on or off. enable/disable: turn toolsets on or off for this server process.")],
-                            names: Annotated[list[str] | None, Field(description="Toolset names for enable or disable, e.g. [\"lab\"]. Take them from list or status.")] = None,
+                            names: Annotated[list[str] | None, Field(description="Toolset names for enable or disable, e.g. [\"sim\"]. Take them from list or status.")] = None,
                             ctx: Context = None) -> Any:  # type: ignore[assignment]
-        """Toolsets: groups of tools that are on or off. list shows which are on, off with their tool counts, and which you can enable now; enable registers a toolset's tools (the tool list changes and the result names the new tools); disable removes them. Lasts for this server process only. input and launch cannot be enabled at run time; the user sets them at startup."""
+        """Toolsets: groups of tools that are on or off. list shows which are on, off with their tool counts, and which you can enable now; enable registers a toolset's tools (the tool list changes and the result names the new tools); disable removes them. Lasts for this server process only. computer cannot be enabled at run time; the user selects it at startup."""
         return await _change_toolsets(server, action, names, ctx)
 
     @mcp.tool(annotations=IDEMPOTENT_WRITE, description=(
@@ -2039,7 +2040,7 @@ def build_server(env: Optional[Mapping[str, str]] = None,
 
     _advertise_tools_list_changed(server)
     state.env = env
-    state.launched_sessions = set()   # IDs sim__launch created in this server process
+    state.launched_sessions = set()   # IDs launch_simulator created in this server process
     _register_host_tools(server, state, groups, env)
     _register_gateway_tools(server, groups, state)
     setattr(server, _OFFLINE_ATTR, _OfflineTools(host_catalog.load_catalog()))
@@ -2076,13 +2077,13 @@ def main(argv: list[str] | None = None) -> None:
         "Environment: TWINSMITH_PORT (bridge port, default 8766), DISPLAY (screen tools).",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {_package_version()}")
-    parser.add_argument("--toolsets", help="Profile and adjustments, e.g. default,+sim,+lab")
+    parser.add_argument("--toolsets", help="Profile and adjustments, e.g. default,+sim,+assets")
     parser.add_argument("command", nargs="?", choices=["toolsets"])
     args = parser.parse_args(argv)
     instance = build_server(cli_toolsets=args.toolsets)
     selected = _state_for(instance).toolsets
     if args.command == "toolsets":
-        inventory = build_server(env={**os.environ, "TWINSMITH_TOOLSETS": "all,+input,+launch"})
+        inventory = build_server(env={**os.environ, "TWINSMITH_TOOLSETS": "all,+computer"})
         listed = inventory._tool_manager.list_tools()
         print("Toolset       State Tools Summary / enable")
         for name, spec in toolsets.TOOLSETS.items():

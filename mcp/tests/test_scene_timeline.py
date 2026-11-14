@@ -314,7 +314,7 @@ def handler(monkeypatch, native):
 
     ext.dispatch = dispatch
     modules["omni.kit.app"].get_app = lambda: SimpleNamespace(next_update_async=update)
-    return ext.handler("sim.timeline.control"), state
+    return ext.handler("sim.timeline"), state
 
 
 @pytest.mark.anyio

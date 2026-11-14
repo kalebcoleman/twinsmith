@@ -134,7 +134,7 @@ async def open_stage(scene, args):
     if not scene.timeline.is_stopped():
         from .core import stop_call
 
-        refuse("TIMELINE_ACTIVE", "Stop the timeline before opening another stage: call sim__timeline__control "
+        refuse("TIMELINE_ACTIVE", "Stop the timeline before opening another stage: call sim__timeline "
                "action=stop with these IDs, then resend this call.",
                before_retry=stop_call(args.get("session_id"), args.get("stage_id")))
     stage = ctx.get_stage()

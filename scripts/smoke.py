@@ -21,13 +21,17 @@ TOOLSETS = {
     "core": ["validate_scene_sessions"],
     "sim": ["validate_scene_tools", "validate_scene_prim_edit", "validate_scene_clear", "validate_scene_reopen",
             "validate_generic_scene", "validate_scene_joints", "validate_scene_edges", "validate_scene_equivalents",
-            "newton_checks", "validate_scene_sensors", "validate_scene_camera_freshness"],
-    "ros2": [], "assets": [], "lab": ["smoke_test"], "screen": [], "workcell": ["workcell_smoke"],
+            "newton_checks", "validate_scene_sensors", "validate_scene_camera_freshness",
+            "smoke_test", "workcell_smoke"],
+    "assets": [], "computer": [],
 }
 
 
 # Checks that only mean something on Newton: on PhysX they are skipped, with a note, not failed.
 NEWTON_ONLY = ("newton_checks",)
+# Checks that run only when named with --check: the Isaac Lab job takes no --backend, and the work cell needs
+# --config and --mutate-stage. A whole-toolset run reports them as skipped with the command that runs them.
+ON_REQUEST = {"smoke_test": "--check smoke_test", "workcell_smoke": "--check workcell_smoke --config <absolute-config> --mutate-stage"}
 
 # The TWINSMITH_TOOLSETS value each check's MCP server is started with, so a check never relies on the
 # default selection: the smallest selection that lists every tool the check calls (a test compares this
@@ -35,8 +39,8 @@ NEWTON_ONLY = ("newton_checks",)
 DEFAULT_TOOLSETS = "default,+sim,+assets"
 CHECK_TOOLSETS = {
     "validate_scene_tools": "all",                      # checks the listing against the whole registry
-    "smoke_test": "default,+lab",
-    "workcell_smoke": "default,+sim,+workcell",
+    "smoke_test": "default,+sim",
+    "workcell_smoke": "default,+sim",
 }
 
 # These checks work on one shared stage, each on what the earlier ones leave (their docstrings say "after
@@ -118,7 +122,7 @@ def reset(client, new_stage=True):
     try:
         info = client.call("sim.stage.info", {})
         if isinstance(info, dict) and info.get("stopped") is False:
-            client.call("sim.timeline.control", {"action": "stop", "session_id": info["session_id"],
+            client.call("sim.timeline", {"action": "stop", "session_id": info["session_id"],
                                                  "stage_id": info["stage_id"]})
         if new_stage:
             client.call("run_python", {"code": "import omni.usd\nresult = omni.usd.get_context().new_stage()"})
@@ -289,6 +293,8 @@ def main(argv=None, client_factory=None):
         if unknown:
             parser.error(f"Checks not in this toolset: {', '.join(sorted(unknown))}")
         checks = [name for name in checks if name in args.check]
+    on_request = [] if args.check else [name for name in checks if name in ON_REQUEST]
+    checks = [name for name in checks if name not in on_request]
     if not checks:
         print("No checks registered for this toolset", file=sys.stderr)
         return 2
@@ -381,6 +387,8 @@ def main(argv=None, client_factory=None):
     for name in checks[len(rows):]:
         rows.append({"check": name, "status": "not_run", "backend": None,
                      "simulator_build": None, "seconds": 0, "error": "Not reached"})
+    rows += [{"check": name, "status": "skipped", "backend": None, "simulator_build": None, "seconds": 0,
+              "note": f"Runs only when named: smoke.py {args.toolset} {ON_REQUEST[name]}"} for name in on_request]
     report = output_dir / "results.json"
     report.write_text(json.dumps({"toolset": args.toolset, "requested_backend": args.backend,
                                   "checks": rows}, indent=2) + "\n")

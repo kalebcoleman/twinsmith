@@ -49,10 +49,10 @@ repository. If they are not installed, read the `SKILL.md` on GitHub instead.
 | Assets will not load | `isaac-sim-assets` | `assets__library(action="roots")`/`assets__library(action="info")` for approved projects, `sim__logs(action="tail")`, `run_python` for the asset root setting |
 | Cameras and sensors | `isaac-camera`, `isaac-sim-sensor`, `place-camera-aim-at`, `place-camera-max-coverage` | `sim__camera` (`create`, `capture`), `sim__lidar`, `screenshot` |
 | Arm control | `manipulation-ik`, `motion-generation` | `sim__joints` (`command`, `state`, `drive`), `sim__arm`; `workcell__*` for the work cell |
-| ROS 2 | `isaac-sim-ros2-bridge`, `isaac-sim-ros-workspaces` | `sim__ros2__tf_setup` |
+| ROS 2 | `isaac-sim-ros2-bridge`, `isaac-sim-ros-workspaces` | `sim__ros2_tf` |
 | Navigation | `navigation-primitives`, `occupancy-map`, `isaac-sim-robot-navigation`, `mobility-gen` | `run_python` |
 | Synthetic data | `data-collection-sim`, `action-and-event-data-generation` and the `actor-sdg-*` skills | `sim__camera(action="capture")`, `sim__stage(action="save")`, `files(action="get")` for outputs |
-| Headless or remote runs | `isaac-sim-headless-deployment`, `isaac-sim-web-viewer` | `sim__session(action="launch", headless=true)` |
+| Headless or remote runs | `isaac-sim-headless-deployment`, `isaac-sim-web-viewer` | `simulators(action="launch", headless=true)` |
 | Rendering quality | `isaac-sim-rendering`, `validation-diff-gifs` | `sim__camera(action="capture")`, `screenshot`, `files(action="get")` |
 | Hangs, crashes, slowness | `isaac-sim-troubleshooting`, `profile-isaac-sim` | `status`, `sim__logs(action="tail")`, `screenshot`, `run_python` for `carb` settings |
 | Install or upgrade | `isaac-sim-installation`, `isaac-sim-migration` | `status` reports the running app version |

@@ -25,6 +25,13 @@ RETIRED_TOOLS = frozenset({"list_bridges", "screen_info", "assets__prepare_works
 # Sentences that were true once and are not any more: Newton is the stated target engine.
 RETIRED_PHRASES = ("PhysX is the release target", "Newton is experimental")
 
+# Toolsets folded into computer and sim. Selecting one (`+lab`) stops the server, so no page may tell a reader to.
+RETIRED_TOOLSETS = re.compile(r"(?<![A-Za-z0-9_])\+(screen|input|launch|lab|ros2|workcell|extensions)(?![A-Za-z0-9_-])")
+# Tools renamed without an alias. Only the rename table may name them.
+RENAMES_PAGE = "docs/TOOLSETS.md"
+RENAMED_TOOLS = frozenset({"sim__session", "sim__launch", "sim__list", "sim__status", "sim__stop", "sim__timeline__control",
+                           "sim__viewport__frame", "sim__ros2__tf_setup", "sim__map__occupancy"})
+
 # Generated from the tool descriptions in the code: a stale name there is fixed in the description, not in the page.
 GENERATED_PAGES = frozenset({"docs/TOOLS-ARGUMENTS.md"})
 
@@ -71,6 +78,8 @@ def check_tool_names(errors, files=None, names=None, groups=None, retired=None):
             if star and any(known.startswith(name) for known in names):
                 continue
             seen.add(name + star)
+        if str(where) == RENAMES_PAGE:
+            seen -= RENAMED_TOOLS
         for name in sorted(seen):
             errors.append(f"{where}: names a tool that is not registered: {name}")
         for name in sorted(retired):
@@ -93,6 +102,12 @@ def check_retired_phrases(errors, files=None):
                     where = path.name
                 errors.append(f"{where}: contains the retired phrase {phrase!r}; "
                               "the target engine is stated once, in docs/COMPATIBILITY.md")
+        for match in RETIRED_TOOLSETS.finditer(text):
+            try:
+                where = path.relative_to(ROOT)
+            except ValueError:
+                where = path.name
+            errors.append(f"{where}: selects the removed toolset {match.group(1)!r}; see {RENAMES_PAGE}#renamed-toolsets")
 
 
 def check_generated(errors, output=None, files=None):
@@ -110,7 +125,7 @@ def check_workcell_documented(errors, readme=None, listed=None):
     """Every listed work-cell tool is named in the work cell's own README (the toolset's page)."""
     from gen_tool_reference import listed_by_toolset
     text = (ROOT / WORKCELL_README).read_text(encoding="utf-8") if readme is None else readme
-    listed = listed_by_toolset()["workcell"] if listed is None else listed
+    listed = [name for name in listed_by_toolset()["sim"] if name.startswith("workcell__")] if listed is None else listed
     for name in listed:
         if f"`{name}`" not in text:
             errors.append(f"{WORKCELL_README}: does not name the listed work-cell tool {name}")

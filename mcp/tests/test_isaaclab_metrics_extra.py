@@ -643,7 +643,7 @@ def _tail_tool(tmp_path, monkeypatch, last_n):
         return {"points": []}
 
     monkeypatch.setattr(metrics, "tensorboard_tail", tail)
-    server = build_server({"TWINSMITH_TOOLSETS": "default,+lab"})
+    server = build_server({"TWINSMITH_TOOLSETS": "default,+sim"})
     args = {"run_dir": str(tmp_path), "tag": "loss", "last_n": last_n}
     return asyncio.run(server.call_tool("isaaclab__tensorboard_tail", args)), seen
 

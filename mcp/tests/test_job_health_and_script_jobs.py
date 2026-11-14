@@ -179,10 +179,10 @@ _LAB = None
 
 
 def lab_server():
-    """A server with the lab toolset, which holds run_script."""
+    """A server with the sim toolset, which holds run_script."""
     global _LAB
     if _LAB is None:
-        _LAB = gw.build_server({"TWINSMITH_TOOLSETS": "default,+lab"})
+        _LAB = gw.build_server({"TWINSMITH_TOOLSETS": "default,+sim"})
     return _LAB
 
 

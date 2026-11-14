@@ -571,11 +571,11 @@ class Run:
                     wall_time_s=round(time.monotonic() - started, 3), steps_per_frame=self.per_frame,
                     log_file=str(self.log.path), log_rows=self.log.rows, final_state=final,
                     backend=self.body.backend, mode=self.settings.get("mode", "step"), **video,
-                    timeline=("still playing, without the controller: pause or stop it with sim__timeline__control."
+                    timeline=("still playing, without the controller: pause or stop it with sim__timeline."
                               if playing else
                               "paused: read state with sim__body__state, replay the log with "
                               "sim__trajectory__replay, or return to a clean stop with "
-                              "sim__timeline__control action=reset."))
+                              "sim__timeline action=reset."))
 
 
 def job_store(ext):
@@ -610,11 +610,11 @@ async def run(ext, args):
     camera = args.get("camera")
     playing_mode = settings["mode"] == "play"
     if s.timeline.is_playing() and not playing_mode:
-        refuse("TIMELINE_ACTIVE", "The timeline is playing. Pause it (sim__timeline__control action=pause) or stop "
+        refuse("TIMELINE_ACTIVE", "The timeline is playing. Pause it (sim__timeline action=pause) or stop "
                "it first: mode=step steps physics itself, one exact step at a time. mode=play follows a playing timeline.")
     if playing_mode and not s.timeline.is_playing() and not s.timeline.is_stopped():
         refuse("TIMELINE_ACTIVE", "The timeline is paused. mode=play follows a playing timeline: play it "
-               "(sim__timeline__control action=play resume=true), or use mode=step, which steps from a pause.")
+               "(sim__timeline action=play resume=true), or use mode=step, which steps from a pause.")
     kind, first, second = parse_controller(args.get("controller"))
     controller = TcpController(first, second) if kind == "tcp" else load_python(first, second)
     next_frame = kit_app.get_app().next_update_async

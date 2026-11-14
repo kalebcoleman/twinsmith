@@ -25,7 +25,7 @@ async def wait_simulated(invoke, t, seconds, wall_limit=180.0, poll=0.5):
     deadline = time.monotonic() + wall_limit
     while True:
         # Play is idempotent, and its result is the only MCP read of the timeline clock.
-        state = await invoke("sim__timeline__control", **t, action="play")
+        state = await invoke("sim__timeline", **t, action="play")
         if state["time_s"] >= seconds:
             return state
         assert time.monotonic() < deadline, f"only {state['time_s']} s simulated after {wall_limit} s"
@@ -109,9 +109,9 @@ async def validate(port, output, cycles=3):
                 gravity=[0, 0, 0],
                 dt=1 / 120,
             )
-            await invoke("sim__timeline__control", **t, action="play")
+            await invoke("sim__timeline", **t, action="play")
             await asyncio.sleep(3)
-            await invoke("sim__timeline__control", **t, action="pause")
+            await invoke("sim__timeline", **t, action="pause")
 
             def pixels(image):
                 with Image.open(image["file"]) as im:
@@ -137,7 +137,7 @@ async def validate(port, output, cycles=3):
             )
             before_metrics = pixels(before)
             assert before_metrics["red_pixels"] >= 4, before_metrics
-            await invoke("sim__timeline__control", **t, action="stop")
+            await invoke("sim__timeline", **t, action="stop")
             await invoke(
                 "sim__physics__configure",
                 **t,
@@ -165,7 +165,7 @@ async def validate(port, output, cycles=3):
                 world = np.column_stack((points, np.ones(len(points)))) @ transform
                 assert np.any(np.abs(world[:, 1] - expected) < 0.04), lidar
                 assert np.allclose(transform[3, :3], [30, 0, 1], atol=1e-4)
-                await invoke("sim__timeline__control", **t, action="pause")
+                await invoke("sim__timeline", **t, action="pause")
                 for tick, steps in enumerate([1, 10, 20, 60, 120, 120] * 4):
                     observation = await invoke(
                         "sim__simulation__step",
@@ -218,7 +218,7 @@ async def validate(port, output, cycles=3):
                 await invoke(
                     "sim__stage__save", **t, filename=f"sensor-stress-cycle{cycle}.usda"
                 )
-                await invoke("sim__timeline__control", **t, action="stop")
+                await invoke("sim__timeline", **t, action="stop")
             for suffix in ["Camera0", "Camera1", "Camera2", "Lidar"]:
                 await invoke(
                     "sim__prim__delete", **t, path=prefix + "/" + suffix, confirm=True

@@ -1,9 +1,9 @@
 # Isaac Lab Host Tools (`isaaclab__*`)
 
 This document covers the host-side tools registered by `mcp/twinsmith/isaaclab/tools.py`
-(`install.py`, `jobs.py`, `metrics.py`), which belong to the `lab` toolset (off by default: add `+lab`, see
+(`install.py`, `jobs.py`, `metrics.py`), which belong to the `sim` toolset (off by default: add `+sim`, see
 [toolsets](TOOLSETS.md)), with `run_script`. It holds the behaviour, contracts, guards and limits. Every tool and
-argument, with its default, is in the generated [TOOLS-ARGUMENTS.md](TOOLS-ARGUMENTS.md#lab-isaac-lab-jobs-and-script-jobs).
+argument, with its default, is in the generated [TOOLS-ARGUMENTS.md](TOOLS-ARGUMENTS.md#sim).
 
 ## Naming: host-side tools
 
@@ -53,8 +53,8 @@ is not an approval: no tool trusts a path because a project file names it.
 
 The interpreter must be a virtual environment with Isaac Lab installed, which is checked from its files before anything
 runs it. An invalid setting is an error, not a fallback. That check catches mistakes; it does not stop a deliberately
-faked environment, so name only a project you trust. A model with `put_file` can write any file there. Leave `sim` off
-(`TWINSMITH_TOOLSETS=default,+lab`) to hide `put_file` if that matters. Explicit `ISAACLAB_PYTHON` or `ISAACLAB_ROOT` win, and then
+faked environment, so name only a project you trust. A model with `put_file` can write any file there, and `put_file`
+is in the same `sim` toolset as the Lab tools, so it cannot be hidden while they are listed. Explicit `ISAACLAB_PYTHON` or `ISAACLAB_ROOT` win, and then
 `isaaclab__install_info` reports `project_setting_ignored`; remove them from that server's configuration to use the
 project's. It reports `source`, and `tested: false` for a pair other than the two this project claims (Lab 3.0.0 with Sim 6.2, Lab 2.3.2 with Sim 5.1):
 the version read works, but jobs on it are untested. A pip-only Lab has no `scripts/reinforcement_learning`, so

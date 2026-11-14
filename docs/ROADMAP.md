@@ -38,7 +38,7 @@ What `origin/main` shows today. Each line is from the code or a recorded result,
 
 | Area | State |
 |---|---|
-| Tool surface | 15 toolsets, 8 of them on by default. Three work-cell tools are stubs that answer "not implemented". |
+| Tool surface | Eight groups: `core` (always on), `computer` (explicit only), `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval`. No tool answers "not implemented". |
 | Generic scenes on Newton | The 54-block tower holds for 10 s at 500 Hz (1.7 mm; Isaac Sim 6.2, Newton 1.6.1). Raycast is refused; a Franka joint move does not settle yet. |
 | Work cell on Newton | Builds and holds since #112 (pack `ur5e-jenga-workcell/v2` and per-engine drives). Live on Isaac Sim 6.2 / Newton 1.6.1: the arm holds within 0.05 degrees at the presentation pose, the RG2 fingers move with the mimic followers within 0.003 degrees, and the tower drifts at most 0.54 mm over 11 s after settling. Not yet: the force/torque read, cameras, `mirror_real` and measured finger widths ([details](OPEN-ITEMS.md#work-cell-on-newton)). |
 | Jenga variation | Seeded per-block variation of size, mass and friction exists (`measured_pending` profile); every number in it is unconfirmed. |
@@ -66,13 +66,13 @@ The ASU column was read on that machine on 2026-11-13 (`nvidia-smi`, `scripts/en
 
 | Machine | Connected to the UR5e | ROS 2 | Agent path to ROS 2 |
 |---|---|---|---|
-| ASU PC | No | Installed; simulation traffic only | twinsmith's `ros2` toolset, and nothing else |
-| Home PC | No | Installed; simulation traffic only | twinsmith's `ros2` toolset, and nothing else |
+| ASU PC | No | Installed; simulation traffic only | twinsmith's ROS 2 tools in `sim`, and nothing else |
+| Home PC | No | Installed; simulation traffic only | twinsmith's ROS 2 tools in `sim`, and nothing else |
 | Laptop | **Yes, and it is the only one** | Only code the owner has approved | **None.** No agent runs here and twinsmith is not installed here |
 
 **No agent-facing ROS MCP server is installed on any of these machines**: nothing that gives an agent tools to publish, call
-services or send action goals. twinsmith's own `ros2` toolset is the only agent path to ROS 2. It is off by default, it works
-inside the simulator, and it exists only on the two PCs.
+services or send action goals. twinsmith's own ROS 2 tools in `sim` are the only agent path to ROS 2. They are off by default, they work
+inside the simulator, and they exist only on the two PCs.
 
 twinsmith and everything in this roadmap run on the two PCs. Nothing here is installed on the laptop.
 
@@ -96,7 +96,7 @@ twinsmith and everything in this roadmap run on the two PCs. Nothing here is ins
 - [ ] Finish the ASU PC's workspace move when no game is running.
 - [ ] Verify the home PC's row on that machine the next time it is on.
 - [ ] Not established here: which machine the lab's D415s are attached to for recording, how recordings travel from the
-  laptop to the ASU PC, and whether the ASU PC has a desktop session for the `screen` and `input` groups.
+  laptop to the ASU PC, and whether the ASU PC has a desktop session for the `computer` group.
 
 ## The phases
 
@@ -120,11 +120,11 @@ flowchart LR
 **Goal.** One naming pass and one grouping pass, so every later tool lands in its final place and nothing is renamed twice.
 
 **Scope.**
-- Done: the computer-use pull request (#108) merged on 2026-11-13. The desktop tools stay in the `screen` group
-  (`screenshot`, `screen_recording`, `windows`, `join_videos`, `doctor`), and `input` holds the one `computer` tool.
-- Regroup every tool into off-by-default groups and delete the three work-cell stubs
-  ([plan](plans/02-toolset-groups.md)).
-- Decide the seven shorter tool names from the rename in the same pass.
+- Done: the computer-use pull request (#108) merged on 2026-11-13.
+- Done: every group off by default except `core`, and the three work-cell stubs deleted (#120).
+- Done in the tool-groups pull request: the eight final groups (`core`, `computer`, `sim`, `assets`, `cad`, `real2sim`,
+  `planning`, `eval`) and the shorter names (`simulators`, `sim__timeline`, `sim__viewport`, `sim__ros2_tf`,
+  `sim__occupancy_map`), with no aliases. The table of old names to new is in [TOOLSETS.md](TOOLSETS.md#renamed-toolsets).
 - Done: twinsmith is the only name; the earlier names and their compatibility layer are gone (#113 and its follow-ups).
 
 **Exit criteria.**
@@ -301,7 +301,7 @@ the real robot runs the result as approved ROS 2 code.
 |--:|---|---|---|
 | 0 | Computer use (#108, merged 2026-11-13) | 0 | Done |
 | 1 | Mesh preparation, validation, and the work-cell pack rebuild | 1 | Merged as #112 (with the work cell on Newton) |
-| 2 | Toolset groups, stubs deleted, README table | 0 | [02-toolset-groups](plans/02-toolset-groups.md) |
+| 2 | Toolset groups, stubs deleted, README table | 0 | Merged as #120; the final groups and names follow in the tool-groups pull request |
 | 3 | `gap` and `vabar` wrappers | 6 | [03-planning-eval-wrappers](plans/03-planning-eval-wrappers.md) |
 | 4 | RoboSimStudio bump and `sysid` | 4 | [04-robosim-bump-and-sysid](plans/04-robosim-bump-and-sysid.md) |
 
@@ -317,10 +317,10 @@ The plan was drafted from a survey dated 2026-11-13. Where it and the code diffe
 |---|---|
 | Decimate the bench so 1.63 M triangles fit Newton's 1 M buffer | The buffer counts triangle **pairs**: 7,500,052 were needed against 1,000,000, across 385 mesh colliders. Convex hulls per mesh are what the probe showed to work. Decimation helps rendering cost, not this limit; the fix is the collision layer. |
 | The work cell's perception tool is a stub | It is implemented: it reports the camera configuration. Only the `real2sim`, `planning` and `eval` tools of the work cell are stubs. |
-| Add smoke checks for `screen` and `kit_debug` | Five toolsets have none: `ros2`, `assets`, `screen`, `code` and `kit_debug`. |
+| Add smoke checks for `screen` and `kit_debug` | Groups with no live smoke check: `assets`, `computer`, and the ROS 2, code, log and UI tools of `sim`. |
 | Fit with `sysid` on RoboSimStudio's CPU runs | RoboSimStudio's own project file notes MuJoCo 3.15 in its lock; the system identification module arrives with MuJoCo 4.0.1. `sysid` needs its own environment. |
 | Extend `doctor` | `doctor` arrived with #108 and checks desktop readiness only. The versions of wrapped tools belong in `status`. |
-| Toolsets are off by default (owner's rule) | Eight toolsets are on by default today. Plan 02 changes that. |
+| Toolsets are off by default (owner's rule) | Done in #120: only `core` is on by default. |
 
 Confirmed as the survey said, on 2026-11-13: RoboSimStudio `main` is `4e52e1a`, 13 commits past the pin, and requires
 `newton[sim]>=1.7,<1.8` and `coacd==1.0.11`; Newton `v1.8.0` was released on 2026-11-11; Graph-as-Policy's `gap run` has a
@@ -329,7 +329,7 @@ Confirmed as the survey said, on 2026-11-13: RoboSimStudio `main` is `4e52e1a`, 
 
 ## Decisions
 
-Decided by the owner on 2026-11-13. Plan 02 builds on these.
+Decided by the owner on 2026-11-13.
 
 1. **`cad` is a group.** It holds one tool, `hardware`, which wraps `kicad-cli`, KiKit and a headless Blender
    (plan 05, in pull request #110). CAD authoring stays in the separate servers beside
@@ -337,12 +337,14 @@ Decided by the owner on 2026-11-13. Plan 02 builds on these.
    except `core`, it is off in the shipped `default`; the owner's own client configurations turn it on.
 2. **`default` lists only `core`.** The `minimal` profile is deleted because it equals `default`, and `extensions` is off.
 3. **One Graph-as-Policy checkout**, at VABAR's pins, for both `planning` and `eval`, until a planning need forces a second.
-4. **`ros2` stays its own group**, because DDS traffic is a boundary worth one explicit switch.
+4. **ROS 2 is part of `sim`.** It was its own group (`ros2`) until the owner's final grouping later the same day; its tools
+   still work only inside the simulator, with the loopback-only DDS settings.
 5. **Graph-as-Policy runs on the ASU PC.** It asks for 24 GB of GPU memory: the ASU PC has about 96 GB, the home PC's RTX 5080
    has 16 GB. See [hardware and hosts](#hardware-and-hosts).
 6. **Old toolset names are not aliased.** A configuration that names `scene`, `physics` or another removed group stops the
    server at startup with the list of valid names; [TOOLSETS.md](TOOLSETS.md) gets one table of old to new.
 7. **The `planned` list in `status` is deleted.** `planning`, `real2sim` and `eval` become real groups; `backend`, `params` and
    `compare` had no plan.
-8. **The desktop group keeps the name `screen`** that #108 left it with, so it is not renamed twice; `computer` stays the
-   name of the one tool in `input`.
+8. **The desktop group is `computer`.** The owner's final grouping joined `screen`, `input` and `launch` into one
+   explicit-only group: screenshots, windows, mouse and keyboard, and simulator launch. `computer` is also the name of its
+   mouse-and-keyboard tool.

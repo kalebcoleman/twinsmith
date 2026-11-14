@@ -562,7 +562,7 @@ def pgm_and_origin(buffer, dims_x, dims_y, min_bound, cell_size, meters_per_unit
     pgm = np.full(grid.shape, 205, dtype=np.uint8)  # unknown
     pgm[grid == 0.0] = 254                          # free
     pgm[grid == 1.0] = 0                            # occupied
-    header = f"P5\n# twinsmith sim__map__occupancy\n{dims_x} {dims_y}\n255\n".encode()
+    header = f"P5\n# twinsmith sim__occupancy_map\n{dims_x} {dims_y}\n255\n".encode()
     return header + pgm.tobytes(), origin, dict(occupied=int((grid == 1.0).sum()), free=int((grid == 0.0).sum()),
                                                 unknown=int(grid.size - (grid == 1.0).sum() - (grid == 0.0).sum()))
 

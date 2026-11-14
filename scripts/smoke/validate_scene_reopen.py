@@ -64,9 +64,9 @@ async def validate(args):
                 height=480,
                 frame="world",
             )
-            await invoke("sim__timeline__control", **t, action="play")
+            await invoke("sim__timeline", **t, action="play")
             await asyncio.sleep(3)
-            await invoke("sim__timeline__control", **t, action="pause")
+            await invoke("sim__timeline", **t, action="pause")
             before = await invoke(
                 "sim__body__state", **t, path=args.body, include_dynamics=True
             )
@@ -92,8 +92,8 @@ async def validate(args):
 
             pixels = np.asarray(Image.open(image["file"]).convert("RGB"))
             assert pixels.std() > 5 and pixels.shape == (480, 640, 3)
-            await invoke("sim__viewport__frame", **t, path=args.body.rsplit("/", 1)[0])
-            await invoke("sim__timeline__control", **t, action="stop")
+            await invoke("sim__viewport", **t, path=args.body.rsplit("/", 1)[0])
+            await invoke("sim__timeline", **t, action="stop")
             await invoke("sim__quick_start", discard_changes=True)
             fresh = await invoke("sim__stage__info")
             assert fresh["stage_id"] != info["stage_id"]

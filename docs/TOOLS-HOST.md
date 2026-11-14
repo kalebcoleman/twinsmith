@@ -42,7 +42,7 @@ for a task is off.
 The choice lasts until the host restarts.
 
 **`status`** is the one check-in call; see [built-ins](#kit-bridge-built-ins). It also lists enabled and disabled
-toolsets, even with no bridge. Uncatalogued extension tools appear after discovery when `extensions` is enabled. To list
+toolsets, even with no bridge. Tools of uncatalogued Kit extensions appear after discovery when `sim` is enabled. To list
 advertised bridges without an MCP connection:
 
 ```bash
@@ -64,20 +64,28 @@ grouped tool with its actions, by toolset.
   another action is refused, and nothing runs. `action="help"` returns the full description and arguments of every action.
 - The single-purpose names still work when called, with the same arguments and answers, so existing prompts and scripts keep
   running. They are deprecated: no longer listed, and new work should use the grouped form. Only members of enabled toolsets are
-  callable. Tools that belong to no group (`status`, `run_python`, `sim__quick_start`, `sim__timeline__control`,
+  callable. Tools that belong to no group (`status`, `run_python`, `sim__quick_start`, `sim__timeline`,
   `assets__import_path`, `screenshot`, `doctor`) are listed under their own names.
 - Where a tool has an argument of its own called `action`, the grouped tool takes it as `sub_action`.
 
-## Desktop and window tools
+## Computer
 
-These tools use the host's X11 display (`DISPLAY`, default `:0`) and do not require a Kit bridge. Their behaviour depends on an
-accessible graphical session. Screenshots are saved under `~/Pictures/twinsmith/` and recordings under `~/Videos/twinsmith/` on
-the **host server** machine. Mouse and keyboard tools need the separate opt-in below.
+The `computer` toolset holds the tools that act on this machine rather than inside Kit: the screen tools (`screenshot`,
+`screen_recording`, `windows`, `join_videos`, `doctor`), desktop input (`computer`) and managed simulator sessions
+(`simulators`). None of them needs a Kit bridge. It is explicit-only: the user selects it at startup with `+computer`
+(`TWINSMITH_TOOLSETS=default,+computer`, `tools.toolsets` in `~/.config/twinsmith/config.toml`, or `--toolsets`).
+`toolsets(action="enable")` refuses it, and `all` does not include it; `all,+computer` is every tool.
+
+### Desktop and window tools
+
+These tools use the host's X11 display (`DISPLAY`, default `:0`). Their behaviour depends on an accessible graphical session.
+Screenshots are saved under `~/Pictures/twinsmith/` and recordings under `~/Videos/twinsmith/` on the **host server** machine.
+Mouse and keyboard input is [below](#optional-desktop-input).
 
 - `doctor` reports in one call whether this desktop is ready for capture and input, and what to call next; see the
   [computer use workflow](#computer-use-workflow).
 - A window screenshot prints a `coord_space` token, and `screenshot(region=[x, y, w, h], coord_space=...)` returns an enlarged
-  crop with its own token. Both are used by the input tools below and by `sim__ui`; they work without input enabled.
+  crop with its own token. Both are used by the input tools below and by `sim__ui`.
 
 - X11 reuses window IDs after a window closes. On a shared desktop, call `windows(action="list")` again right before a
   `screenshot` or `screen_recording(action="start")` with a `window_id`. Window capture reads the selected window's pixels, so
@@ -101,11 +109,11 @@ the **host server** machine. Mouse and keyboard tools need the separate opt-in b
 
 ### Optional desktop input
 
-`computer` (toolset `input`; actions `click`, `drag`, `scroll`, `type`, `key`, and `batch`, whose single-purpose member is
+`computer` (actions `click`, `drag`, `scroll`, `type`, `key`, and `batch`, whose single-purpose member is
 `computer_batch`) uses the existing `python-xlib` dependency and the X11 XTEST extension; no `xdotool` is needed. It works on the
 host's shared X11 desktop; native Wayland and headless sessions are not supported. It does not require a bridge and can operate
-any X11 window, such as Isaac Sim, RViz 2 or FreeCAD, so enable it only for a client you trust. It is off even when
-`TWINSMITH_TOOLSETS=all`. Window activation requires a window manager that implements `_NET_ACTIVE_WINDOW`.
+any X11 window, such as Isaac Sim, RViz 2 or FreeCAD, so select the `computer` toolset only for a client you trust. It is off
+even when `TWINSMITH_TOOLSETS=all`. Window activation requires a window manager that implements `_NET_ACTIVE_WINDOW`.
 
 The action names follow the computer-use action sets agents already know (OpenAI's and Anthropic's `computer` tools), and the
 cursor badge and capture lock follow [agent-sh/computer-use-linux](https://github.com/agent-sh/computer-use-linux) (MIT,
@@ -116,8 +124,8 @@ Kit's input instead of X11 ([TOOLS-SCENE.md](TOOLS-SCENE.md#tools)).
 
 The same steps work for Isaac Sim, FreeCAD or any other X11 application.
 
-1. **Check readiness:** `doctor` (toolset `screen`) answers with compact JSON: display backend (X11 or Wayland), `DISPLAY`,
-   XTEST, whether the session is locked, whether the `input` toolset is on, whether the Kit window was found and
+1. **Check readiness:** `doctor` answers with compact JSON: display backend (X11 or Wayland), `DISPLAY`,
+   XTEST, whether the session is locked, whether the `sim` toolset is on for `sim__ui`, whether the Kit window was found and
    `omni.kit.ui_test` is enabled, the DPI scale, the screenshot `max_width`, the cursor badge, a `ready` summary and the next
    call to make. `notes` lists what works with a limit: a lock state no screen saver service reported (`locked` is `null`;
    input is then refused only while another client holds the keyboard, as a lock screen does), XWayland, or a desktop without
@@ -161,7 +169,7 @@ by its own ID, and send keys such as `escape` to its parent window.
 #### Cursor badge
 
 An optional small marker shows people watching the desktop where the agent is pointing. It is off by default; turn it on with
-`cursor_badge = true` under `[screen]` in `~/.config/twinsmith/config.toml`, or `TWINSMITH_CURSOR_BADGE=1`, and restart the
+`cursor_badge = true` under `[computer]` in `~/.config/twinsmith/config.toml`, or `TWINSMITH_CURSOR_BADGE=1`, and restart the
 server.
 
 - For `computer` `click`, `drag` and `scroll`, a small click-through X11 window glides to the target. `computer` then waits
@@ -197,18 +205,18 @@ server.
 - X11 input is global: these checks reduce mistakes but are not a security boundary against other X11 clients, input grabs or a
   person changing focus. Cooperating MCP servers with the same `DISPLAY` spelling and `XDG_RUNTIME_DIR` share an input lock;
   other applications, users or differently configured servers do not take it. Do not share the desktop while an agent is
-  acting; use a dedicated session for stronger isolation. Enabling the tools lets the client trigger any action in the targeted
+  acting; use a dedicated session for stronger isolation. Selecting the toolset lets the client trigger any action in the targeted
   app, including file deletion or network operations. Tool annotations are advisory, and window IDs and PIDs are not authentication.
 
 See the [open items](OPEN-ITEMS.md#tool-surface-and-reliability) for remaining work.
 
 ### Optional simulator sessions
 
-Select the `launch` toolset explicitly to expose `sim__session` (actions `launch`, `list`, `status`, `stop`). It launches this
+`simulators` (actions `launch`, `list`, `status`, `stop`) is in the `computer` toolset. It launches this
 repository's `run.sh` and manages only processes it started; it does not attach to or stop unrelated simulators. It runs the
 configured simulator Python, creates files, and can affect the GPU and network. Its annotations are conservative.
 
-Example sequence: `sim__session` with `{"action":"launch"}` (port and ROS domain both chosen), or
+Example sequence: `simulators` with `{"action":"launch"}` (port and ROS domain both chosen), or
 `{"action":"launch","port":18766,"ros_domain":42}`; then `{"action":"status","session_id":"<id returned by launch>"}` until
 `state` is `running`; select that port with `use_bridge` and verify its PID before operating the scene. If necessary, identify
 its window with `windows(action="list")` by PID. Stopping needs the session's `expected_pid` and `confirm_discard=true`; without it the error includes the exact
@@ -240,7 +248,7 @@ Kit readiness (for example an older bridge); verify the application before using
 `env` of your MCP client's server entry, not from a shell you opened later. The launch removes `PYTHONPATH` and `TWINSMITH_HEADLESS`,
 sets its own port, bind address, ROS domain, backend and output folder, and passes `TWINSMITH_SIM_PYTHON` and
 `TWINSMITH_WORKSPACE` only from the server's own settings. The operator's settings for ranges, instance count and free-memory
-thresholds are in [ENVIRONMENT.md](ENVIRONMENT.md#managed-simulator-sessions-launch-toolset).
+thresholds are in [ENVIRONMENT.md](ENVIRONMENT.md#managed-simulator-sessions-computer-toolset).
 
 **Limits of the resource checks.** The instance count includes advertised local bridges, managed sessions still starting, and
 running jobs in `TWINSMITH_JOBS_DIR`; processes outside those sources may not be counted. Port availability and ROS domains of known
@@ -256,12 +264,12 @@ to avoid signalling a reused PID. Linux 6.9 and newer signal the process group; 
 
 ### A project's own launcher
 
-A project with its own environment can have `sim__session(action="launch")` start its launcher instead of `run.sh`. Set
+A project with its own environment can have `simulators(action="launch")` start its launcher instead of `run.sh`. Set
 `TWINSMITH_SIM_LAUNCHER` in the `env` of that project's MCP server entry; it is read when the server starts.
 
 The launcher gets the same arguments as `run.sh` (`--port N`, `--headless`, `--motion-bvh`, then `-- <kit args>`) and the same
 environment, including `TWINSMITH_PHYSICS_BACKEND`, and runs in its own folder. It must end by `exec`ing Kit, because the PID that
-the launch records must be the simulator; otherwise `sim__session(action="status")` reports `port_conflict`. The file must be executable,
+the launch records must be the simulator; otherwise `simulators(action="status")` reports `port_conflict`. The file must be executable,
 belong to you or root, and not be writable by group or others. For example, to use 5.1 with this repository's launcher:
 
 ```bash

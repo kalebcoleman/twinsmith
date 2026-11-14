@@ -1,4 +1,4 @@
-"""Pure logic behind sim.lidar.create config, sim.camera.create optics, sim.viewport.frame
+"""Pure logic behind sim.lidar.create config, sim.camera.create optics, sim.viewport
 framing and the sim.graph.show window clamp (no Kit needed)."""
 
 import importlib.util

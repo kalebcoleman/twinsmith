@@ -107,12 +107,12 @@ async def validate(port, output):
                 filename=Path(saved["file"]).name,
             )
             # A newly re-created camera must produce a new frame after cleanup.
-            await invoke("sim__timeline__control", **t, action="play")
+            await invoke("sim__timeline", **t, action="play")
             await asyncio.sleep(3)
             await invoke(
                 "sim__simulation__step", code="PHYSICS_NOT_READY", **t, steps=1
             )
-            await invoke("sim__timeline__control", **t, action="pause")
+            await invoke("sim__timeline", **t, action="pause")
             await invoke("sim__simulation__step", code="LIMIT", **t, steps=121)
             await invoke(
                 "sim__lidar__read",
@@ -132,7 +132,7 @@ async def validate(port, output):
                 render["waited"]
                 and render["frame_number_before"] != render["frame_number_after"]
             )
-            await invoke("sim__timeline__control", **t, action="stop")
+            await invoke("sim__timeline", **t, action="stop")
             await invoke("sim__prim__delete", **t, path="/World/Package", confirm=True)
             await invoke("sim__prim__get", code="NOT_FOUND", **t, path="/World/Package")
             after = await invoke("sim__stage__info")

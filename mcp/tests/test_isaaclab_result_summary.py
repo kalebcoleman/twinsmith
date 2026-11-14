@@ -141,7 +141,7 @@ def test_tool_layer(tmp_path):
     from mcp.server.fastmcp import FastMCP
 
     server = FastMCP("t")
-    tools.register_isaaclab_tools(server, groups={"core", "lab"})
+    tools.register_isaaclab_tools(server, groups={"core", "sim"})
     t = server._tool_manager._tools["isaaclab__metrics_summary"]
     assert t.annotations.readOnlyHint is True
     f = write(tmp_path, "a.json", result())

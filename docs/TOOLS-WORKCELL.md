@@ -1,9 +1,9 @@
 # Work-cell tools: the Jenga variation contract
 
 The work cell is the lab's UR5e Jenga cell. Its tools (`workcell__cell`, `workcell__robot`, `workcell__perception`,
-`workcell__jenga`) belong to the `workcell` toolset, which is off by default. They are
+`workcell__jenga`) belong to the `sim` toolset, which is off by default. They are
 documented in the work cell's own [README](../exts/workcell/workcell/README.md), and every argument is in the generated
-[tool arguments](TOOLS-ARGUMENTS.md#workcell-ur5e-workcell-tools). This page keeps the one contract that README links to: the
+[tool arguments](TOOLS-ARGUMENTS.md#sim). This page keeps the one contract that README links to: the
 exact schema of the seeded Jenga variation.
 
 The work cell uses externally supplied, pack-resolved assets and ships no robot binaries. It builds a stopped scene; the default

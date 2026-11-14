@@ -1,7 +1,7 @@
 """Import a ROS/Nav2 map (a YAML with ``image``, ``resolution`` and ``origin``, plus its PGM or PNG) as a floor plan of walls.
 
 Each run of occupied cells becomes a box with a static collider, merged into as few boxes as the image allows, under one wrapper
-prim. It is the inverse of ``sim__map__occupancy``: export a scene's map, import it back, and the walls are where the cells were.
+prim. It is the inverse of ``sim__occupancy_map``: export a scene's map, import it back, and the walls are where the cells were.
 """
 
 from __future__ import annotations

@@ -21,8 +21,8 @@ Machine-readable data:
 
 ## Pack-backed Workcell API
 
-The integration exposes four grouped tools with seven actions through `twinsmith.bridge`, in the `workcell` toolset (off by
-default: add `+workcell`):
+The integration exposes four grouped tools with seven actions through `twinsmith.bridge`, in the `sim` toolset (off by
+default: add `+sim`):
 
 | Group | Actions | Purpose |
 | --- | --- | --- |

@@ -18,8 +18,8 @@ def test_instructions_tell_agents_to_prefer_the_tools():
     assert "Prefer listed tools" in gw.SERVER_INSTRUCTIONS and "status" in gw.SERVER_INSTRUCTIONS
 
 
-# The toolsets that were on by default before only core was: what these help answers assume.
-EVERYDAY = frozenset({"core", "sim", "assets", "screen", "extensions"})
+# A usual selection for scene work: what these help answers assume.
+EVERYDAY = frozenset({"core", "sim", "assets", "computer"})
 
 
 def test_session_check_never_fails_and_nudges():
@@ -31,10 +31,11 @@ def test_session_check_never_fails_and_nudges():
 def test_help_routes_by_task_and_falls_back():
     one = gw._help("why did the grasp fail", enabled=EVERYDAY)
     assert "sim__physics__contacts" in one and "isaaclab__train" not in one
-    assert "Toolsets off: lab" in gw._help("train a policy", enabled=EVERYDAY)
+    assert "Toolsets off: sim" in gw._help("train a policy", enabled={"core", "assets"})
     both = gw._help("something odd", enabled=EVERYDAY)
-    assert "No twinsmith tool is known to fit" in both and "screenshot" in both and "Toolsets off: lab" in both
-    assert "launch" in gw._help(None, enabled=EVERYDAY) and "sim__launch" not in gw._help(None, enabled=EVERYDAY)
+    assert "No twinsmith tool is known to fit" in both and "screenshot" in both and "Toolsets off: sim" not in both
+    assert "launch_simulator" in gw._help(None, enabled=EVERYDAY)
+    assert "launch_simulator" not in gw._help(None, enabled={"core", "sim"}) and "computer" in gw._help(None, enabled={"core", "sim"})
 
 
 def test_session_check_survives_bad_port_env_and_args():

@@ -83,19 +83,19 @@ async def validate(port, output, robot):
             info = await invoke("sim__stage__info")
             target = {k: info[k] for k in ("session_id", "stage_id")}
             if not info["stopped"]:
-                await invoke("sim__timeline__control", **target, action="stop")
+                await invoke("sim__timeline", **target, action="stop")
             started = await invoke("sim__quick_start", robot=robot, discard_changes=True)
             target = {k: started[k] for k in ("session_id", "stage_id")}
             root = started["robot"]["articulation_root"]
             assert root, started
 
-            await invoke("sim__timeline__control", **target, action="play")
+            await invoke("sim__timeline", **target, action="play")
             for _ in range(12):
                 await asyncio.sleep(0.5)
                 state = await invoke("sim__joints__state", **target, path=root)
                 if state["positions"]:
                     break
-            await invoke("sim__timeline__control", **target, action="pause")
+            await invoke("sim__timeline", **target, action="pause")
             state = await invoke("sim__joints__state", **target, path=root)
             names = state["names"]
             assert len(names) >= 3, state
@@ -232,7 +232,7 @@ async def validate(port, output, robot):
                        - (home[joints[1]] - 0.05)) < 0.02, again
             report["steps"]["teleport"] = entry
 
-            await invoke("sim__timeline__control", **target, action="stop")
+            await invoke("sim__timeline", **target, action="stop")
             info = await invoke("sim__stage__info")
             assert info["stopped"] is True
             print(json.dumps(dict(passed=True, calls=len(records), **report)))

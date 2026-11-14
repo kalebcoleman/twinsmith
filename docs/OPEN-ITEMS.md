@@ -156,9 +156,8 @@ matched the clip within the tool's tolerance. What it does not do yet:
 
 ## Tool surface and reliability
 
-- [ ] Decide the seven shorter names proposed for listed tools during the rename (the list is in the rename pull request).
 - [ ] Regroup the host modules into subpackages; the rename left the flat layout.
-- [ ] Add live smoke checks for the `ros2`, `assets` and `screen` toolsets, and for the code, log and UI tools of `sim`;
+- [ ] Add live smoke checks for the `assets` and `computer` toolsets, and for the ROS 2, code, log and UI tools of `sim`;
   `scripts/smoke.py` has none.
 - [ ] Inventory the registered tools, arguments, results, side effects and usage. Propose a keep, combine or remove list and a
   compatibility plan to the owner before changing public contracts.

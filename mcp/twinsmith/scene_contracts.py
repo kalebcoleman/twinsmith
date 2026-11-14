@@ -108,7 +108,7 @@ add(
         xacro_args=field("object", "With a xacro robot: values for its $(arg name), e.g. {\"ur_type\": \"ur10e\"}.", False),
         sdf_model=field("string", "With an SDF that holds several models (a Gazebo world): the model to import.", False),
         environment=field("string", "Optional. \"warehouse\": a 24 by 16 m warehouse (racks, aisles, docks) with the robot at the start of an aisle; default robot carter_v1. \"jenga\": a table, a 54-block giant Jenga tower and a Franka in a ready pose; the result names the blocks and a poke target. Plain USD boxes with colliders: nothing downloaded.", False),
-        ros=field("boolean", "With a robot: also run what sim__ros2__tf_setup runs, and report the shell line that matches this simulator.", False, default=False),
+        ros=field("boolean", "With a robot: also run what sim__ros2_tf runs, and report the shell line that matches this simulator.", False, default=False),
         up_axis=field("string", "The stage's up axis. The ground, gravity and camera follow it. A robot file must match, or the call refuses with the values to pass. A URDF is always Z up in metres.", False, default="Z", enum=["Z", "Y"]),
         meters_per_unit=field("number", "The stage's units, as a positive number (0.01 for centimetres). Ground size, gravity, camera distance and framing scale with it. A robot file must match.", False, default=1.0),
         play=field("boolean", "Start the timeline after building.", False, default=False),
@@ -262,7 +262,7 @@ add(
     ),
 )
 add(
-    "sim.timeline.control",
+    "sim.timeline",
     "Play, pause, stop, initialize or reset. initialize briefly plays a stopped timeline then pauses it, so physics may advance; it refuses a playing timeline. Play reports physics_ready. Reset is the call after a failed run: it cancels this pack's jobs and stops the timeline; safe to repeat. sim__simulation__step advances exact steps. Stop rewinds physics and awaits pending render/writer completion. TIMELINE_BUSY or TIMELINE_INTERRUPTED requires inspection before retry. The session edit target is leased until Stop.",
     dict(**TARGET, action=field("string", "play, pause, stop, initialize (briefly play then pause; physics may advance), or reset (cancel jobs, stop, back to the authored start)."),
          resume=field("boolean", "Continue a timeline a script or the GUI paused, without the stop that would end it. Physics then writes where the script set it. With action=play.", False)),
@@ -285,7 +285,7 @@ add(
     ),
 )
 add(
-    "sim.viewport.frame",
+    "sim.viewport",
     "Point the active viewport camera, e.g. before a screenshot. path alone frames a prim; path+margin frames its bounds plus margin metres; eye+target places the camera exactly; follow tracks the prim. Edits only the active camera in the session layer, with no undo entry. framed_path is the prim this call framed; the Stage selection is put back afterwards, so the Stage and Property panels keep their own selection. Refuses look-through targets and empty bounds, listing candidates. Does not wait for rendered pixels.",
     dict(
         **TARGET,
@@ -602,12 +602,12 @@ add(
 )
 add(
     "sim.joints.state",
-    'Read joint positions and velocities while running. While playing or paused, initialized articulation DOF positions/velocities on selected PhysX or qualified Newton tensor API. Stopped gives PHYSICS_NOT_READY: sim__timeline__control action=initialize briefly plays then pauses. Angular radians, linear stage units; no authored-target fallback. PHYSICS_STATE_INVALID identifies invalid runtime joint data.',
+    'Read joint positions and velocities while running. While playing or paused, initialized articulation DOF positions/velocities on selected PhysX or qualified Newton tensor API. Stopped gives PHYSICS_NOT_READY: sim__timeline action=initialize briefly plays then pauses. Angular radians, linear stage units; no authored-target fallback. PHYSICS_STATE_INVALID identifies invalid runtime joint data.',
     dict(**TARGET, path=field("string", "Exact articulation root path, e.g. /World/UR5e/root_joint: robot.articulation_root from sim__quick_start, or sim__physics__inspect.")),
 )
 add(
     "sim.simulation.step",
-    'Advance exact physics steps while paused. 1..120 steps on PhysX or qualified Newton, PAUSED and initialized: from a stopped timeline, call sim__timeline__control action=initialize (physics may advance). No app-update pumping or engine fallback. Returns measured time delta, poses for observe_prims, DOFs for observe_joints. A failure after stepping reports the clock and phase. No retry or rollback. On Newton it first refuses STEP_DT_SOURCES_DISAGREE if the scene\'s timestep differs from Newton\'s, and adds a newton section.',
+    'Advance exact physics steps while paused. 1..120 steps on PhysX or qualified Newton, PAUSED and initialized: from a stopped timeline, call sim__timeline action=initialize (physics may advance). No app-update pumping or engine fallback. Returns measured time delta, poses for observe_prims, DOFs for observe_joints. A failure after stepping reports the clock and phase. No retry or rollback. On Newton it first refuses STEP_DT_SOURCES_DISAGREE if the scene\'s timestep differs from Newton\'s, and adds a newton section.',
     dict(
         **TARGET,
         steps=field("integer", "Number of physics steps 1..120."),
@@ -705,7 +705,7 @@ add(
     ),
 )
 add(
-    "sim.ros2.tf_setup",
+    "sim.ros2_tf",
     "Build one ROS 2 graph for a robot, the same way every time: /clock (sim time), /joint_states, the static world->base_link (or world->odom + odometry for a mobile base) and the robot's link TF from Isaac. Rebuilds its own graph on each call, so no frame is ever published twice by this tool; reuses an existing /clock and reports other ROS 2 publishers in the scene. Timeline must be stopped; publishes while playing. Then use scripts/ros2_rviz_config.py and scripts/ros2_tf_doctor.py (docs/ROS2-RVIZ.md).",
     dict(
         **TARGET,
@@ -801,7 +801,7 @@ add(
     ),
 )
 add(
-    "sim.map.occupancy",
+    "sim.occupancy_map",
     "Generate a 2D occupancy map from the stage's colliders (Isaac's occupancy-map generator) and write a Nav2 map_server PGM + YAML (trinary, origin = lower-left corner, +x right, +y up) to the configured output root. Start with the timeline stopped: the tool plays 8 frames through the guarded timeline path (the generator needs running physics; OnPlaybackTick graphs such as /clock run meanwhile), then stops, so robots return to their start poses. Use when a lab or project does not provide map files.",
     dict(
         **TARGET,
@@ -955,7 +955,7 @@ add(
 )
 add(
     "sim.joints.move",
-    "Step a paused simulation until joints settle. Steps a PAUSED, initialized simulation until named joint targets are within tolerance or max_steps is used, then reports settled and each joint's error. From stopped, sim__timeline__control action=initialize briefly plays then pauses. A joint held by contact or a weak drive reports settled=false: clear the path, raise gains with sim__joints__gains, or retry with more steps. Runtime only; never pumps the app loop.",
+    "Step a paused simulation until joints settle. Steps a PAUSED, initialized simulation until named joint targets are within tolerance or max_steps is used, then reports settled and each joint's error. From stopped, sim__timeline action=initialize briefly plays then pauses. A joint held by contact or a weak drive reports settled=false: clear the path, raise gains with sim__joints__gains, or retry with more steps. Runtime only; never pumps the app loop.",
     dict(
         **TARGET,
         path=field("string", "Exact initialized articulation root path."),

@@ -64,7 +64,7 @@ def map_coords(params: Dict[str, Any], coord_space: str, state: Any) -> Dict[str
 
 
 def badge_args(params: Dict[str, Any], state: Any) -> Dict[str, Any]:
-    """With ``[screen] cursor_badge`` on, ask Kit to draw its cursor badge: Kit's ``act`` reads ``badge``,
+    """With ``[computer] cursor_badge`` on, ask Kit to draw its cursor badge: Kit's ``act`` reads ``badge``,
     the folder of this server's capture lock (made here), so its badge hides for this server's screenshots."""
     from . import cursor_badge
 

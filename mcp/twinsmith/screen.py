@@ -1676,8 +1676,6 @@ def doctor_report(port: int | None, host: str | None, enabled: Iterable[str], ru
         computer = "the X server lacks XTEST, so computer cannot send input"
     elif locked:
         computer = "the screen is locked, so X11 input reaches the lock screen: use sim__ui for Isaac Sim"
-    elif "input" not in enabled:
-        computer = "the input toolset is off. " + toolsets.enable_hint(["input"], runtime_enable)
     else:
         computer = True
     if not bridge["reachable"]:
@@ -1705,7 +1703,7 @@ def doctor_report(port: int | None, host: str | None, enabled: Iterable[str], ru
     if sim_ui is True and bridge.get("ui_test_enabled") is False:
         notes.append("omni.kit.ui_test is off in this Kit: the first sim__ui call turns it on")
     return {"backend": backend, "display": ENV_DISPLAY, "x11": x11, "locked": locked,
-            "input_toolset": "input" in enabled, "cursor_badge": bool(cursor_badge), "kit_window": _kit_window(port),
+            "cursor_badge": bool(cursor_badge), "kit_window": _kit_window(port),
             "bridge": {"port": port, **bridge}, "screenshot_max_width": SHOT_MAX_WIDTH,
             "ready": {"computer": computer is True, "sim__ui": sim_ui is True},
             "next": "; ".join(blockers) or "computer and sim__ui are ready", "notes": notes}
@@ -1720,13 +1718,13 @@ def register_screen_tools(
     groups: Iterable[str] | None = None,
     state: Any = None,
 ) -> None:
-    """Register screen tools when the screen toolset is enabled.
+    """Register screen tools when the computer toolset is enabled.
 
     ``state`` is the server's bridge state: doctor reads its toolsets, client and config when called,
-    since toolsets can change at run time. The capture directories are created only when ``screen``
+    since toolsets can change at run time. The capture directories are created only when ``computer``
     is enabled, so a profile without it leaves the filesystem alone."""
     mcp = ScopedTools(server, groups)
-    if mcp.enabled("screen"):
+    if mcp.enabled("computer"):
         SHOT_DIR.mkdir(parents=True, exist_ok=True)
         VIDEO_DIR.mkdir(parents=True, exist_ok=True)
 

@@ -71,7 +71,7 @@ class FakeBridge:
         self.dt = dt if "configure_ignored" not in self.faults else self.dt
         return dict(path=path, dt=self.dt)
 
-    def sim__timeline__control(self, action):
+    def sim__timeline(self, action):
         if action == "stop":
             self.stopped = True
             self.probe = dict(z=2.5, vz=0.0, x=80.0, vx=0.0)

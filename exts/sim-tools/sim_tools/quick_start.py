@@ -263,7 +263,7 @@ def next_steps(ids, robot_path, root, play, wheels=None):
     ids_text = f'session_id="{ids["session_id"]}", stage_id="{ids["stage_id"]}"'
     steps = []
     if not play:
-        steps.append(f"Play: sim__timeline__control with {ids_text}, action=\"play\".")
+        steps.append(f"Play: sim__timeline with {ids_text}, action=\"play\".")
     if root:
         steps += [
             "A robot starts at its all-zero joint pose. For an arm that can be low and stretched out, which can look collapsed; check the joint state before assuming a fault. A joint driven into the ground just stops, with no error, so raise a low arm first (on a UR5e, shoulder_lift_joint to about -1.57).",
@@ -271,15 +271,15 @@ def next_steps(ids, robot_path, root, play, wheels=None):
             f"Authored joint limits and drives: sim__joints__inspect with path=\"{root}\" (the articulation root, "
             f"not a link of it).",
             f"Move: sim__joints__command with path=\"{root}\" and one position per joint, in radians.",
-            "Exact steps: pause with sim__timeline__control, then sim__simulation__step.",
-            f"ROS 2 TF and joint states: sim__ros2__tf_setup with robot=\"{robot_path}\" on a stopped timeline.",
+            "Exact steps: pause with sim__timeline, then sim__simulation__step.",
+            f"ROS 2 TF and joint states: sim__ros2_tf with robot=\"{robot_path}\" on a stopped timeline.",
         ]
     if wheels:
         steps = [step for step in steps if not step.startswith(("A robot starts", "Move:"))]
         steps += [
             "Drive from ROS 2: on a stopped timeline, pass robot.cmd_vel_graph to sim__graph__build, then Play and publish "
             "geometry_msgs/Twist on /cmd_vel.",
-            f"For a wheeled base, sim__ros2__tf_setup takes base=\"mobile\", world_frame=\"\" and base_link=\"{wheels['base_link']}\" "
+            f"For a wheeled base, sim__ros2_tf takes base=\"mobile\", world_frame=\"\" and base_link=\"{wheels['base_link']}\" "
             "with localization, which publishes map->odom. Use Quick Start's ground as the floor: see docs/ROS2-RVIZ.md.",
         ]
     steps += [
@@ -331,7 +331,7 @@ async def run(ext, args):
         refuse("INVALID_VALUE", f"The {environment} is built Z up in metres: leave up_axis and meters_per_unit at their defaults. Nothing was changed.")
     if not scene.timeline.is_stopped():
         info = scene.stage_info()
-        refuse("TIMELINE_ACTIVE", "Stop the timeline first: call sim__timeline__control action=stop, then resend this call.",
+        refuse("TIMELINE_ACTIVE", "Stop the timeline first: call sim__timeline action=stop, then resend this call.",
                before_retry=stop_call(info["session_id"], info["stage_id"]))
     snapshot = args.get("snapshot_id"), args.get("manifest_sha256")
     if robot in NVIDIA_ROBOTS:
@@ -481,7 +481,7 @@ async def run(ext, args):
     info = scene.stage_info()
     if view:
         try:  # the editor's viewport too, so a person watching sees the whole scene, not the robot's corner of it
-            ext.dispatch("sim.viewport.frame", dict(session_id=info["session_id"], stage_id=info["stage_id"], eye=list(view[0]), target=list(view[1])))
+            ext.dispatch("sim.viewport", dict(session_id=info["session_id"], stage_id=info["stage_id"], eye=list(view[0]), target=list(view[1])))
         except Exception:  # noqa: BLE001 - no viewport (headless): the capture camera above is still aimed
             pass
     scene.owned.update(owned + [GROUND, PHYSICS_SCENE, DOME, SUN, CAMERA] + ([robot_path] if robot_path else []))

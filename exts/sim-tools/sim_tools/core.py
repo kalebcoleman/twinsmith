@@ -170,7 +170,7 @@ def visuals_report(stage, root):
 # Tools which change the stage or timeline themselves, by event family. Anything else that may
 # run code (run_python, work cell tools, Kit UI input) can only be reported as "was running".
 STAGE_TOOLS = {"sim.stage.open": "sim__stage__open", "sim.quick_start": "sim__quick_start"}
-TIMELINE_TOOLS = {"sim.timeline.control": "sim__timeline__control", "sim.map.occupancy": "sim__map__occupancy",
+TIMELINE_TOOLS = {"sim.timeline": "sim__timeline", "sim.occupancy_map": "sim__occupancy_map",
                   "sim.quick_start": "sim__quick_start"}
 INERT_TOOLS = {"status", "list_tools", "reload_tools", "stat_file", "get_file", "put_file", "job_status"}
 
@@ -212,7 +212,7 @@ def flattened_size_note(size):
 
 def stop_call(session_id, stage_id):
     """The call that clears TIMELINE_ACTIVE; a different tool, so not a retry_with."""
-    return dict(tool="sim__timeline__control",
+    return dict(tool="sim__timeline",
                 arguments=dict(session_id=session_id, stage_id=stage_id, action="stop"))
 
 
@@ -303,9 +303,9 @@ class Scene:
             last = self.last_event("timeline")
             refuse(
                 "TIMELINE_ALREADY_ACTIVE",
-                "The timeline is already running or paused and was not started by sim__timeline__control"
+                "The timeline is already running or paused and was not started by sim__timeline"
                 + (" (last change: " + last["what"] + ", " + last["source"] + ")" if last else "")
-                + ". To continue: call sim__timeline__control action=stop, then action=play, so physics writeback "
+                + ". To continue: call sim__timeline action=stop, then action=play, so physics writeback "
                 "uses the session layer. Stop rewinds physics and returns robots to their start pose.",
                 before_retry=stop_call(self.session_id, self.stage_id),
             )
@@ -323,14 +323,14 @@ class Scene:
             ids = dict(session_id=self.session_id, stage_id=self.stage_id)
             refuse(
                 "EDIT_TARGET_CHANGED",
-                "This timeline was not started by sim__timeline__control"
+                "This timeline was not started by sim__timeline"
                 + (" (last change: " + last["what"] + ", " + last["source"] + ")" if last else "")
                 + ", so physics writeback is not on the session layer and a tool step could write into your "
-                "scene's own layers. To step: call sim__timeline__control with action=stop, then action=play, "
+                "scene's own layers. To step: call sim__timeline with action=stop, then action=play, "
                 "then action=pause, then resend this call. Stop rewinds physics and returns robots to their start "
                 "pose; save first (sim__stage__save needs the timeline paused or stopped) if the current state matters.",
                 before_retry=stop_call(**ids),
-                then=[dict(tool="sim__timeline__control", arguments=dict(**ids, action=action))
+                then=[dict(tool="sim__timeline", arguments=dict(**ids, action=action))
                       for action in ("play", "pause")],
                 started_outside_tools=True,
                 **({"timeline_change": {k: v for k, v in last.items() if k != "monotonic"}} if last else {}),
@@ -339,7 +339,7 @@ class Scene:
             refuse(
                 "EDIT_TARGET_CHANGED",
                 "Physics writeback requires the managed session edit target, but another editor selected a different "
-                "layer during this run. Stop, inspect the selected layer, then play with sim__timeline__control before stepping.",
+                "layer during this run. Stop, inspect the selected layer, then play with sim__timeline before stepping.",
                 before_retry=stop_call(self.session_id, self.stage_id),
             )
 
@@ -409,7 +409,7 @@ class Scene:
         if mutation and not self.timeline.is_stopped():
             refuse(
                 "TIMELINE_ACTIVE",
-                "Stop the timeline before authored edits: call sim__timeline__control action=stop with these IDs, "
+                "Stop the timeline before authored edits: call sim__timeline action=stop with these IDs, "
                 "then resend this call unchanged. Stop rewinds physics and returns robots to their start pose; "
                 "pausing is not enough, because paused physics also retains runtime state.",
                 before_retry=stop_call(session_id, stage_id),

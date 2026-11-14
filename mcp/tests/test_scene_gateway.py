@@ -75,7 +75,7 @@ def test_full_catalog_and_errors(monkeypatch):
             )
             assert "completed scan" in lidar_wait["description"]
             # clear was typed list[float], so no [x, y, r] circle got through.
-            clear = listed["sim__map__occupancy"].inputSchema["properties"]["clear"]
+            clear = listed["sim__occupancy_map"].inputSchema["properties"]["clear"]
             assert clear["maxItems"] == 16
             assert clear["items"]["type"] == "array" and clear["items"]["items"]["type"] == "number"
             assert clear["items"]["minItems"] == clear["items"]["maxItems"] == 3
@@ -117,7 +117,7 @@ def test_generic_filters(monkeypatch):
     server = gw.build_server({"TWINSMITH_TOOLSETS": "default,+sim"})
     names = server._tool_manager._tools
     assert "sim__stage__info" in names and "assets__roots" not in names
-    assert not any(x.startswith("workcell__") for x in names)
+    assert any(x.startswith("workcell__") for x in names) and any(x.startswith("isaaclab__") for x in names)
 
 
 def test_unavailable_profile_does_not_start_trusted_server(tmp_path):
@@ -131,14 +131,15 @@ def test_scene_opt_out_is_per_server_offline_and_after_live_refresh(monkeypatch)
     from twinsmith.client import BridgeClient
     from bridge_testing import LiveBridge, td
 
-    hidden = gw.build_server({"TWINSMITH_TOOLSETS": "default,+workcell"})
-    visible = gw.build_server({"TWINSMITH_TOOLSETS": "default,+sim,+assets,+workcell"})
+    hidden = gw.build_server({"TWINSMITH_TOOLSETS": "default,+cad"})
+    visible = gw.build_server({"TWINSMITH_TOOLSETS": "default,+sim,+assets"})
     # The bridge built-ins are listed offline too, so offline == with a bridge.
     assert "run_python" in visible._tool_manager._tools and "status" in hidden._tool_manager._tools
     assert "run_python" not in hidden._tool_manager._tools
     assert "sim__stage__info" in visible._tool_manager._tools
     assert "sim__stage__info" not in hidden._tool_manager._tools
-    assert sum(n.startswith("workcell__") for n in hidden._tool_manager._tools) == 12  # 8 members and their 4 groups
+    assert sum(n.startswith("workcell__") for n in visible._tool_manager._tools) == 12  # 8 members and their 4 groups
+    assert not any(n.startswith("workcell__") for n in hidden._tool_manager._tools)
     with LiveBridge() as bridge:
         owner = bridge.bridge.register_owner("generic-sim", "sim")
         owner.add(td("stage.info", lambda: {"selected": True}))
@@ -155,7 +156,7 @@ def test_scene_opt_out_is_per_server_offline_and_after_live_refresh(monkeypatch)
                     names = {t.name for t in (await client.list_tools()).tools}
                     assert ("sim__stage__info" in names) == enabled
                     assert ("assets__roots" in names) == enabled
-                    assert ("run_python" in names) == enabled and "workcell__workcell_status" in names
+                    assert ("run_python" in names) == enabled and ("workcell__workcell_status" in names) == enabled
                     if not enabled:
                         refused = await client.call_tool("sim__stage__info", {})
                         assert refused.isError
@@ -165,9 +166,9 @@ def test_scene_opt_out_is_per_server_offline_and_after_live_refresh(monkeypatch)
 
 def test_minimal_toolsets_keep_managed_sessions():
     server = gw.build_server(
-        {"TWINSMITH_TOOLSETS": "default,+launch"}
+        {"TWINSMITH_TOOLSETS": "default,+computer"}
     )
-    assert "sim__launch" in server._tool_manager._tools
+    assert "launch_simulator" in server._tool_manager._tools
     assert "sim__stage__info" not in server._tool_manager._tools
 
 

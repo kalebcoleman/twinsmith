@@ -47,12 +47,9 @@ LOCAL_MODULES = ("server.py", "screen.py", "desktop_input.py", "sim_sessions.py"
 CATALOGS_BY_NAME = ("builtins.json", "sim.json", "assets.json", "workcell.json")
 # Where each toolset's behaviour is described, relative to docs/.
 REFERENCE = {
-    "core": "TOOLS-HOST.md", "screen": "TOOLS-HOST.md",
-    "input": "TOOLS-HOST.md#optional-desktop-input", "launch": "TOOLS-HOST.md#optional-simulator-sessions",
-    "sim": "TOOLS-SCENE.md", "ros2": "TOOLS-SCENE.md", "assets": "ASSET-IMPORT.md",
-    "lab": "TOOLS-ISAACLAB.md", "real2sim": "ROBOSIM.md", "cad": "HARDWARE.md",
+    "core": "TOOLS-HOST.md", "computer": "TOOLS-HOST.md#computer", "sim": "TOOLS-SCENE.md",
+    "assets": "ASSET-IMPORT.md", "cad": "HARDWARE.md", "real2sim": "ROBOSIM.md",
     "planning": "PLANNING-EVAL.md#gap", "eval": "PLANNING-EVAL.md#vabar",
-    "workcell": "../exts/workcell/workcell/README.md",
 }
 
 
@@ -191,9 +188,7 @@ def render():
         state = ("on by default" if spec.default else
                  f"off until you select it with `+{toolset}`" + (" (never enabled by `all`)" if spec.explicit_only else ""))
         link = REFERENCE[toolset]
-        # The work cell's own docs link to the anchor this section replaced.
-        anchor = ['<a id="ur5e-twin-workcell__"></a>', ""] if toolset == "workcell" else []
-        lines += anchor + [f"## `{toolset}`: {spec.summary}", "",
+        lines += [f"<a id=\"{toolset}\"></a>", "", f"## `{toolset}`: {spec.summary}", "",
                   f"Toolset `{toolset}` is {state}. Reference: [{link.split('#')[0].split('/')[-1]}]({link}). "
                   f"{len(members)} tools, listed as {len(listed[toolset])}: "
                   + ", ".join(_actions(name) for name in listed[toolset]) + ".", ""]
@@ -218,19 +213,19 @@ def render_toolsets_compact():
 
 def render_toolsets_full():
     listed = listed_by_toolset()
-    rows = ["| Toolset | Default | Listed tools |", "|---|---|---|"]
+    rows = ["| Group | Default | What it holds | Listed tools |", "|---|---|---|---|"]
     for name, spec in toolsets.TOOLSETS.items():
-        default = "explicit only" if spec.explicit_only else ("on" if spec.default else "off")
+        default = "explicit only" if spec.explicit_only else ("always on" if spec.default else "off")
         names = ", ".join(f"`{tool}`" for tool in listed[name]) or "none"
-        rows.append(f"| `{name}`: {spec.summary} | {default} | {names} |")
+        rows.append(f"| **`{name}`** | {default} | {spec.summary} | {names} |")
     return "\n".join(rows)
 
 
 def render_profiles():
     rows = ["| Profile | Toolsets | Listed tools |", "|---|---|--:|"]
-    extra = frozenset(toolsets.PROFILES["all"] | {"input", "launch"})
+    extra = frozenset(toolsets.PROFILES["all"] | set(toolsets.explicit_only()))
     for label, names in (("`default`", toolsets.PROFILES["default"]), ("`all`", toolsets.PROFILES["all"]),
-                         ("`all,+input,+launch`", extra)):
+                         ("`all,+computer`", extra)):
         shown = ", ".join(f"`{n}`" for n in toolsets.TOOLSETS if n in names)
         rows.append(f"| {label} | {shown} | {_listed_count(names)} |")
     return "\n".join(rows)

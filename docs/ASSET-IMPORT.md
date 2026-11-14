@@ -114,7 +114,7 @@ A model whose joint names the `world` as its parent, or that is `<static>`, is i
 
 ### ROS maps
 
-`assets__import_path source_path=<folder>/map.yaml prim_path=/World/map wall_height=1.5` reads `image`, `resolution`, `origin`, `negate` and `occupied_thresh` from the YAML, reads the PGM (or a PNG) from the same folder, and builds the occupied cells as the fewest wall boxes the image allows (static colliders at the map's own coordinates). It is the inverse of `sim__map__occupancy`. A yaw in `origin` is not applied; the result warns and `orientation` on the import turns the map. There is a limit of 4,000 boxes: a noisy image is refused with a hint to clean it. Add a ground plane separately.
+`assets__import_path source_path=<folder>/map.yaml prim_path=/World/map wall_height=1.5` reads `image`, `resolution`, `origin`, `negate` and `occupied_thresh` from the YAML, reads the PGM (or a PNG) from the same folder, and builds the occupied cells as the fewest wall boxes the image allows (static colliders at the map's own coordinates). It is the inverse of `sim__occupancy_map`. A yaw in `origin` is not applied; the result warns and `orientation` on the import turns the map. There is a limit of 4,000 boxes: a noisy image is refused with a hint to clean it. Add a ground plane separately.
 
 ### Export
 

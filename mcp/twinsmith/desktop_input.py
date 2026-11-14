@@ -502,7 +502,7 @@ def _run(window_id: int, screenshot_after: bool, step: Callable[[], str]):
 
 
 def register_desktop_input_tools(server: FastMCP, groups: Iterable[str] | None = None) -> None:
-    """Register input only when the caller explicitly selects the input toolset."""
+    """Register input only when the user selected the explicit-only computer toolset at startup."""
     mcp = ScopedTools(server, groups)
 
     @mcp.tool(annotations=DESKTOP_INPUT)

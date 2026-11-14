@@ -52,7 +52,7 @@ Setup notes the owner follows once:
 | Codex | `TWINSMITH_TOOLSETS = "default,+cad"` under `[mcp_servers.twinsmith.env]` in `~/.codex/config.toml` |
 | OpenCode | `"TWINSMITH_TOOLSETS": "default,+cad"` in the `environment` of the `twinsmith` entry in `opencode.json` |
 
-Keep any toolsets the entry already names (`default,+lab,+cad`). The beside servers are separate entries, each started
+Keep any toolsets the entry already names (`default,+sim,+cad`). The beside servers are separate entries, each started
 the way its own README says at the pin above.
 
 ## Actions

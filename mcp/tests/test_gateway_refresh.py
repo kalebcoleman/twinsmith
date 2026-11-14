@@ -61,11 +61,14 @@ def test_a_listing_without_argument_lists_is_refused(fresh_gateway, monkeypatch)
 
 
 def test_the_namespace_and_builtin_filters_apply_to_rediscovery(fresh_gateway, monkeypatch):
-    gw._state_for(fresh_gateway).toolsets = frozenset({"core", "extensions"})
+    gw._state_for(fresh_gateway).toolsets = frozenset({"core", "sim"})
     _fake_registry(monkeypatch, {"pm.read_state": _meta("d", {}, "pm", "P"), "demo.ping": _meta("d", {}, "demo", "A"),
                                  "run_python": _meta("d", {}, None, "twinsmith.bridge")})
-    assert gw.discover_and_register_tools(fresh_gateway) == ["demo.ping", "pm.read_state"]
-    assert set(fresh_gateway._tool_manager._tools) == {"pm__read_state", "demo__ping"}
+    assert gw.discover_and_register_tools(fresh_gateway) == ["demo.ping", "pm.read_state", "run_python"]
+    assert set(fresh_gateway._tool_manager._tools) == {"pm__read_state", "demo__ping", "run_python"}
+    gw._state_for(fresh_gateway).toolsets = frozenset({"core"})
+    gw.discover_and_register_tools(fresh_gateway)
+    assert not {"pm__read_state", "demo__ping", "run_python"} & set(fresh_gateway._tool_manager._tools)
 
 
 def test_refresh_removes_departed_owner_without_touching_other_tools(fresh_gateway, monkeypatch):
@@ -91,10 +94,10 @@ def test_refresh_removes_tools_that_no_longer_match_view_filter(fresh_gateway, m
              "sim.stage.info": _meta("sim", {}, "sim", "sim-owner")}
     _fake_registry(monkeypatch, tools)
     gw.discover_and_register_tools(server)
-    gw._state_for(server).toolsets = frozenset({"core", "extensions"})
+    gw._state_for(server).toolsets = frozenset({"core"})
 
-    assert "sim.stage.info (removed)" in gw.discover_and_register_tools(server)
-    assert _served(server, "arm__move") is not None
+    assert {"arm.move (removed)", "sim.stage.info (removed)"} <= set(gw.discover_and_register_tools(server))
+    assert _served(server, "arm__move") is None
     assert _served(server, "sim__stage__info") is None
 
 
@@ -169,7 +172,7 @@ def test_refresh_tools_without_a_simulator_says_what_to_do(monkeypatch):
 
     monkeypatch.setattr(gw, "discover_and_register_tools", offline)
     message = asyncio.run(gw._refresh_tools(server))
-    assert "no Isaac Sim bridge is reachable" in message and "sim__launch" in message
+    assert "no Isaac Sim bridge is reachable" in message and "simulators action=launch" in message
 
 
 def test_host_run_asset_tools_are_not_reported_as_unconfirmed(monkeypatch):
@@ -194,7 +197,7 @@ def test_refresh_tools_with_several_bridges_says_pick_one(monkeypatch):
 
 
 def test_refresh_tools_names_managed_simulators_on_other_ports(monkeypatch):
-    # The config pinned port 8766, sim__launch used 8771, and refresh_tools
+    # The config pinned port 8766, launch_simulator used 8771, and refresh_tools
     # kept saying "no bridge" until the agent found use_bridge on its own.
     server = gw.build_server({"TWINSMITH_TOOLSETS": "all"})
 

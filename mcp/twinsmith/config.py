@@ -131,8 +131,10 @@ def resolve(env: Mapping[str, str] | None = None, cli_toolsets: str | None = Non
             enabled = select(data["tools"]["toolsets"])
         if "runtime_enable" in data.get("tools", {}):
             runtime = _flag(data["tools"]["runtime_enable"], "tools.runtime_enable")
-        if "cursor_badge" in data.get("screen", {}):
-            badge = _flag(data["screen"]["cursor_badge"], "screen.cursor_badge")
+        if "screen" in data:
+            raise ValueError("The [screen] section is now [computer] (cursor_badge = true under [computer]).")
+        if "cursor_badge" in data.get("computer", {}):
+            badge = _flag(data["computer"]["cursor_badge"], "computer.cursor_badge")
     if "TWINSMITH_TOOLSETS" in env:
         enabled = select(env["TWINSMITH_TOOLSETS"])
     if cli_toolsets is not None:

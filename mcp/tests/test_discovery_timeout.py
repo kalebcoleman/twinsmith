@@ -43,7 +43,7 @@ def test_stalled_bridge_keeps_sdk_initialization_and_host_tools_available(monkey
     worker.start()
     monkeypatch.setattr(gateway, "DISCOVERY_TIMEOUT_S", 0.15)
     env = {
-        "TWINSMITH_TOOLSETS": "all,+launch",
+        "TWINSMITH_TOOLSETS": "all,+computer",
         "TWINSMITH_PORT": str(listener.getsockname()[1]),
     }
     monkeypatch.setenv("TWINSMITH_PORT", env["TWINSMITH_PORT"])
@@ -57,11 +57,11 @@ def test_stalled_bridge_keeps_sdk_initialization_and_host_tools_available(monkey
             await client.initialize()
             names = {t.name for t in (await client.list_tools()).tools}
             assert {
-                "sim__session",
+                "simulators",
                 "sim__stage",
                 "workcell__cell",
             } <= names
-            response = await client.call_tool("sim__session", {"action": "list"})
+            response = await client.call_tool("simulators", {"action": "list"})
             assert not response.isError
             assert time.monotonic() - started < 3
 

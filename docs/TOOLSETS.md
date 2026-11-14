@@ -14,35 +14,31 @@ The table is generated from the code (`scripts/gen_tool_reference.py --write`); 
 rows for the server you have installed, with the current state of each.
 
 <!-- generated:toolsets-full -->
-| Toolset | Default | Listed tools |
-|---|---|---|
-| `core`: Connection, discovery, help, jobs and toolsets | on | `help`, `jobs`, `refresh_tools`, `status`, `toolsets`, `use_bridge` |
-| `screen`: Capture, record and arrange windows | off | `doctor`, `join_videos`, `screen_recording`, `screenshot`, `windows` |
-| `sim`: Scenes, physics, sensors, code, Kit log and UI in Isaac Sim | off | `files`, `reload_tools`, `run_python`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__simulation`, `sim__stage`, `sim__timeline__control`, `sim__ui`, `sim__viewport__frame` |
-| `assets`: Import and manage assets | off | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
-| `real2sim`: RoboSimStudio real-to-sim and MuJoCo sysid | off | `robosim`, `sysid` |
-| `lab`: Isaac Lab and script jobs | off | `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `run_script` |
-| `ros2`: ROS 2 TF, graphs and occupancy maps | off | `sim__graph`, `sim__map__occupancy`, `sim__ros2__tf_setup` |
-| `workcell`: UR5e work cell | off | `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
-| `cad`: PCB checks, fab files, renders | off | `hardware` |
-| `planning`: Graph-as-Policy skill graphs | off | `gap` |
-| `eval`: VABAR benchmark | off | `vabar` |
-| `input`: Desktop mouse and keyboard | explicit only | `computer` |
-| `launch`: Start and stop simulators | explicit only | `sim__session` |
-| `extensions`: Tools of uncatalogued Kit extensions | off | none |
+| Group | Default | What it holds | Listed tools |
+|---|---|---|---|
+| **`core`** | always on | Connection, discovery, help, jobs and toolsets | `help`, `jobs`, `refresh_tools`, `status`, `toolsets`, `use_bridge` |
+| **`computer`** | explicit only | Screen, windows, recordings, mouse and keyboard, simulator processes | `computer`, `doctor`, `join_videos`, `screen_recording`, `screenshot`, `simulators`, `windows` |
+| **`sim`** | off | Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs | `files`, `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `reload_tools`, `run_python`, `run_script`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__graph`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__occupancy_map`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__ros2_tf`, `sim__simulation`, `sim__stage`, `sim__timeline`, `sim__ui`, `sim__viewport`, `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
+| **`assets`** | off | Import and manage assets | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
+| **`cad`** | off | PCB checks, fab files, renders | `hardware` |
+| **`real2sim`** | off | RoboSimStudio real-to-sim and MuJoCo sysid | `robosim`, `sysid` |
+| **`planning`** | off | Graph-as-Policy skill graphs | `gap` |
+| **`eval`** | off | VABAR benchmark | `vabar` |
 <!-- /generated -->
 
 - `core` is always on and cannot be turned off. It is the only toolset on by default: name the others you want.
-- `input` and `launch` are never part of a profile, not even `all`. Name them to get them (`+input`, `+launch`).
-- `screen` and `input` are not specific to Isaac Sim: `screenshot`, `windows`, `doctor` and `computer` work on any X11 window
-  (FreeCAD, RViz 2, a browser), so they carry no `sim__` prefix. `sim__ui` and `sim__logs` (in `sim`) need Kit. The
-  [computer use workflow](TOOLS-HOST.md#computer-use-workflow) covers both.
-- `extensions` carries the tools that a project's own Kit extension registers under a namespace this repository does not
-  catalogue. It lists nothing until such an extension connects.
-- `sim` holds everything that runs inside Kit on any scene: the stage, prims, physics, joints, sensors, code in Kit
-  (`run_python`, `files`, `reload_tools`, `sim__controller`) and Kit's own log and UI.
-- `lab` holds the Isaac Lab tools and `run_script`, which runs any script as a host job.
-- `workcell` is the lab's UR5e work cell; see its [README](../exts/workcell/workcell/README.md).
+- `computer` is the desktop and its processes: screenshots, recordings, windows, mouse and keyboard (`computer`), the
+  desktop readiness check (`doctor`), joining clips (`join_videos`) and the simulators this server starts and stops
+  (`simulators`). It is **explicit only**: never part of a profile, not even `all`, and never enabled at run time. Name it
+  at startup to get it (`+computer`). Its tools are not specific to Isaac Sim: `screenshot`, `windows`, `doctor` and
+  `computer` work on any X11 window (FreeCAD, RViz 2, a browser), so they carry no `sim__` prefix. The
+  [computer use workflow](TOOLS-HOST.md#computer-use-workflow) covers them with `sim__ui`.
+- `sim` holds everything for Isaac Sim and Isaac Lab: the stage, prims, physics, joints, sensors, code in Kit
+  (`run_python`, `files`, `reload_tools`, `sim__controller`), Kit's own log and UI, simulator-side ROS 2 (`sim__ros2_tf`,
+  `sim__graph`, `sim__occupancy_map`), the lab's UR5e work cell (`workcell__*`, see its
+  [README](../exts/workcell/workcell/README.md)), Isaac Lab jobs (`isaaclab__*`) and `run_script`, which runs any script as a
+  host job. It also lists the tools a project's own Kit extension registers under a namespace this repository does not
+  catalogue, once that extension connects.
 - `real2sim` holds two grouped tools, each running in its own Python environment and needing no Kit bridge: `robosim`
   runs RoboSimStudio ([ROBOSIM.md](ROBOSIM.md)) and `sysid` fits model parameters with MuJoCo ([SYSID.md](SYSID.md)).
 - `cad` holds `hardware`: KiCad checks, fab files and renders from the tools beside twinsmith (KiCad, KiKit, Blender);
@@ -67,10 +63,10 @@ A source that does not mention toolsets leaves the choice from the sources befor
 
 ```toml
 [tools]
-toolsets = ["default", "+lab"]
+toolsets = ["default", "+sim"]
 ```
 
-In the environment and on the command line it is one comma-separated string, `default,+lab`.
+In the environment and on the command line it is one comma-separated string, `default,+sim`.
 
 ### Syntax
 
@@ -81,42 +77,43 @@ The list starts from a profile and adjusts it, left to right:
 - `-name` removes one.
 - `core` is always on, so a list that names no profile starts from `core` alone.
 
-An unknown name, or `-core`, stops the server at startup and lists the valid names. The toolset names of 0.3
-(`scene`, `physics`, `sensors`, `code`, `kit_debug`, `robosim`) and the `minimal` profile are unknown names now; see
-[earlier toolset names](#earlier-toolset-names). The choice is read once, when the
+An unknown name, or `-core`, stops the server at startup and lists the valid names. Earlier toolset names (`screen`,
+`input`, `launch`, `lab`, `ros2`, `workcell`, `extensions`, and before them `scene`, `physics`, `sensors`, `code`,
+`kit_debug`, `robosim`) and the `minimal` profile are unknown names now; see [renamed toolsets](#renamed-toolsets). The choice is read once, when the
 server starts: after changing a file or variable, restart the MCP server (your client's reconnect or restart action).
 
 Three worked examples:
 
-1. **Scene work.** The simulator tools, asset import and desktop capture.
+1. **Scene work.** The simulator tools and asset import.
 
    ```toml
    [tools]
-   toolsets = ["default", "+sim", "+assets", "+screen"]
+   toolsets = ["default", "+sim", "+assets"]
    ```
 
-2. **The work cell.** The simulator tools and the work cell.
+2. **Scene work with the desktop.** The same, plus screenshots, mouse and keyboard and simulator launch. Only a person
+   can make this choice, at startup.
 
    ```bash
-   TWINSMITH_TOOLSETS=default,+sim,+workcell twinsmith toolsets
+   TWINSMITH_TOOLSETS=default,+sim,+assets,+computer twinsmith toolsets
    ```
 
    `twinsmith toolsets` prints the result. In an MCP client's configuration the same value goes in the server's `env`.
 
-3. **Lab training only, with the smallest tool list.** Connection tools and Lab, with `run_script`.
+3. **Everything.** Every group, the desktop included.
 
    ```bash
-   twinsmith --toolsets default,+lab
+   twinsmith --toolsets all,+computer
    ```
 
-`twinsmith --toolsets default,+lab toolsets` prints the table for that choice without starting the server.
+`twinsmith --toolsets default,+sim toolsets` prints the table for that choice without starting the server.
 
 ### Profiles
 
 | Profile | Contains |
 |---|---|
 | `default` | `core` only |
-| `all` | every toolset except `input` and `launch` |
+| `all` | every toolset except `computer` |
 
 ### Size of the tool list
 
@@ -129,8 +126,8 @@ characters of what `tools/list` returns. Tokens are estimated as characters divi
 | Profile | Toolsets | Listed tools |
 |---|---|--:|
 | `default` | `core` | 6 |
-| `all` | `core`, `screen`, `sim`, `assets`, `real2sim`, `lab`, `ros2`, `workcell`, `cad`, `planning`, `eval`, `extensions` | 52 |
-| `all,+input,+launch` | `core`, `screen`, `sim`, `assets`, `real2sim`, `lab`, `ros2`, `workcell`, `cad`, `planning`, `eval`, `input`, `launch`, `extensions` | 54 |
+| `all` | `core`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 47 |
+| `all,+computer` | `core`, `computer`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 54 |
 <!-- /generated -->
 
 Measured on 2026-11-13. Each `default,+name` row is `core` plus that one toolset.
@@ -138,21 +135,16 @@ Measured on 2026-11-13. Each `default,+name` row is `core` plus that one toolset
 | Selection | Listed tools | Characters | Estimated tokens |
 |---|--:|--:|--:|
 | `default` | 6 | 6,346 | 1,586 |
-| `default,+sim` | 25 | 48,855 | 12,213 |
-| `default,+screen` | 11 | 14,244 | 3,561 |
+| `default,+computer` | 13 | 19,228 | 4,807 |
+| `default,+sim` | 37 | 71,505 | 17,876 |
 | `default,+assets` | 11 | 17,132 | 4,283 |
-| `default,+real2sim` | 8 | 12,203 | 3,050 |
 | `default,+cad` | 7 | 8,072 | 2,018 |
-| `default,+lab` | 11 | 18,247 | 4,561 |
-| `default,+ros2` | 9 | 14,130 | 3,532 |
-| `default,+workcell` | 10 | 9,103 | 2,275 |
-| `default,+input` | 7 | 9,575 | 2,393 |
-| `default,+launch` | 7 | 8,090 | 2,022 |
-| `default,+planning` | 7 | 7,916 | 1,979 |
+| `default,+real2sim` | 8 | 12,203 | 3,050 |
+| `default,+planning` | 7 | 7,926 | 1,981 |
 | `default,+eval` | 7 | 8,440 | 2,110 |
-| `default,+sim,+assets,+screen,+extensions` | 35 | 67,554 | 16,888 |
-| `all` | 52 | 101,243 | 25,310 |
-| `all,+input,+launch` | 54 | 106,216 | 26,554 |
+| `default,+sim,+assets` | 42 | 82,291 | 20,572 |
+| `all` | 47 | 93,548 | 23,387 |
+| `all,+computer` | 54 | 106,430 | 26,607 |
 
 Before toolsets existed the server always listed 48 tools, about 28,450 estimated tokens. The listed text is a summary:
 `action="help"` on a grouped tool and `help(tool="<name>")` return the full description. A test
@@ -181,13 +173,13 @@ The `toolsets` tool is in `core`, so it is always listed. Its actions:
 - `toolsets(action="enable", names=["sim"])` registers those toolsets' tools for the rest of this server process and
   tells the client the tool list changed. The result names the tools that became available. A client that loads tools
   lazily may need to look a new tool up by name before calling it.
-- `toolsets(action="disable", names=["screen"])` removes them again. `core` cannot be disabled.
+- `toolsets(action="disable", names=["sim"])` removes them again. `core` cannot be disabled.
 
 Rules the server enforces:
 
-- `input` and `launch` are never enabled this way. They let a client act on the desktop or start simulator processes, so
-  only a person can turn them on, in the configuration, before the server starts. A call that names one of them is refused
-  and changes nothing.
+- `computer` is never enabled this way. It lets a client see and act on the desktop and start simulator processes, so
+  only a person can turn it on, in the configuration, before the server starts. A call that names it is refused and
+  changes nothing.
 - A change made with this tool lasts until the server stops. It is not written to any file.
 - `[tools] runtime_enable = false` in a configuration file, or `TWINSMITH_RUNTIME_ENABLE=0`, turns `enable` and `disable`
   off; `list` still answers.
@@ -209,20 +201,30 @@ change, start the simulator read-only; see [limiting what a client can reach](MC
 
 The tool-selection variables of 0.2 are gone and nothing reads them. Use `TWINSMITH_TOOLSETS`.
 
-## Earlier toolset names
+## Renamed toolsets
 
-The toolsets became groups, and only `core` is on by default. Old toolset names are not kept as aliases: a configuration
-that names one stops the server at startup with the list of valid names. Rename them in `[tools] toolsets`,
-`TWINSMITH_TOOLSETS` and `--toolsets`:
+Old toolset names are not kept as aliases: a configuration that names one stops the server at startup with the list of
+valid names. Rename them in `[tools] toolsets`, `TWINSMITH_TOOLSETS` and `--toolsets`:
 
 | Before | Now |
 |---|---|
-| `scene`, `physics`, `sensors`, `kit_debug` | `sim` |
-| `code` | `sim` (`run_python`, `files`, `reload_tools`, `sim__controller`); `run_script` moved to `lab` |
+| `screen`, `input`, `launch` | `computer` (explicit only, as `input` and `launch` were). `screen` alone could be enabled at run time; `computer` cannot, and selecting it for screenshots also lists mouse and keyboard and simulator launch |
+| `lab`, `ros2`, `workcell`, `extensions` | `sim` |
+| `scene`, `physics`, `sensors`, `kit_debug`, `code` | `sim` |
 | `robosim` | `real2sim` (the tool keeps its name, `robosim`) |
-| `minimal` | `default`, which is now `core` alone |
-| `default` (on before: `core`, `scene`, `physics`, `sensors`, `assets`, `code`, `screen`, `extensions`) | `default,+sim,+assets,+screen,+extensions` lists the same tools plus `sim__ui` and `sim__logs`; `run_script` needs `+lab` |
+| `minimal` | `default`, which is `core` alone |
+| `[screen] cursor_badge` in `config.toml` | `[computer] cursor_badge` |
 | The work cell's `real2sim`, `planning` and `eval` status tools, which answered "not implemented" | Deleted, with no replacement tool |
 | The `planned` list in `status` and `twinsmith://toolsets` | Deleted |
 
-`core`, `assets`, `screen`, `lab`, `ros2`, `workcell`, `input`, `launch` and `extensions` keep their names.
+Renamed tools, also with no alias:
+
+| Before | Now |
+|---|---|
+| `sim__session` (`sim__launch`, `sim__list`, `sim__status`, `sim__stop`) | `simulators` (`launch_simulator`, `list_simulators`, `simulator_status`, `stop_simulator`) |
+| `sim__timeline__control` | `sim__timeline` |
+| `sim__viewport__frame` | `sim__viewport` |
+| `sim__ros2__tf_setup` | `sim__ros2_tf` |
+| `sim__map__occupancy` | `sim__occupancy_map` |
+
+`core`, `sim`, `assets`, `cad`, `real2sim`, `planning` and `eval` keep their names.

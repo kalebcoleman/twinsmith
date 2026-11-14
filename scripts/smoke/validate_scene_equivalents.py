@@ -197,10 +197,10 @@ async def validate(port, output, backend=None):
             await invoke(
                 "sim__controller__update", **t, path="/World/Controller", code=marker
             )
-            await invoke("sim__viewport__frame", **t, path="/World")
-            await invoke("sim__timeline__control", **t, action="play")
+            await invoke("sim__viewport", **t, path="/World")
+            await invoke("sim__timeline", **t, action="play")
             await asyncio.sleep(5)
-            await invoke("sim__timeline__control", **t, action="pause")
+            await invoke("sim__timeline", **t, action="pause")
             state = await invoke(
                 "sim__joints__state", **t, path="/World/Parent/Robot/Asset"
             )
@@ -256,20 +256,20 @@ async def validate(port, output, backend=None):
             # The near face of Visual at x=-.5 is 2.5 m from this sensor.
             assert any(abs(p[0] - 2.5) < 0.03 for p in lidar["points"]), lidar
             await invoke("sim__logs__tail", **t, limit=10)
-            await invoke("sim__timeline__control", **t, action="stop")
+            await invoke("sim__timeline", **t, action="stop")
             await invoke(
                 "sim__controller__update",
                 **t,
                 path="/World/Controller",
                 code=marker.replace("(0,0,1)", "(0,0,2)"),
             )
-            await invoke("sim__timeline__control", **t, action="play")
+            await invoke("sim__timeline", **t, action="play")
             await asyncio.sleep(0.5)
-            await invoke("sim__timeline__control", **t, action="pause")
+            await invoke("sim__timeline", **t, action="pause")
             assert (await invoke("sim__prim__get", **t, path="/World/Visual"))[
                 "world_position"
             ] == [0, 0, 2]
-            await invoke("sim__timeline__control", **t, action="stop")
+            await invoke("sim__timeline", **t, action="stop")
             saved = await invoke(
                 "sim__stage__save",
                 **t,

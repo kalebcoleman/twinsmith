@@ -244,7 +244,7 @@ class Extension(omni.ext.IExt):
             self._note_change("timeline", what, TIMELINE_TOOLS)
 
     async def _timeline_control(self, args):
-        """sim.timeline.control with its guards: settle a pending Stop before Play, the physics
+        """sim.timeline with its guards: settle a pending Stop before Play, the physics
         backend check and session-layer edit lease (in dispatch), the guarded native Stop, and
         restoring the edit target. Also used by tools that need physics to run briefly."""
         import asyncio
@@ -300,7 +300,7 @@ class Extension(omni.ext.IExt):
 
         if args.get("action") == "play" and self.scene.timeline.is_stopped():
             await settle_stop(kit_app.get_app().next_update_async, validate_stopped)
-        result = self.dispatch("sim.timeline.control", args)
+        result = self.dispatch("sim.timeline", args)
         # Await the ordinary frame, never recursively pump the app loop.
         await asyncio.wait_for(kit_app.get_app().next_update_async(), 5)
         self.scene.target(*timeline_target)
@@ -400,7 +400,7 @@ class Extension(omni.ext.IExt):
         ids = dict(session_id=args["session_id"], stage_id=args["stage_id"])
         stage = s.target(**ids)
         if not s.timeline.is_stopped():
-            refuse("TIMELINE_ACTIVE", "Stop the timeline first with sim__timeline__control action=stop; the tool "
+            refuse("TIMELINE_ACTIVE", "Stop the timeline first with sim__timeline action=stop; the tool "
                    "plays a few frames itself so robots are mapped at their start poses.",
                    before_retry=stop_call(**ids))
         validate_occupancy(s, stage, args)  # refuse bad arguments before anything plays
@@ -413,7 +413,7 @@ class Extension(omni.ext.IExt):
             await self._timeline_control({**ids, "action": "play"})
             for _ in range(8):
                 await kit_app.get_app().next_update_async()
-            result = self.dispatch("sim.map.occupancy", dict(args))
+            result = self.dispatch("sim.occupancy_map", dict(args))
         except (Exception, asyncio.CancelledError) as exc:
             try:
                 await stop()
@@ -430,7 +430,7 @@ class Extension(omni.ext.IExt):
         except Exception as stop_exc:  # the map exists: still return it, with the stop problem
             stopped = False
             result["stop_error"] = (f"{str(stop_exc)[:300]}; the timeline may still be playing. "
-                                    "Stop it with sim__timeline__control.")
+                                    "Stop it with sim__timeline.")
         result["timeline"] = ("played 8 frames for the physics scene" + (", then stopped" if stopped else "")
                               + ". While playing, OnPlaybackTick graphs ran: /clock restarted and ROS "
                               "publishers/controllers ticked.")
@@ -688,7 +688,7 @@ class Extension(omni.ext.IExt):
 
                         result = await straight(args, self.dispatch, self.scene.timeline.is_playing, self.scene.timeline.get_current_time,
                                                 kit_app.get_app().next_update_async)
-                    elif name == "sim.timeline.control":
+                    elif name == "sim.timeline":
                         result = await self._timeline_control(args)
                     elif name == "sim.simulation.run":
                         from .control_run import run as controller_run
@@ -698,7 +698,7 @@ class Extension(omni.ext.IExt):
                         from .replay import run as replay_run
 
                         result = await replay_run(self, args)
-                    elif name == "sim.map.occupancy":
+                    elif name == "sim.occupancy_map":
                         result = await self._occupancy_cycle(args)
                     else:
                         path, layout = args.get("path"), args.get("layout", False)
@@ -829,7 +829,7 @@ class Extension(omni.ext.IExt):
             "sim.camera.capture",
             "sim.lidar.create",
             "sim.lidar.read",
-        } or (name == "sim.timeline.control" and a.get("action") != "stop"):
+        } or (name == "sim.timeline" and a.get("action") != "stop"):
             s.require_runtime()
         if name == "sim.stage.info":
             result = s.stage_info()
@@ -859,7 +859,7 @@ class Extension(omni.ext.IExt):
         if (
             name in mutations
             or name in ("sim.simulation.step", "sim.joints.move")
-            or (name == "sim.timeline.control" and a.get("action") != "stop")
+            or (name == "sim.timeline" and a.get("action") != "stop")
         ):
             import omni.kit.app as kit_app
             from twinsmith.project_assets import refuse
@@ -991,7 +991,7 @@ class Extension(omni.ext.IExt):
                 a["path"] = body_path(a)
             if s.timeline.is_stopped():
                 refuse("PHYSICS_NOT_READY", "The timeline is stopped, so there is no runtime body state. Play "
-                       "(sim__timeline__control action=play) and let a few frames run; on Stop, robots return "
+                       "(sim__timeline action=play) and let a few frames run; on Stop, robots return "
                        "to their authored start pose.")
             from .physics import body_state
 
@@ -1013,7 +1013,7 @@ class Extension(omni.ext.IExt):
             if paths is not None:
                 return dict(bodies=[dict(read(p), path=p) for p in paths], time_s=s.timeline.get_current_time())
             return read(a["path"])
-        if name == "sim.timeline.control":
+        if name == "sim.timeline":
             from twinsmith.project_assets import refuse
 
             if a["action"] not in ("play", "pause", "stop"):
@@ -1044,7 +1044,7 @@ class Extension(omni.ext.IExt):
             if resume:
                 result["note"] = "Resumed without stopping. Physics writes where whoever started this timeline set it, not to the session layer, and scene edits stay refused until a stop."
             return result
-        if name == "sim.viewport.frame":
+        if name == "sim.viewport":
             from omni.kit.viewport.utility import (
                 get_active_viewport,
                 frame_viewport_selection,
@@ -1071,7 +1071,7 @@ class Extension(omni.ext.IExt):
             if plain and not a.get("path"):  # refuse before touching a running follow
                 refuse("INVALID_VALUE", "Give path to frame, or eye and target.")
             # Any other viewport call takes the camera back from a running follow.
-            self.follower.stop("replaced by a new sim.viewport.frame call")
+            self.follower.stop("replaced by a new sim.viewport call")
             viewport = get_active_viewport()
             if plain:
                 return {**frame(

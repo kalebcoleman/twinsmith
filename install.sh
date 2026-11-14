@@ -131,7 +131,7 @@ fi
 # Use an Isaac Sim that is already installed (a lab PC's, another environment's) instead of
 # downloading ~20 GB. Only the checkout's own .venv is re-synced without asking, because that is
 # this installer's environment. The interpreter found here is written into the client
-# configuration (TWINSMITH_SIM_PYTHON), so sim__launch/run.sh use it even from a shell where the
+# configuration (TWINSMITH_SIM_PYTHON), so launch_simulator/run.sh use it even from a shell where the
 # variables that found it (VIRTUAL_ENV, CONDA_PREFIX, ISAACSIM_PATH, ...) are not set.
 # --no-sim never downloads, so a failed look there is only a warning; it still records what it finds.
 SIM_PYTHON=""
@@ -188,7 +188,7 @@ PY
     IFS=$'\t' read -r SIM_PYTHON SIM_VERSION SIM_SOURCE <<<"$FOUND"
     echo "== using the Isaac Sim already installed: $SIM_PYTHON (Isaac Sim $SIM_VERSION, found via $SIM_SOURCE)"
     echo "   no download. Client configurations written by this installer get TWINSMITH_SIM_PYTHON=$SIM_PYTHON;"
-    echo "   for other clients, set it in their twinsmith entry so sim__launch uses this install."
+    echo "   for other clients, set it in their twinsmith entry so launch_simulator uses this install."
     echo "   Pass --download-sim to install the locked 6.2 environment instead."
     case "$SIM_VERSION" in
       6.2*) ;;
@@ -209,7 +209,7 @@ PY
 fi
 
 if [ "$NO_SIM" = 1 ] && [ -z "$SIM_PYTHON" ]; then
-  echo "== --no-sim: no Isaac Sim 6.x found to record. sim__launch/run.sh look again when they start. If yours is only reachable"
+  echo "== --no-sim: no Isaac Sim 6.x found to record. launch_simulator/run.sh look again when they start. If yours is only reachable"
   echo "   through shell variables (an activated venv/conda env, ISAACSIM_PATH), put TWINSMITH_SIM_PYTHON in the client's twinsmith entry."
 fi
 

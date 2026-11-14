@@ -116,7 +116,7 @@ def test_batch_maps_every_point_before_input(batch):
 
 
 def test_computer_batch_is_reachable_and_typed_through_the_group(batch, tmp_path):
-    server = gw.build_server({"TWINSMITH_TOOLSETS": "default,+input", "TWINSMITH_SIM_SESSIONS_DIR": str(tmp_path)})
+    server = gw.build_server({"TWINSMITH_TOOLSETS": "default,+computer", "TWINSMITH_SIM_SESSIONS_DIR": str(tmp_path)})
 
     async def run():
         async with create_connected_server_and_client_session(server._mcp_server) as client:

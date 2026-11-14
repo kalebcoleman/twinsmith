@@ -80,12 +80,12 @@ def world(monkeypatch, tmp_path):
 OFFLINE = {gw._mcp_name(canonical) for canonical in host_catalog.catalog_tool_names()}
 
 
-def build(groups="default,+extensions"):
+def build(groups="default,+sim"):
     return gw.build_server({"TWINSMITH_TOOLSETS": groups})
 
 
 def bridge_names(server):
-    return {t.name for t in asyncio.run(server.list_tools())} - set(gw.build_server({"TWINSMITH_TOOLSETS": "all,+input,+launch"})._tool_manager._tools) - OFFLINE
+    return {t.name for t in asyncio.run(server.list_tools())} - set(gw.build_server({"TWINSMITH_TOOLSETS": "all,+computer"})._tool_manager._tools) - OFFLINE
 
 
 def session(server, notifications=None):
@@ -97,7 +97,7 @@ def session(server, notifications=None):
 
 
 async def listed(client):
-    return {t.name for t in (await client.list_tools()).tools} - set(gw.build_server({"TWINSMITH_TOOLSETS": "all,+input,+launch"})._tool_manager._tools) - OFFLINE
+    return {t.name for t in (await client.list_tools()).tools} - set(gw.build_server({"TWINSMITH_TOOLSETS": "all,+computer"})._tool_manager._tools) - OFFLINE
 
 
 def test_each_server_has_its_own_state_and_the_default_uses_the_module_state():

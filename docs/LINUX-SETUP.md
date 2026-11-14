@@ -224,7 +224,7 @@ connection and generic scene work require neither.
 | `twinsmith` not found | Add the uv tool bin directory to PATH, or use its absolute executable path in the client; keep the editable checkout available |
 | Interpreter missing | Run `python3 scripts/env.py find`, select a compatible `TWINSMITH_SIM_PYTHON`, or install in the new checkout; do not overwrite an unrelated environment |
 | `uv pip check` fails | Record exact versions and conflicts. Use a new isolated locked environment for comparison; do not infer a native failure's cause from metadata alone |
-| Only `status`, `help` and the other `core` tools are listed | Only `core` is on by default. Add `+sim` (and `+assets`, `+screen` as needed) to `[tools] toolsets` or `TWINSMITH_TOOLSETS` and restart the server, or call `toolsets(action="enable", names=["sim"])`; see [toolsets](TOOLSETS.md#choosing-toolsets) |
+| Only `status`, `help` and the other `core` tools are listed | Only `core` is on by default. Add `+sim` (and `+assets`, `+computer` as needed) to `[tools] toolsets` or `TWINSMITH_TOOLSETS` and restart the server, or call `toolsets(action="enable", names=["sim"])` (not for `computer`, which is selected only at startup); see [toolsets](TOOLSETS.md#choosing-toolsets) |
 | Tools are listed but runtime calls fail | Catalogs can be offline. Check the advertised bridge, `refresh_tools`, the [toolsets](TOOLSETS.md) and the selected endpoint |
 | Port already in use / multiple bridges | Verify PID/host/port; reuse the intended bridge or select an unused port for an authorized new session |
 | Startup still busy / `NOT_READY` | Inspect startup logs and stage readiness. Camera cache is unseeded until a successful tool capture; ordinary Play does not seed it |
@@ -234,7 +234,7 @@ connection and generic scene work require neither.
 | `No asset root: ...` | Set `TWINSMITH_ASSET_ROOT`, or create `<workspace>/assets` |
 | `No module named 'Xlib'` when starting the MCP host | You ran the host with Isaac Sim's Python. It has its own dependencies: use the installed `twinsmith`, or `cd mcp && uv run --locked --isolated ...` |
 | `ModuleNotFoundError: No module named 'mcp'` from a helper script | Scene helpers need the MCP SDK, and the validators `pxr` and `numpy`: `uv run --locked --isolated --project mcp --extra scene-test --python 3.12 python scripts/<name>` from the checkout root. Do not use plain `uv run` in the root |
-| `PHYSICS_NOT_READY` from a joint tool | Pass the articulation root, not the robot's parent Xform; `sim__ros2__tf_setup` reports it. See the [typical session](TOOLS-SCENE.md#a-typical-session) |
+| `PHYSICS_NOT_READY` from a joint tool | Pass the articulation root, not the robot's parent Xform; `sim__ros2_tf` reports it. See the [typical session](TOOLS-SCENE.md#a-typical-session) |
 | `/scan` missing after reopening a saved scene | Open it with `sim__stage(action="open")`, which repairs stale LiDAR products. See [saved LiDAR scenes](TOOLS-SCENE.md#saved-lidar-scenes-and-scan) |
 | `refresh_tools` selected another port | It found no bridge on the pinned port and one session this server launched. The result names it; verify with `status` |
 | `status` shows `host.stale: true` | This MCP server predates your `git pull`. Restart the MCP connection |
@@ -261,8 +261,8 @@ installer handles the dependencies below; they should not be mixed into a system
 For recordings, `install.sh` supplies an `ffmpeg` shim backed by the host's `imageio-ffmpeg` package, unless an
 existing `~/.local/bin/ffmpeg` is present. A working system `ffmpeg` can also be used. A windowed workflow needs
 an accessible display; host window and input controls were tested with X11/XWayland, not native Wayland.
-A headless Sim can still render sensor output but has no visible window to click or capture. Host screen tools have
-no mouse or keyboard control by default; the X11 input tools can be explicitly enabled as described in
+A headless Sim can still render sensor output but has no visible window to click or capture. The screen tools and
+the X11 mouse and keyboard tool are in the `computer` toolset, which the user selects at startup as described in
 [host tools](TOOLS-HOST.md#optional-desktop-input).
 
 If a Kit module or renderer extension appears missing, first check the selected Sim interpreter and the
@@ -273,8 +273,8 @@ into the host Python. The supplied launcher requests `twinsmith.bridge`, `sim-to
 
 ## Optional Lab, desktop controls and project assets
 
-**Isaac Lab** is a separate installation with its own version pairing and interpreter, and its tools are in the `lab` toolset,
-which is off by default: add `+lab` ([toolsets](TOOLSETS.md#choosing-toolsets)). Set
+**Isaac Lab** is a separate installation with its own version pairing and interpreter, and its tools are in the `sim` toolset,
+which is off by default: add `+sim` ([toolsets](TOOLSETS.md#choosing-toolsets)). Set
 `ISAACLAB_PYTHON=<workspace>/envs/lab-3.0/bin/python` and
 `ISAACLAB_ROOT=<workspace>/IsaacLab` (example locations; use your own) in the host/client environment, then call
 `isaaclab__inspect(action="install")` before launching jobs. Invalid explicit paths fail discovery; they do
@@ -290,9 +290,9 @@ or full-installer certification.
 A successful job launch is not a completed job: inspect status and logs. Jobs normally refuse
 alongside an active Kit bridge; coordinate GPU ownership instead of bypassing the guard by default.
 
-**Desktop input and managed sessions** are opt-in host groups. Set
-`TWINSMITH_TOOLSETS=all,+input,+launch` in the client server environment only
-when both are needed. Desktop input acts on a shared X11 session; verify window/PID first.
+**Screen capture, desktop input and managed sessions** are the explicit-only `computer` toolset. Set
+`TWINSMITH_TOOLSETS=all,+computer` in the client server environment only
+when they are needed; it cannot be enabled at run time. Desktop input acts on a shared X11 session; verify window/PID first.
 Managed launches require resource checks and distinct endpoints. See [host tools](TOOLS-HOST.md).
 
 **Your project assets** need an explicitly approved trusted folder and a host/Kit-accessible

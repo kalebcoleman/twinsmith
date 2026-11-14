@@ -8,7 +8,7 @@ Standard library only. Source ROS 2 with Nav2 first (scripts/ros_env.sh), so it 
 
 It only changes what Isaac's frames need: the robot's base frame (Nav2's defaults mix base_link and base_footprint, and
 the frame must exist in your tree), the footprint radius, and AMCL's starting pose, so that no one has to click 2D Pose
-Estimate in RViz. Use the frame sim__ros2__tf_setup reports as base_frame, with world_frame="".
+Estimate in RViz. Use the frame sim__ros2_tf reports as base_frame, with world_frame="".
 """
 
 import argparse

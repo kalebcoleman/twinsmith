@@ -372,7 +372,7 @@ simulation, screenshot, recording or contact-logging code, try it:
    bridge, what is running and the stage IDs, and says so when nothing is
    running. Do not repeat it before every call or after a context reset: a
    tool that hits a changed stage tells you.
-3. If nothing is up, start one with `sim__launch` (or `isaaclab__play` /
+3. If nothing is up, start one with `launch_simulator` (or `isaaclab__play` /
    `isaaclab__train` for Isaac Lab tasks) before falling back to scripts.
 4. Use it for what it already does:
    - `screenshot`, `start_screen_recording`, `stop_screen_recording`,

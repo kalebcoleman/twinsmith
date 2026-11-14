@@ -75,7 +75,7 @@ def ext(kit, scene):  # noqa: F811
     return extension
 
 
-# ---- sim.timeline.control action=reset ----
+# ---- sim.timeline action=reset ----
 
 @pytest.mark.anyio
 async def test_reset_cancels_this_pack_s_jobs_stops_the_follow_and_stops_the_timeline(ext, monkeypatch):
@@ -98,7 +98,7 @@ async def test_reset_cancels_this_pack_s_jobs_stops_the_follow_and_stops_the_tim
     sim_job = ext.bridge.jobs.start("sim.simulation.run", run)
     other = ext.bridge.jobs.start("run_python", run)
     ext.scene.timeline.mode = "play"
-    result = await ext.handler("sim.timeline.control")(**ext.ids, action="reset")
+    result = await ext.handler("sim.timeline")(**ext.ids, action="reset")
     assert result["status"] == "ok" and result["action"] == "reset" and result["was"] == "playing"
     assert result["stopped"] is True and result["playing"] is False and result["cancelled_jobs"] == [sim_job.id]
     assert result["viewport_follow_stopped"] is True and ext.follower.stopped == ["timeline reset"]
@@ -111,11 +111,11 @@ async def test_reset_cancels_this_pack_s_jobs_stops_the_follow_and_stops_the_tim
 @pytest.mark.anyio
 async def test_reset_is_safe_to_repeat_on_a_stopped_timeline_and_checks_the_target(ext):
     for _ in range(2):
-        result = await ext.handler("sim.timeline.control")(**ext.ids, action="reset")
+        result = await ext.handler("sim.timeline")(**ext.ids, action="reset")
         assert result["status"] == "ok" and result["was"] == "stopped" and result["cancelled_jobs"] == []
-    stale = await ext.handler("sim.timeline.control")(session_id=ext.ids["session_id"], stage_id="other", action="reset")
+    stale = await ext.handler("sim.timeline")(session_id=ext.ids["session_id"], stage_id="other", action="reset")
     assert stale["status"] == "error" and stale["code"] == "STALE_TARGET"
-    bad = await ext.handler("sim.timeline.control")(**ext.ids, action="reset", resume=True)
+    bad = await ext.handler("sim.timeline")(**ext.ids, action="reset", resume=True)
     assert bad["status"] == "error" and bad["code"] == "INVALID_VALUE"
 
 
@@ -186,7 +186,7 @@ async def test_body_state_says_when_the_picture_does_not_show_where_the_body_is(
     assert [("warnings" in body) for body in both["bodies"]] == [True, False]
 
 
-# ---- sim.viewport.frame: clean layout and caption ----
+# ---- sim.viewport: clean layout and caption ----
 
 class Frame:
     def __init__(self, log):
@@ -222,7 +222,7 @@ def ui(kit):
 
 @pytest.mark.anyio
 async def test_the_clean_layout_hides_the_ui_and_default_puts_back_what_was_there(ext, ui):
-    call = ext.handler("sim.viewport.frame")
+    call = ext.handler("sim.viewport")
     clean = await call(**ext.ids, layout="clean")
     assert clean["status"] == "ok" and clean["layout"] == "clean"
     assert ui.settings == {"/app/window/hideUi": True, "/app/viewport/grid/enabled": False, "/app/viewport/outline/enabled": False}
@@ -235,7 +235,7 @@ async def test_the_clean_layout_hides_the_ui_and_default_puts_back_what_was_ther
 
 @pytest.mark.anyio
 async def test_a_caption_is_drawn_over_the_viewport_and_an_empty_one_removes_it(ext, ui):
-    call = ext.handler("sim.viewport.frame")
+    call = ext.handler("sim.viewport")
     shown = await call(**ext.ids, caption="PhysX hover, kp=4")
     assert shown == {"status": "ok", "caption": "PhysX hover, kp=4"}
     assert ui.ui[:2] == [viewport.CAPTION_FRAME, "clear"] and ("label", "PhysX hover, kp=4") in ui.ui
@@ -252,5 +252,5 @@ async def test_a_caption_is_drawn_over_the_viewport_and_an_empty_one_removes_it(
 @pytest.mark.anyio
 async def test_a_headless_app_has_no_viewport_to_caption_and_says_what_to_use(ext, ui):
     ui.modules["omni.kit.viewport.utility"].get_active_viewport_window = lambda: None
-    refused = await ext.handler("sim.viewport.frame")(**ext.ids, caption="run 7")
+    refused = await ext.handler("sim.viewport")(**ext.ids, caption="run 7")
     assert refused["code"] == "NO_VIEWPORT" and "sim__trajectory__replay" in refused["message"]

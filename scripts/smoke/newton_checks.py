@@ -181,7 +181,7 @@ class Run:
     async def new_stage(self, **args):
         info = await self.invoke("sim__stage__info")
         if not info.get("stopped"):
-            await self.invoke("sim__timeline__control", session_id=info["session_id"], stage_id=info["stage_id"], action="stop")
+            await self.invoke("sim__timeline", session_id=info["session_id"], stage_id=info["stage_id"], action="stop")
         started = await self.invoke("sim__quick_start", discard_changes=True, **args)
         self.ids = {key: started[key] for key in ("session_id", "stage_id")}
         return started
@@ -194,7 +194,7 @@ class Run:
         return await self.tool("sim__simulation__step", steps=steps, **args)
 
     async def initialize(self):
-        await self.tool("sim__timeline__control", action="initialize")
+        await self.tool("sim__timeline", action="initialize")
 
 
 async def exact_steps(run, label):
@@ -250,7 +250,7 @@ async def scene_a(run):
     await run.check("exact_steps_default", default_steps)
 
     async def configured_steps():
-        await run.tool("sim__timeline__control", action="stop")
+        await run.tool("sim__timeline", action="stop")
         configured = await run.tool("sim__physics__configure", path=scene_path, gravity=[0, 0, -9.81], dt=1 / 120)
         need(abs(configured["dt"] - 1 / 120) < 1e-9, "configure did not take dt=1/120", configured=configured)
         await run.initialize()

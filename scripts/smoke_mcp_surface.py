@@ -20,13 +20,13 @@ import os
 import sys
 import time
 
-os.environ.setdefault("TWINSMITH_TOOLSETS", "all,+launch")
+os.environ.setdefault("TWINSMITH_TOOLSETS", "all,+computer")
 
 # Nothing listens on port 1 without root; a pin takes precedence over bridge discovery.
 OFFLINE_PORT = "1"
 OFFLINE_PLAN = [
     ("refresh_tools", {}), ("screen_info", {}), ("list_windows", {}),
-    ("screen_recording_status", {}), ("sim__list", {}),
+    ("screen_recording_status", {}), ("list_simulators", {}),
     ("isaaclab__install_info", {}), ("isaaclab__envs_list", {"filter": "Reach"}),
     ("isaaclab__runs_list", {}), ("isaaclab__checkpoints_list", {}),
     ("assets__roots", {}), ("assets__scan", {"root_id": "does-not-exist"}),

@@ -15,18 +15,18 @@ Use `.venv/bin/bricksim`, not `uv run`, so that nothing in its environment is ch
 
 ## Start a demo from an agent
 
-`demos/demo_assembly.py` builds its scene and then waits, paused, for Play. A plain `sim__timeline__control action=play` refuses with `TIMELINE_ALREADY_ACTIVE`, and its suggested stop would end the demo. Continue it with:
+`demos/demo_assembly.py` builds its scene and then waits, paused, for Play. A plain `sim__timeline action=play` refuses with `TIMELINE_ALREADY_ACTIVE`, and its suggested stop would end the demo. Continue it with:
 
 ```
 sim__stage action=info
-sim__timeline__control action=play resume=true
+sim__timeline action=play resume=true
 ```
 
 The arm then builds the structure by itself: all four bricks onto the baseplate, in about four minutes. Scene edits stay refused while it runs, because physics writes where the demo set it, not to the session layer.
 
 ## Toolsets to enable next to BrickSim
 
-Turn on `sim` (stage, prims, body state, contacts, raycast, joints, arm, cameras, `run_python`) and `screen` (screenshots and recordings): `TWINSMITH_TOOLSETS=default,+sim,+screen`. Add `lab` only to train a project task (see below), and leave `workcell` off. Choose them with [toolsets](TOOLSETS.md#choosing-toolsets).
+Turn on `sim` (stage, prims, body state, contacts, raycast, joints, arm, cameras, `run_python`, and the Isaac Lab tools used to train a project task, see below) and `computer` (screenshots and recordings; explicit-only, so it is selected at startup): `TWINSMITH_TOOLSETS=default,+sim,+computer`. `sim` also holds the work cell's tools; BrickSim does not need them. Choose them with [toolsets](TOOLSETS.md#choosing-toolsets).
 
 ## Which tools work on bricks
 
@@ -40,7 +40,7 @@ Bricks are under `/World/managed/Parts/Part_N`, and the arm is `/World/Robot`.
 | `sim__physics action=raycast` | Works |
 | `sim__joints action=state`, `sim__arm action=fk` on `/World/Robot` | Work; the FK self-check agreed with physics to 2e-7 m |
 | `sim__camera action=list`, `screenshot`, `screen_recording` | Work |
-| `sim__viewport__frame path=/World/LegoWorkspace` | Refused: that mesh is not a framing target. Give `eye` and `target` |
+| `sim__viewport path=/World/LegoWorkspace` | Refused: that mesh is not a framing target. Give `eye` and `target` |
 | `sim__arm action=ik move=true`, `sim__joints action=command` | Do not use while a demo runs: its own controller is commanding the arm |
 
 These tools see rigid bodies and physics contacts. `sim__physics action=contacts` does not report which bricks are connected by studs, because that is BrickSim's own model and not a physics contact. Read it from its Python API with `run_python`, which runs code inside Kit: `bricksim.core.get_assembled_connections()` and `are_parts_connected()`. A tester with no other help got each brick's position and the connection graph this way.

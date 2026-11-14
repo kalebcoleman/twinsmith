@@ -183,7 +183,7 @@ class JointTools:
             refuse(
                 "PHYSICS_NOT_READY",
                 "The timeline is stopped: play first." if s.timeline.is_stopped() else
-                f"{p} is not an articulation root. sim__physics__inspect lists them, or sim__ros2__tf_setup reports it.",
+                f"{p} is not an articulation root. sim__physics__inspect lists them, or sim__ros2_tf reports it.",
             )
         sm = self.physics_manager()
         from .physics import array as observed, runtime_vector, view_for
@@ -440,7 +440,7 @@ class JointTools:
         if s.timeline.is_stopped() or s.timeline.is_playing():
             refuse(
                 "PHYSICS_NOT_READY",
-                "Pause an initialized simulation first: from a stopped timeline, sim__timeline__control "
+                "Pause an initialized simulation first: from a stopped timeline, sim__timeline "
                 "action=play and then action=pause. Move does not initialize by playing or pumping frames.",
             )
         s.check_runtime_edit(stage)

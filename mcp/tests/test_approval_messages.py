@@ -105,7 +105,7 @@ def test_no_warning_when_host_and_kit_agree():
 
 def test_a_kit_that_does_not_see_the_project_is_named():
     warnings = packs.environment_warnings(HOST, dict(HOST, project_file=None, asset_root="/other"))
-    assert any("project file" in w and "sim__launch" in w and "TWINSMITH_PROJECT" in w for w in warnings)
+    assert any("project file" in w and "launch_simulator" in w and "TWINSMITH_PROJECT" in w for w in warnings)
     assert any("asset root" in w and "TWINSMITH_ASSET_ROOT" in w for w in warnings)
 
 
