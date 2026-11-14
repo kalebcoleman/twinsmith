@@ -50,6 +50,8 @@ jobs:
         working-directory: mcp
         run: uv run --no-project --python 3.12 --with-editable '.[test,isaaclab]' --with 'mcp[cli]==1.22.0' pytest -q tests/test_packaging.py tests/test_toolsets.py tests/test_desktop_input.py tests/test_sim_sessions.py tests/test_screen_windows.py tests/test_check_docs.py tests/test_host_catalog_gateway.py tests/test_scene_gateway.py tests/test_project_assets.py tests/test_host_lock.py tests/test_cu_*.py
 
-      - name: Build wheel and sdist
-        working-directory: mcp
-        run: uv build
+  # The release build without a tag: sdist and wheel, version, `twine check`, a clean install.
+  # It never publishes; only release.yml does, on a v<version> tag.
+  package:
+    name: Package build and metadata
+    uses: ./.github/workflows/build-dist.yml

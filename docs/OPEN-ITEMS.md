@@ -118,7 +118,7 @@ matched the clip within the tool's tolerance. What it does not do yet:
 - [ ] Run the work-cell smoke once from the new workspace layout (`<home>/robotics-workspace` with `assets/`); the work cell's
   asset-root lookup for it is covered by unit tests only.
 - [ ] When a release is requested, review licensing and notices, name availability and PyPI installation using
-  [publishing](PUBLISHING.md) and [provenance](VENDORING.md). A release states the engine and Isaac Sim build it was qualified on.
+  [releasing](RELEASING.md) and [provenance](VENDORING.md). A release states the engine and Isaac Sim build it was qualified on.
 
 ## Robotics and learning
 

@@ -1,0 +1,84 @@
+# Builds the twinsmith sdist and wheel and checks them. It never publishes.
+#
+# ci.yml calls it on every push and pull request (no tag): the files must build, carry the
+# version in mcp/pyproject.toml, pass `twine check --strict` and install into a clean environment.
+# release.yml calls it with the pushed tag: the tag must also be v<version>, its commit must be on
+# main, and the checked files are uploaded as the `dist` artifact that the publish job uploads to PyPI.
+# See docs/RELEASING.md.
+name: Build distributions
+
+on:
+  workflow_call:
+    inputs:
+      release-tag:
+        description: The pushed v<version> tag; empty for a check build.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and check sdist and wheel
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ inputs.release-tag }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          # A release needs main's history to show that the tagged commit is on main.
+          fetch-depth: ${{ inputs.release-tag == '' && 1 || 0 }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check every copy of the version
+        run: python3 scripts/version.py check
+
+      - name: Check the tag matches the package version
+        if: inputs.release-tag != ''
+        run: python3 scripts/version.py check --tag "$RELEASE_TAG"
+
+      - name: Check the tagged commit is on main
+        if: inputs.release-tag != ''
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$RELEASE_TAG points at $GITHUB_SHA, which is not on main. Tag a commit of main (docs/RELEASING.md)."
+            exit 1
+          fi
+
+      # --no-sources: build only from what PyPI users get, never from [tool.uv.sources].
+      # uv builds the sdist first and the wheel from it, so a file missing from the sdist fails here.
+      - name: Build sdist and wheel
+        working-directory: mcp
+        run: uv build --no-sources --out-dir dist
+
+      - name: Check the files carry the version
+        run: python3 scripts/version.py check --dist mcp/dist
+
+      # The twine that release.yml's publish action bundles; it reads Metadata-Version 2.5 (hatchling >= 1.28).
+      - name: Check package metadata
+        run: uvx --from 'twine==7.0.0' twine check --strict mcp/dist/*
+
+      - name: Install the wheel into a clean environment and run it
+        run: |
+          expected="twinsmith $(python3 scripts/version.py)"
+          wheel=$(ls mcp/dist/*.whl)
+          found=$(uv run --isolated --no-project --python 3.12 --with "$wheel" -- twinsmith --version)
+          echo "$found"
+          if [ "$found" != "$expected" ]; then
+            echo "::error::the installed wheel reports '$found', expected '$expected'"
+            exit 1
+          fi
+
+      - name: Keep the checked files for the publish job
+        if: inputs.release-tag != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: mcp/dist/
+          if-no-files-found: error
+          retention-days: 30

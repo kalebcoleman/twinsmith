@@ -45,6 +45,12 @@ mesh = [
     "numpy",
 ]
 
+[project.urls]
+Homepage = "https://github.com/kalebcoleman/twinsmith"
+Documentation = "https://github.com/kalebcoleman/twinsmith/blob/main/docs/README.md"
+Issues = "https://github.com/kalebcoleman/twinsmith/issues"
+Releasing = "https://github.com/kalebcoleman/twinsmith/blob/main/docs/RELEASING.md"
+
 # LLM-facing MCP server entry point (the TCP client to the Kit bridge).
 # The Kit-side socket server lives in exts/twinsmith.bridge/ and is loaded by Kit, not pip.
 [project.scripts]
@@ -59,7 +65,9 @@ twinsmith = "twinsmith.server:main"
 prerelease = "if-necessary"
 
 [build-system]
-requires = ["hatchling"]
+# Pinned so that a pull request's package check builds what a release publishes. Hatchling 1.33 writes
+# Metadata-Version 2.5, which needs twine >= 7 (docs/RELEASING.md); update the pins together.
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
