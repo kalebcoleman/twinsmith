@@ -1,0 +1,2 @@
+bom_id,area,item,model,quantity,unit,asset_id,unit_price,currency,price_status,price_source,hardware_status,source,notes
+jenga_block,jenga,Wooden Jenga block,72 x 24 x 14 mm wood block,1,each,jenga_block,,USD,quote_required,,confirmed,One block of the Jenga set,A single block from the same set as the tower; actual tolerances mass and friction await measurements

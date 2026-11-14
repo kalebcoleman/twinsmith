@@ -93,17 +93,38 @@ def _layers(config):
     return layers
 
 
+def _poses(config):
+    """Loose blocks lying flat, ``[[x, y, yaw_deg], ...]``, for a task that is not a tower; None for a tower."""
+    settings = config["jenga"]
+    poses = settings.get("block_poses")
+    if poses is None:
+        return None
+    if "tower_layers_built" in settings or "tower_xy_m" in settings:
+        raise ValueError("jenga.block_poses and a tower (tower_layers_built, tower_xy_m) cannot both be given")
+    if not isinstance(poses, list) or not 1 <= len(poses) <= 54 or not all(
+            isinstance(pose, list) and len(pose) == 3 for pose in poses):
+        raise ValueError("jenga.block_poses must be 1 to 54 [x, y, yaw_deg] entries")
+    return [[_number(value, "jenga.block_poses") for value in pose] for pose in poses]
+
+
+def block_count(config):
+    poses = _poses(config)
+    return len(poses) if poses is not None else _layers(config) * 3
+
+
 def realize(config, profile=None, seed=None):
     """Validate and sample the whole tower without USD imports or stage edits."""
     settings = config["jenga"]
-    layers = _layers(config)
+    poses = _poses(config)
+    layers = 0 if poses is not None else _layers(config)
     _distribution({"distribution": "constant", "value": settings["block_mass_kg"]},
                   "block_mass_kg", 0, _FLOAT_MAX, positive=True)
     if tuple(settings["block_size_m"]) != NOMINAL_SIZE_M:
         raise ValueError("jenga.block_size_m must be nominal 72 x 24 x 14 mm")
-    if len(settings["tower_xy_m"]) != 2:
-        raise ValueError("jenga.tower_xy_m must contain two finite coordinates")
-    center_x, center_y = [_number(value, "jenga.tower_xy_m") for value in settings["tower_xy_m"]]
+    if poses is None:
+        if len(settings["tower_xy_m"]) != 2:
+            raise ValueError("jenga.tower_xy_m must contain two finite coordinates")
+        center_x, center_y = [_number(value, "jenga.tower_xy_m") for value in settings["tower_xy_m"]]
     profile = settings.get("variation_profile") if profile is None else profile
     seed = settings.get("variation_seed") if seed is None else seed
     if seed is not None and type(seed) is not int:
@@ -136,7 +157,7 @@ def realize(config, profile=None, seed=None):
         raise ValueError("Friction distributions cannot satisfy dynamic <= static")
     rng = random.Random(0 if seed is None else seed)
     blocks = []
-    for index in range(layers * 3):
+    for index in range(block_count(config)):
         try:
             mass = _draw(rng, distributions["mass_kg"])
             for _ in range(MAX_SAMPLE_ATTEMPTS):
@@ -157,6 +178,8 @@ def realize(config, profile=None, seed=None):
                        "layer": index // 3, "slot": index % 3, "mass_kg": mass,
                        "static_friction": static, "dynamic_friction": dynamic,
                        "size_m": size, "size_tolerance_m": offsets})
+    for block, pose in zip(blocks, poses or ()):
+        block.update(layer=0, slot=0, position_m=[pose[0], pose[1], block["size_m"][2] / 2], rotation_z_deg=pose[2])
     bottom = 0.0
     for layer in range(layers):
         row = blocks[layer * 3:layer * 3 + 3]
@@ -248,7 +271,7 @@ def build(stage, asset, config, profile=None, seed=None):
         UsdShade.MaterialBindingAPI.Apply(root.GetPrim()).Bind(
             material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics")
         parts.append({"prim_path": path, "asset_id": asset_id, "bom_id": "jenga_block"})
-    report.update(parts=parts, layers=config["jenga"]["tower_layers_built"], block_count=len(parts),
+    report.update(parts=parts, layers=config["jenga"].get("tower_layers_built", 0), block_count=len(parts),
                   block_size_m=list(config["jenga"]["block_size_m"]), block_mass_kg=config["jenga"]["block_mass_kg"],
                   limitations=["Distribution parameters are inputs, not measured calibration or provenance.",
                                "Block dimensions, mass, convex-hull collision and friction require physical validation.",
@@ -262,7 +285,7 @@ def reset(stage, config):
     """Reset authored block poses on a stopped timeline; caller controls the timeline."""
     from pxr import Gf, UsdGeom
 
-    count = _layers(config) * 3
+    count = block_count(config)
     tower = stage.GetPrimAtPath("/World/Jenga")
     if not tower or tower.GetAttribute("jenga:blockCount").Get() != count:
         raise ValueError("Jenga tower does not match the configuration or lacks realized reset metadata")

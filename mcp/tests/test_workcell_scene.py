@@ -139,13 +139,11 @@ def test_a_malformed_bench_top_never_mutates_stage(modules, monkeypatch, tmp_pat
         asyncio.run(scene.Workcell().quick_start())
 
 
-def test_bad_variation_never_reaches_pack_or_stage(modules, monkeypatch, tmp_path):
+def test_unknown_task_never_reaches_the_stage(modules, monkeypatch, tmp_path):
     scene, _ = modules
-    values = config(scene)
-    values["jenga"]["variation_profile"] = "missing"
-    install_contracts(monkeypatch, scene, tmp_path, values)
-    with pytest.raises(ValueError, match="profile"):
-        asyncio.run(scene.Workcell().quick_start())
+    install_contracts(monkeypatch, scene, tmp_path, config(scene))
+    with pytest.raises(ValueError, match="Unknown task"):
+        asyncio.run(scene.Workcell().quick_start(task="no_such_task"))
 
 
 def test_bom_path_is_relative_to_configuration(modules, monkeypatch, tmp_path):
@@ -154,15 +152,12 @@ def test_bom_path_is_relative_to_configuration(modules, monkeypatch, tmp_path):
     values["documentation"] = {"bom_csv": "../parts.csv"}
     bom = types.ModuleType("workcell_test.bom")
     seen = []
-    rows = [{"asset_id": "jenga_block", "quantity": 54}]
+    rows = [{"asset_id": "robot", "quantity": 1}]
     bom.load_bom = lambda path: seen.append(path.resolve()) or rows
     bom.verify_config_assets = lambda *args: None
     monkeypatch.setitem(sys.modules, bom.__name__, bom)
     assert scene._bom_rows(values, tmp_path / "config/cell.json") == rows
     assert seen == [tmp_path / "parts.csv"]
-    values["jenga"]["tower_layers_built"] = 17
-    with pytest.raises(ValueError, match="quantity"):
-        scene._bom_rows(values, tmp_path / "config/cell.json")
 
 
 @pytest.mark.parametrize("condition,message", [
@@ -175,7 +170,7 @@ def test_rebuild_refuses_unsafe_runtime(modules, monkeypatch, condition, message
     cell = scene.Workcell()
     if condition != "idle":
         cell._runtime = (stage, config(scene), {}, [])
-        cell._report = {"state": "ready", "parts": []}
+        cell._report = {"state": "ready", "parts": [], "jenga": {}}
     omni = types.ModuleType("omni")
     omni.__path__ = []
     usd = types.ModuleType("omni.usd")
@@ -387,3 +382,15 @@ def test_bench_keeps_its_own_collision_layer_and_else_gets_triangle_meshes(modul
 
     with pytest.raises(ValueError):
         scene.bench_colliders(Usd.Stage.CreateInMemory())
+
+
+def test_scene_rows_leave_out_the_overhead_hardware_when_it_is_off(modules):
+    scene, _ = modules
+    roles = ("robot", "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf")
+    rows = [{"bom_id": role, "asset_id": role, "quantity": 2 if role == "d415" else 1} for role in roles]
+    config = {"assets": {role: role for role in roles}, "overhead_camera": {"enabled": True}}
+    assert scene.scene_rows(config, rows) == rows
+    config["overhead_camera"]["enabled"] = False
+    assert {row["bom_id"]: row["quantity"] for row in scene.scene_rows(config, rows)} == {
+        "robot": 1, "d415": 1, "wrist_mount": 1}
+    assert rows[1]["quantity"] == 2     # the BOM rows themselves are not changed

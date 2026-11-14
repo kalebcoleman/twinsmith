@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "description": "Task pack: one loose Jenga block for the RG2 to push. Loaded on top of the base cell with quick_start task=push_block.",
+  "pack": {
+    "id": {
+      "value": "jenga",
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: task assets are packs of their own, loaded on top of the base cell. Built by scripts/workcell_split_packs.py."
+    },
+    "version": {
+      "value": "v1",
+      "status": "confirmed",
+      "source": "The 72 x 24 x 14 mm block from ur5e-jenga-workcell/v2, unchanged."
+    }
+  },
+  "assets": {
+    "jenga_block": {
+      "value": "jenga_block",
+      "status": "confirmed",
+      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
+    }
+  },
+  "jenga": {
+    "block_size_m": {
+      "value": [
+        0.072,
+        0.024,
+        0.014
+      ],
+      "status": "confirmed",
+      "source": "Kaleb work-cell requirement: 72 x 24 x 14 mm; verify physical tolerance separately."
+    },
+    "block_mass_kg": {
+      "value": 0.015,
+      "status": "unconfirmed",
+      "source": "Kaleb (~15 g); the fmb4 USDs author no mass (density default would give 24 g). Weigh a block."
+    },
+    "static_friction": {
+      "value": 0.3,
+      "status": "unconfirmed",
+      "source": "jenga-rl block material (0.30 static / 0.25 dynamic); calibration pending."
+    },
+    "dynamic_friction": {
+      "value": 0.25,
+      "status": "unconfirmed",
+      "source": "As above."
+    },
+    "block_poses": {
+      "value": [
+        [
+          0.05,
+          -0.42,
+          90.0
+        ]
+      ],
+      "status": "unconfirmed",
+      "source": "Demo layout, not a lab measurement: one block lying flat in the wrist camera's view from the survey pose, long axis across the push direction. [x, y, yaw_deg] on the bench in metres and degrees."
+    }
+  },
+  "documentation": {
+    "bom_csv": {
+      "value": "push_block.bom.csv",
+      "status": "confirmed",
+      "source": "BOM rows this task adds to the cell, next to this file."
+    }
+  }
+}
