@@ -85,3 +85,12 @@ def test_a_build_without_the_setting_is_untouched(monkeypatch):
     settings = FakeSettings()
     del settings.values[GRID]
     assert _during(_capture_module(monkeypatch, settings), False) == [] and settings.writes == []
+
+
+def test_a_paused_capture_publishes_newton_poses_before_it_renders():
+    """A camera adopted after the last physics step still has its build-time pose in Fabric: the first picture then
+    looks from the wrong place (seen live on Newton, 2026-11-14). The capture command syncs Fabric first, when paused."""
+    source = (ROOT / "exts/sim-tools/sim_tools/extension.py").read_text()
+    branch = source.split("if wait:\n                if not s.timeline.is_playing() and not s.timeline.is_stopped():", 1)
+    assert len(branch) == 2, "the paused branch of camera capture is gone"
+    assert branch[1].index("sync_fabric(s.stage())") < branch[1].index("await capture(entry[1], validate")

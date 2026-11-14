@@ -547,6 +547,10 @@ class Extension(omni.ext.IExt):
                 )
 
             if wait:
+                if not s.timeline.is_playing() and not s.timeline.is_stopped():
+                    # Paused on Newton: a camera adopted after the last step still has its build-time pose in Fabric.
+                    from .physics import sync_fabric
+                    sync_fabric(s.stage())
                 async with without_viewport_grid(s.timeline.is_playing(), omni.kit.app.get_app().next_update_async):
                     data, observation = await capture(entry[1], validate, context=context)
             else:
