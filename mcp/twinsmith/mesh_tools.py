@@ -111,6 +111,13 @@ def _run_direct(request: dict) -> dict:
     return result
 
 
+def stl_to_usd(stl: Path, dest: Path, *, scale: float = 0.001) -> dict:
+    """*stl* as a new USD file *dest* in metres, Z up (``mesh_usd.from_stl``), in a worker process. The caller has
+    checked both paths. Raises ``PackError`` (``MESH_EXTRA_MISSING`` without the mesh extra)."""
+    _require_extra()
+    return _run_direct(dict(action="from_stl", source=str(stl), output=str(dest), scale=scale))
+
+
 def run_tool(canonical: str, params: dict, broker) -> dict:
     try:
         root = pack_manifest.resolve_asset_root()

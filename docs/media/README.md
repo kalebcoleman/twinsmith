@@ -97,3 +97,12 @@ with **PhysX**, from the repository state at the time the README was written, on
   1,500 iterations, 6 environments. Cropped to the viewport, 8 fps, 40 to 48 colors. The full recordings are not in git.
 - Short run: 1,024 environments, seed 1, 152 s; evaluation 16 episodes, all 1,000 steps, mean return 13.3 (range 7.4 to 21.6).
   Longer run: seed 2, 727 s; mean return 34.4 (range 32.5 to 35.6). One run each, not a measurement of variation.
+
+## SolidCraft part in the work cell
+
+`solidcraft-bracket-workcell.png` is a headless `sim__camera` capture from 2026-11-14 (ASU PC, RTX PRO 6000, Isaac Sim
+6.2.0.0, **Newton** 1.6.1 at 500 Hz), scaled to 768 pixels wide. A wrist-camera bracket stub designed in SolidCraft 0.42.0
+went through `hardware(action="part")`, `assets__mesh` decimate and CoACD split, `assets__validate` and
+`assets__import_path`, then rested on the UR5e work cell's bench after one second of physics
+([HARDWARE.md](../HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)). One run, shown to illustrate the path; it is a
+stub, not the cell's real camera bracket.

@@ -77,6 +77,8 @@ def run(request: dict) -> dict:
     if action == "validate":
         return asset_rules.validate(source, request.get("engine", "newton"),
                                     triangle_budget=request.get("triangle_budget", asset_rules.TRIANGLE_BUDGET))
+    if action == "from_stl":
+        return mesh_usd.from_stl(source, Path(request["output"]), scale=request.get("scale", 0.001))
     if action not in ("decimate", "hulls", "split"):
         raise ValueError(f"unknown action {action!r}")
     out = Path(request["output"])

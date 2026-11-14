@@ -301,6 +301,10 @@ alongside an active Kit bridge; coordinate GPU ownership instead of bypassing th
 when they are needed; it cannot be enabled at run time. Desktop input acts on a shared X11 session; verify window/PID first.
 Managed launches require resource checks and distinct endpoints. See [host tools](TOOLS-HOST.md).
 
+**SolidCraft** (optional, for parametric parts): `scripts/install_solidcraft.sh --register` installs the pinned release
+in user space, checks its SHA-256 and adds the headless `solidcraft` MCP server to the clients it finds; `hardware(action="status")`
+reports its version. See [HARDWARE.md](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell).
+
 **Your project assets** need an explicitly approved trusted folder and a host/Kit-accessible
 staging/cache location. Approval can include a bounded project copy, not just one USD file.
 Loading native assets is not sandboxed. Use `assets__import_path` for generic project import.

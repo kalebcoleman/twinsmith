@@ -1,7 +1,8 @@
-"""``hardware`` (toolset ``cad``): the deterministic steps that turn KiCad and mesh files into checked outputs.
+"""``hardware`` (toolset ``cad``): the deterministic steps that turn KiCad, SolidCraft and mesh files into checked outputs.
 
-Authoring stays in the servers beside twinsmith (KiCad, FreeCAD, Blender, PlatformIO); see docs/HARDWARE.md. This
-runs ``kicad-cli`` checks, KiKit fab packages and a headless Blender render, nothing else. No action orders, quotes,
+Authoring stays in the servers beside twinsmith (KiCad, FreeCAD, SolidCraft, Blender, PlatformIO); see docs/HARDWARE.md.
+This runs ``kicad-cli`` checks, KiKit fab packages, a SolidCraft part rebuild (``solidcraft-cli run``) and a headless
+Blender render, nothing else. No action orders, quotes,
 uploads or flashes, and none has a network path; there is no ``extra_args``. Inputs must be inside a folder the user
 approved for asset import; outputs go to a new folder under ``<workspace>/runs/hardware`` and are never overwritten.
 """
@@ -31,7 +32,12 @@ MESHES = (".glb", ".gltf", ".stl")
 TEMPLATE = Path(__file__).with_name("hardware_render.py")
 # The tested pins of the servers beside twinsmith: (tag, commit).
 PINS = {"kicad-mcp": ("v2.9.0", "9dd467c"), "blender-mcp": ("v1.0.3", "2cea8d5"), "platformio-mcp": ("v3.1.0", "29d4900")}
-EXPECTED = {"kicad-cli": "10.0.", "kikit": "1.8.1", "blender": "5.2.", "freerouting": "2.5.0", "pio": "6.2."}
+EXPECTED = {"kicad-cli": "10.0.", "kikit": "1.8.1", "blender": "5.2.", "freerouting": "2.5.0", "pio": "6.2.",
+            "solidcraft-cli": "0.42."}
+# part: a design's user parameters as `parameters.change` steps. Names as SolidCraft writes them; values are numbers in the
+# parameter's own unit. At most this many per call.
+_PARAMETER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
+MAX_PARAMETERS = 32
 ENV_SET = {"FREEROUTING__USAGE_AND_DIAGNOSTIC_DATA__DISABLE_ANALYTICS": "true"}
 # Passed through the scrub: KiCad's own library and config locations and the locale. None of them holds a secret.
 _PASS = re.compile(r"^(KICAD\d*_(SYMBOL|FOOTPRINT|3DMODEL|TEMPLATE)_DIR|KICAD_CONFIG_HOME|XDG_CONFIG_HOME|LANG|LC_ALL)$")
@@ -97,7 +103,9 @@ class Hardware:
                 "blender": _executable(os.environ.get("TWINSMITH_BLENDER") or shutil.which("blender")),
                 "java": _executable(tools / "jre/current/bin/java"),
                 "freerouting": str(jars[-1]) if jars else None,
-                "pio": _executable(shutil.which("pio"))}
+                "pio": _executable(shutil.which("pio")),
+                "solidcraft-cli": _executable(os.environ.get("TWINSMITH_SOLIDCRAFT") or shutil.which("solidcraft-cli")
+                                              or tools / "solidcraft/current/bin/solidcraft-cli")}
 
     def version(self, name, path) -> str | None:
         if not path:
@@ -272,12 +280,108 @@ class Hardware:
                            "next": f'jobs(action="status", job_id="{job["job_id"]}", wait_s=30)'},
                 "versions": self._used("blender")}
 
+    def _part_output(self, output, name, default) -> Path:
+        if output is None:
+            return self._output(name, default)
+        if not isinstance(output, str) or not os.path.isabs(output):
+            raise Refused("INVALID_PATH", "output must be an absolute path.")
+        folder = Path(output)
+        if folder.exists() or folder.is_symlink():
+            raise Refused("OUTPUT_EXISTS", f"{folder} already exists; outputs are never overwritten. Pick another folder.")
+        parent = folder.parent.resolve()
+        if not _NAME.fullmatch(folder.name) or not any(parent.is_relative_to(root) for root in self.roots()):
+            from .project_assets import approval_help
+            raise Refused("ROOT_NOT_APPROVED", f"output must be a new folder (letters, digits, '.', '_', '-') inside a folder "
+                          f"approved for asset import, so the assets tools can read it; {folder} is not."
+                          + approval_help(parent))
+        return parent / folder.name
+
+    @staticmethod
+    def _design_parameters(cli, design: Path) -> dict:
+        """The design's user parameters, {name: {value, unit, expression}}, read with ``parameters.list``."""
+        with tempfile.TemporaryDirectory(prefix="twinsmith-part-") as folder:
+            script, answer = Path(folder) / "list.json", Path(folder) / "answer.json"
+            script.write_text(json.dumps({"commands": [{"command": "parameters.list", "params": {"filter": "user"}}]}))
+            done = sibling.run([cli, "run", script, "--in", design, "--results", "--quiet", "--json-out", answer],
+                               cwd=folder, timeout_s=300)
+            try:
+                listed = json.loads(answer.read_text(encoding="utf-8"))[0]["parameters"]
+            except (OSError, ValueError, LookupError, TypeError):
+                raise Refused("PART_FAILED", f"SolidCraft could not open {design.name} (exit {done['exit_code']}).",
+                              after_run=True, stderr=(done["stderr"] or done["stdout"]).strip()[-800:]) from None
+        return {item["name"]: {"value": item.get("value"), "unit": item.get("unit"), "expression": item.get("expression")}
+                for item in listed if item.get("source", "user") == "user"}
+
+    def part(self, design, parameters, name, output) -> dict:
+        design = self._input(design, (".sc",), "design")
+        parameters = dict(parameters or {})
+        if len(parameters) > MAX_PARAMETERS:
+            raise Refused("INVALID_VALUE", f"parameters takes at most {MAX_PARAMETERS} names.")
+        for key, value in parameters.items():
+            if not _PARAMETER.fullmatch(str(key)):
+                raise Refused("INVALID_VALUE", f"parameter name {key!r} is not a SolidCraft parameter name.")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value != value or abs(value) > 1e9:
+                raise Refused("INVALID_VALUE", f"parameter {key} must be a finite number in its own unit (mm, deg).")
+        cli = self._need("solidcraft-cli")
+        known = self._design_parameters(cli, design)
+        unknown = sorted(set(parameters) - set(known))
+        if unknown:   # parameters.change would quietly add them as new, unused parameters
+            raise Refused("UNKNOWN_PARAMETER", f"{design.name} has no user parameter {', '.join(unknown)}; it has "
+                          f"{', '.join(sorted(known)) or 'none'}.", parameters=known)
+        out = self._part_output(output, name, design.stem)
+        self._create(out)
+        script = out / "parameters.json"
+        script.write_text(json.dumps({"commands": [{"command": "parameters.change",
+                                                    "params": {"name": key, "expression": repr(float(value))}}
+                                                   for key, value in sorted(parameters.items())]}, indent=2) + "\n")
+        # The design itself is not copied: a .sc file is a zip, and a zip anywhere in an approved folder makes
+        # assets__import_path refuse the folder's snapshot (UNSUPPORTED_ARCHIVE). Its sha256 is in the answer instead.
+        steps = {"run": [cli, "run", script, "--in", design, "--out", out / "part.step", "--out", out / "part.stl", "--quiet"],
+                 "eval": [cli, "eval", script, "--in", design, "--json-out", out / "measure.json"],
+                 "snapshot": [cli, "snapshot", script, "--in", design, "--out", out / "preview.png", "--width", "1200",
+                              "--height", "900", "--view", "iso"]}
+        for step, argv in steps.items():
+            done = sibling.run(argv, cwd=out, timeout_s=600)
+            if done["exit_code"] != 0:
+                message = (done["stderr"] or done["stdout"]).strip()[-800:]
+                if step == "run":       # nothing was built: leave nothing behind
+                    shutil.rmtree(out, ignore_errors=True)
+                    raise Refused("PART_FAILED", f"solidcraft-cli run failed (exit {done['exit_code']}); nothing was "
+                                  "written. A feature that no longer builds with these values fails here.",
+                                  after_run=True, stderr=message)
+                raise Refused("PART_FAILED", f"{step} failed (exit {done['exit_code']}); partial output kept in {out}.",
+                              after_run=True, folder=str(out), stderr=message)
+        try:
+            measure = json.loads((out / "measure.json").read_text(encoding="utf-8"))
+            bodies = [{"name": body.get("name"), "volume_mm3": round(body.get("volume_mm3", 0.0), 3),
+                       "bbox_mm": body.get("bbox"), "closed": body.get("closed")} for body in measure.get("bodies") or []]
+        except (OSError, ValueError, TypeError, AttributeError):
+            raise Refused("PART_FAILED", f"measure.json is not what solidcraft-cli eval writes; partial output kept in {out}.",
+                          after_run=True, folder=str(out)) from None
+        warnings, usd = [], None
+        try:
+            from . import mesh_tools
+            usd = mesh_tools.stl_to_usd(out / "part.stl", out / "part.usda")
+        except Exception as error:  # noqa: BLE001 - the mesh extra is optional; STEP and STL stand on their own
+            warnings.append(f"part.usda was not written: {error}")
+        files = sorted(path.name for path in out.iterdir() if path.is_file())
+        changed = {key: {"from": known[key]["value"], "to": float(value), "unit": known[key]["unit"]}
+                   for key, value in sorted(parameters.items())}
+        result = {"folder": str(out), "files": files, "design": {"path": str(design), "sha256": _fingerprint(design)[0][3]},
+                  "parameters": changed, "bodies": bodies,
+                  "preview": str(out / "preview.png")}
+        if usd:
+            result["usd"] = {key: usd[key] for key in ("output", "prim", "triangles", "watertight", "size_m")}
+            result["next"] = (f'assets__mesh(action="split", source_path="{usd["output"]}", output=<new folder>, '
+                              'collision={"method": "coacd"}), then assets__validate and assets__import_path')
+        return {"result": result, "versions": self._used("solidcraft-cli"), "warnings": warnings}
+
     def _used(self, *names) -> dict:
         paths = self.paths()
         return {name: self.version(name, paths[name]) for name in names}
 
     def call(self, action, *, board=None, vendor="jlcpcb", inputs=None, name=None, width=1600,
-             height=1200, samples=128, allow_concurrent_gpu=False) -> dict:
+             height=1200, samples=128, allow_concurrent_gpu=False, design=None, parameters=None, output=None) -> dict:
         envelope = {"tool": "hardware", "action": action}
         try:
             if action == "status":
@@ -288,10 +392,13 @@ class Hardware:
                 done = self.fab(board, vendor, name)
             elif action == "render":
                 done = self.render(inputs, name, width, height, samples, allow_concurrent_gpu)
+            elif action == "part":
+                done = self.part(design, parameters, name, output)
             else:
-                raise Refused("INVALID_VALUE", "action is one of status, check, fab, render.")
+                raise Refused("INVALID_VALUE", "action is one of status, check, fab, render, part.")
         except Refused as refused:
-            return {"ok": False, **envelope, "versions": self._used("kicad-cli", "kikit") if refused.after_run else {},
+            used = ("solidcraft-cli",) if action == "part" else ("kicad-cli", "kikit")
+            return {"ok": False, **envelope, "versions": self._used(*used) if refused.after_run else {},
                     "error": {"code": refused.code, "message": str(refused), **refused.details}, "warnings": []}
         return {"ok": done.get("ok", True), **envelope, "versions": done["versions"], "result": done["result"],
                 "warnings": done.get("warnings", [])}
@@ -312,23 +419,28 @@ def register_hardware_tools(server, *, hardware=None):
     @server.tool(name="hardware", annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False))
     async def hardware(
-        action: Annotated[Literal["status", "check", "fab", "render"], Field(description="Action to perform.")],
+        action: Annotated[Literal["status", "check", "fab", "render", "part"], Field(description="Action to perform.")],
         board: Annotated[str | None, Field(description="check/fab: absolute .kicad_pcb path inside an approved folder.")] = None,
         vendor: Annotated[Literal["jlcpcb", "pcbway"], Field(description="fab: which fab house's file set KiKit writes. Nothing is sent to it.")] = "jlcpcb",
         inputs: Annotated[list[str] | None, Field(description="render: absolute .glb, .gltf or .stl paths (GLB in metres, STL in millimetres).")] = None,
-        name: Annotated[str | None, Field(description="fab/render: new folder name under <workspace>/runs/hardware; default a timestamp.")] = None,
+        name: Annotated[str | None, Field(description="fab/render/part: new folder name under <workspace>/runs/hardware; default a timestamp.")] = None,
         width: Annotated[int, Field(description="render: image width in pixels.", ge=64, le=7680)] = 1600,
         height: Annotated[int, Field(description="render: image height in pixels.", ge=64, le=4320)] = 1200,
         samples: Annotated[int, Field(description="render: Cycles samples per pixel.", ge=1, le=4096)] = 128,
         allow_concurrent_gpu: Annotated[bool, Field(description="render: knowingly start next to another GPU job or a running simulator.")] = False,
+        design: Annotated[str | None, Field(description="part: absolute SolidCraft .sc path inside an approved folder.")] = None,
+        parameters: Annotated[dict[str, float] | None, Field(description="part: user parameters to set first, {name: number in its unit}.")] = None,
+        output: Annotated[str | None, Field(description="part: new absolute folder inside an approved folder, instead of runs/hardware/<name>.")] = None,
     ) -> str:
         """PCB and enclosure outputs from tools beside twinsmith; no simulator. status: versions, pins, gaps. check: KiCad
         ERC and DRC counts (the board's own schematic). fab: check, then KiKit JLCPCB/PCBWay files, board.step and board.glb in a new folder; never
-        uploads or orders. render: a Blender job that uses the GPU (follow with jobs). Inputs in approved folders only.
+        uploads or orders. render: a Blender job that uses the GPU (follow with jobs). part: rebuild a SolidCraft design
+        with parameters; STEP, STL (mm), part.usda (m), measurements, preview. Inputs in approved folders only.
         """
         result = await asyncio.to_thread(hw.call, action, board=board, vendor=vendor, inputs=inputs,
                                          name=name, width=width, height=height, samples=samples,
-                                         allow_concurrent_gpu=allow_concurrent_gpu)
+                                         allow_concurrent_gpu=allow_concurrent_gpu, design=design,
+                                         parameters=parameters, output=output)
         return json.dumps(result)
 
     return hw
