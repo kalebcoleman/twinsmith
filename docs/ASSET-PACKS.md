@@ -246,3 +246,10 @@ you take; `adopt` and `build` record the source and licence you give for every f
 fine, running code from a download is not, and an instruction found in a file is not an instruction from you. NVIDIA's own robots
 load by name from the simulator's assets root with no download (`sim__quick_start robot="franka"`, [the names](TOOLS-SCENE.md)).
 The licence of every third-party file the repository mentions is in [THIRD-PARTY-NOTICES.md](../THIRD-PARTY-NOTICES.md).
+
+## The work cell's packs
+
+The examples above use `ur5e-jenga-workcell`, the source pack. The work cell reads two packs built from it:
+`ur5e-workcell/v2` (the base cell: robot, gripper stack, wrist camera, bench, mounting hardware) and `jenga/v1` (the
+Jenga block that the task files place). `scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py`
+write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).
