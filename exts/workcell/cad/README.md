@@ -86,6 +86,43 @@ read against the D415 (99 mm) and the RG2 body in the same image. All values are
 6. The collar: its length along the body, the wall thicknesses, the bolt size and whether the far side also has two.
 7. The plate: length, width, thickness, and where the camera's two M3 holes are on it.
 
+## Collision
+
+The bracket has a collider in the built cell; the D415 body does not (a single box on it, on the same body, would be
+a sensible follow-up: it is the part that sticks out furthest).
+
+| What | Value |
+|---|---|
+| Shapes | Five convex hulls: `collar` (the collar's whole outer envelope), `back_bar_upper`, `front_bar_extension`, `truss` (the truss outline as a triangular prism, window closed), `camera_plate`. Meshes of 8 or 6 points with `physics:approximation = "convexHull"` |
+| In the pack | `wrist_mount/wrist_mount.usdc`, under `/Asset/Collision` (guide purpose), written by `scripts/workcell_bracket_assets.py` from `collision_pieces_mm` in the CAD report |
+| In the scene | `<assembly>/rg2/onrobot_rg2_base_link/wrist_mount_collision/<shape>`, referenced there by `cameras.py` |
+| Rigid body | The RG2 body, `onrobot_rg2_base_link`, which the bracket clamps. Not `wrist_3_link`, where the camera prims hang |
+| Filtered pairs | None. The collar overlaps the RG2 body's own hull, and shapes of one rigid body never collide |
+| Mass | None added. The RG2 body's mass, centre of mass and inertia are explicit, so the collider changes none of them |
+| Wrench | A push on the bracket reaches the arm through the Bota joint, as on the real stack. The bracket and camera weigh nothing in the reading |
+
+Why not one hull: the bracket wraps the gripper and reaches out to the camera, so one hull would fill the space
+between the arm and the gripper. Why the collar can be a solid box: what it would otherwise fill is the RG2 body
+itself, the same rigid body.
+
+Near the finger linkage the collider is deliberately smaller than the print: `back_bar_upper` and
+`front_bar_extension` stop at Z = 104 mm (`collision_top_z_near_fingers`), 2.8 mm and 12 mm short of the printed
+part, and the two bolt bosses above Z = 98 mm are left out. That keeps every shape more than two of Newton's 4 mm
+contact gaps away from the linkage, so no contact point is created at any opening.
+
+Minimum distances, computed on the built stage over both driven joints' whole range (-45 to 20 degrees) against the
+links' own collision hulls (`mcp/tests/test_workcell_real_pack.py` repeats it):
+
+| Shape | Finger linkage | Finger pads |
+|---|---|---|
+| `back_bar_upper` | 10.9 mm | 72.8 mm |
+| `front_bar_extension` | 10.9 mm | 74.0 mm |
+| `collar` | 12.8 mm | 77.7 mm |
+| `truss` | 16.6 mm | 71.8 mm |
+| `camera_plate` | 31.5 mm | 77.0 mm |
+
+Any shape to the Quick Changer: 72.8 mm; to the Bota: 87.8 mm; to wrist 3: 119.8 mm.
+
 ## Build, print and assemble
 
 ```
