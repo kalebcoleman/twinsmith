@@ -86,6 +86,11 @@ installed (`scripts/install_solidcraft.sh --register`) and `+cad,+assets,+sim` o
 solidcraft and save it to the cad folder, then build it with hardware action=part into the twin folder, make CoACD
 collisions, validate it for Newton and set it on the work cell's bench."*
 
+**7. Your own assets (optional).** The repository ships none, and none are needed for the steps above: NVIDIA's robots and
+scenes load by name. A folder of your own files becomes a pack with `twinsmith assets adopt`. If you keep packs in a
+Hugging Face repository, list them in `~/.config/twinsmith/pack-sources.toml` (format: `config/pack-sources.example.toml`) and pull them:
+`twinsmith assets pull --all`. See [pulling and pushing packs](docs/ASSET-PACKS.md#pulling-and-pushing-packs).
+
 If a step fails, see [troubleshooting the first connection](docs/LINUX-SETUP.md#troubleshooting-the-first-connection).
 
 ## Tool groups

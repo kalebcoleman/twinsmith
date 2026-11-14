@@ -725,6 +725,111 @@
       "namespace": "assets",
       "owner_id": "generic-assets"
     },
+    "assets.pack_pull": {
+      "description": "Download pack versions pinned in the owner's ~/.config/twinsmith/pack-sources.toml (a Hugging Face repository, commit and folder each), with the owner's read token file (never shown). Each lands in a hidden staging folder in the asset root, is checked against its pack.yaml (every file hashed, nothing extra, no symlink) and moves into place only if it verifies. A version already present is compared by pack.yaml, never replaced. Vendor entries are reported, not downloaded. Needs the hub extra. NO_ACCESS: the repository is missing or the token cannot read it.",
+      "parameters": {
+        "pack": {
+          "type": "string",
+          "description": "Pack as \"<pack id>/<version>\". Give this or all.",
+          "required": false
+        },
+        "all": {
+          "type": "boolean",
+          "description": "Pull every entry of the sources file.",
+          "required": false,
+          "default": false
+        }
+      },
+      "fields": [
+        {
+          "name": "pack",
+          "kind": "string",
+          "enum": null,
+          "required": false,
+          "default": null,
+          "has_default": false,
+          "description": "Pack as \"<pack id>/<version>\". Give this or all."
+        },
+        {
+          "name": "all",
+          "kind": "boolean",
+          "enum": null,
+          "required": false,
+          "default": false,
+          "has_default": true,
+          "description": "Pull every entry of the sources file."
+        }
+      ],
+      "namespace": "assets",
+      "owner_id": "generic-assets"
+    },
+    "assets.pack_push": {
+      "description": "Upload a pack version that verifies to a Hugging Face repository and pin the new commit in the owner's sources file. Uses only the write token file (hub.write_token_file, default ~/.config/agent-secrets/hf_write_token), which only the owner creates. Refuses a public repository for a pack with files that are not redistributable, and a version the repository already holds with other contents. create makes the repository, always private. dry_run checks locally and contacts nothing.",
+      "parameters": {
+        "pack": {
+          "type": "string",
+          "description": "Pack as \"<pack id>/<version>\". Default: the project file's pack.",
+          "required": false
+        },
+        "repo": {
+          "type": "string",
+          "description": "Repository \"<owner>/<name>\". Default: the pack's entry, else hub.repo.",
+          "required": false
+        },
+        "create": {
+          "type": "boolean",
+          "description": "Create the repository (private) if it does not exist.",
+          "required": false,
+          "default": false
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "Check the pack and the plan; upload and write nothing.",
+          "required": false,
+          "default": false
+        }
+      },
+      "fields": [
+        {
+          "name": "pack",
+          "kind": "string",
+          "enum": null,
+          "required": false,
+          "default": null,
+          "has_default": false,
+          "description": "Pack as \"<pack id>/<version>\". Default: the project file's pack."
+        },
+        {
+          "name": "repo",
+          "kind": "string",
+          "enum": null,
+          "required": false,
+          "default": null,
+          "has_default": false,
+          "description": "Repository \"<owner>/<name>\". Default: the pack's entry, else hub.repo."
+        },
+        {
+          "name": "create",
+          "kind": "boolean",
+          "enum": null,
+          "required": false,
+          "default": false,
+          "has_default": true,
+          "description": "Create the repository (private) if it does not exist."
+        },
+        {
+          "name": "dry_run",
+          "kind": "boolean",
+          "enum": null,
+          "required": false,
+          "default": false,
+          "has_default": true,
+          "description": "Check the pack and the plan; upload and write nothing."
+        }
+      ],
+      "namespace": "assets",
+      "owner_id": "generic-assets"
+    },
     "assets.pack_build": {
       "description": "Copy asset files and their dependencies into a new pack version. USD, URDF, MuJoCo XML, SDF, mesh or ROS map files and only what they depend on go into a NEW pack version in the asset root, keeping layout, and write its pack.yaml. A file copied out of from_pack keeps that pack's source, license and redistributable; any other file needs source and license. Sources must be under an approved root or the asset root. Unresolved or remote references refuse the build unless allow_unresolved=true. An existing version is never modified. For xacro use assets__import_path.",
       "parameters": {

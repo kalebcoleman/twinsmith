@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import re
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, AsyncIterator, Dict, Iterable, List, Literal, Mapping, Optional
@@ -683,7 +684,7 @@ def _failed_tool_result(result: str) -> bool:
 
 _MESH_TOOLS = {"assets.mesh_inspect", "assets.mesh_decimate", "assets.mesh_hulls", "assets.mesh_split", "assets.validate"}
 _PACK_TOOLS = {"assets.packs", "assets.pack_doctor", "assets.dependencies", "assets.pack_adopt",
-               "assets.pack_pin", "assets.pack_build"}
+               "assets.pack_pin", "assets.pack_build", "assets.pack_pull", "assets.pack_push"}
 
 
 def _dispatch(canonical: str, params: Dict[str, Any],
@@ -2067,8 +2068,14 @@ async def use_bridge(*args, **kwargs):
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Run the MCP server (stdio). `--help` and `--version` exit without starting it."""
+    """Run the MCP server (stdio). `--help` and `--version` exit without starting it. `twinsmith assets ...` runs the
+    pack commands (``assets_cli``) and never starts the server."""
     import argparse
+
+    rest = sys.argv[1:] if argv is None else list(argv)
+    if rest[:1] == ["assets"]:
+        from . import assets_cli
+        raise SystemExit(assets_cli.main(rest[1:]))
 
     parser = argparse.ArgumentParser(
         prog="twinsmith",
@@ -2078,7 +2085,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {_package_version()}")
     parser.add_argument("--toolsets", help="Profile and adjustments, e.g. default,+sim,+assets")
-    parser.add_argument("command", nargs="?", choices=["toolsets"])
+    parser.add_argument("command", nargs="?", choices=["toolsets", "assets"],
+                        help="toolsets: print the tool groups; assets: the pack commands (twinsmith assets --help)")
     args = parser.parse_args(argv)
     instance = build_server(cli_toolsets=args.toolsets)
     selected = _state_for(instance).toolsets

@@ -1,0 +1,32 @@
+# Example of ~/.config/twinsmith/pack-sources.toml: where `twinsmith assets pull` gets asset packs.
+# Copy it there and edit it. It holds no secret: tokens stay in their own mode-600 files, named below.
+# `twinsmith assets push` rewrites the file (comments are not kept). Reference: docs/ASSET-PACKS.md#pulling-and-pushing-packs
+
+[hub]
+# The repository `push` sends a pack to when the pack has no entry yet. Keep packs with files that are not
+# redistributable in a PRIVATE repository; push refuses a public one for them.
+repo = "your-hf-user/twinsmith-assets"
+repo_type = "dataset"
+# Read token for pull (this is the default; with no such file, pull is anonymous and reaches public repos only).
+token_file = "~/.config/agent-secrets/hf_token"
+# Write token for push only (the default). Make it fine-grained, with write access to that one repository.
+write_token_file = "~/.config/agent-secrets/hf_write_token"
+
+# One entry per pack version. `revision` is the 40-character commit to pull, never a branch, so a pull
+# always gives the same bytes. `push` writes these for you.
+[packs."my-robot/v1"]
+revision = "0000000000000000000000000000000000000000"
+# repo = "your-hf-user/other-repo"  # default: hub.repo
+# path = "robots/my-robot-v1"       # the folder in the repository; default "<pack id>/<version>"
+
+# A public pack from another repository.
+[packs."shared-props/v1"]
+repo = "some-lab/public-props"
+revision = "1111111111111111111111111111111111111111"
+
+# A vendor entry is reported, never downloaded: some vendors' terms say to download from them and not to mirror.
+# Fetch it yourself, check the hash, convert it, then make a pack with `twinsmith assets adopt`.
+[packs."realsense-d400-cad/v1"]
+vendor = "https://dev.realsenseai.com/download/41950"
+sha256 = "31d176bd773f0e25c76c0af2d68c0575fdb550bceb60ffe9da72f92f2a53ca73"
+how = "Intel RealSense D400 CAD archive (SolidWorks parts): download from the vendor, export STEP, convert, then adopt"

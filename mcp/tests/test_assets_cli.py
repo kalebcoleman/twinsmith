@@ -1,4 +1,4 @@
-"""scripts/assets.py: where, list, doctor, adopt (and --from-old), pin, build, on the pack.yaml format."""
+"""twinsmith assets (scripts/assets.py from a checkout): where, list, doctor, adopt (and --from-old), pin, build, on the pack.yaml format."""
 
 from __future__ import annotations
 
@@ -338,7 +338,10 @@ def test_the_cli_is_importable_without_a_simulator_and_has_no_removed_commands()
     spec = importlib.util.spec_from_file_location("isaac_assets_cli_test2", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert sorted(module.COMMANDS) == ["adopt", "build", "doctor", "list", "pin", "where"]
+    from twinsmith import assets_cli
+
+    assert module.main is assets_cli.main
+    assert sorted(assets_cli.COMMANDS) == ["adopt", "build", "doctor", "list", "pin", "pull", "push", "where"]
     for removed in ("migrate", "unpin", "create", "add", "packs", "pack-build"):
         with pytest.raises(SystemExit):
-            module.build_parser().parse_args([removed])
+            assets_cli.build_parser().parse_args([removed])

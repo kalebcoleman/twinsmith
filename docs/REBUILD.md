@@ -79,7 +79,8 @@ Everything else below is rebuilt from this repository and public sources.
    cd ..
    ```
 
-   On a second machine, copying the built pack folders is enough:
+   On a second machine, pull the built packs from your own repository (`twinsmith assets pull --all`,
+   [pulling packs](ASSET-PACKS.md#pulling-and-pushing-packs)) or copy the pack folders:
    [move to a second machine](LINUX-SETUP.md#move-to-a-second-machine).
 
 7. **Build the cell.** Start the simulator on Newton, then from an MCP client call `status` once and build:

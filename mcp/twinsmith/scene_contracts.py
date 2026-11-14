@@ -332,7 +332,7 @@ READ_ONLY = {
 DESTRUCTIVE = {
     "sim.prim.delete", "sim.stage.clear_owned", "sim.controller.create", "sim.controller.update", "sim.simulation.run",
     "sim.ui.act", "sim.stage.open", "sim.quick_start", "sim.graph.build", "assets.pack_adopt", "assets.pack_pin",
-    "assets.pack_build",
+    "assets.pack_build", "assets.pack_push",
 }
 # These run in the MCP host and work without Kit. Kit must not serve them.
 HOST_ONLY = {
@@ -344,6 +344,8 @@ HOST_ONLY = {
     "assets.pack_adopt",
     "assets.pack_pin",
     "assets.pack_build",
+    "assets.pack_pull",
+    "assets.pack_push",
     "assets.mesh_inspect",
     "assets.mesh_decimate",
     "assets.mesh_hulls",
@@ -389,6 +391,24 @@ add(
         files=field("array", "Pin only these relative paths, accepting their changes.", False),
         force=field("boolean", "Accept every changed file.", False, default=False),
         dry_run=field("boolean", "Show what would change and write nothing.", False, default=False),
+    ),
+)
+add(
+    "assets.pack_pull",
+    "Download pack versions pinned in the owner's ~/.config/twinsmith/pack-sources.toml (a Hugging Face repository, commit and folder each), with the owner's read token file (never shown). Each lands in a hidden staging folder in the asset root, is checked against its pack.yaml (every file hashed, nothing extra, no symlink) and moves into place only if it verifies. A version already present is compared by pack.yaml, never replaced. Vendor entries are reported, not downloaded. Needs the hub extra. NO_ACCESS: the repository is missing or the token cannot read it.",
+    dict(
+        pack=field("string", "Pack as \"<pack id>/<version>\". Give this or all.", False),
+        all=field("boolean", "Pull every entry of the sources file.", False, default=False),
+    ),
+)
+add(
+    "assets.pack_push",
+    "Upload a pack version that verifies to a Hugging Face repository and pin the new commit in the owner's sources file. Uses only the write token file (hub.write_token_file, default ~/.config/agent-secrets/hf_write_token), which only the owner creates. Refuses a public repository for a pack with files that are not redistributable, and a version the repository already holds with other contents. create makes the repository, always private. dry_run checks locally and contacts nothing.",
+    dict(
+        pack=field("string", "Pack as \"<pack id>/<version>\". Default: the project file's pack.", False),
+        repo=field("string", "Repository \"<owner>/<name>\". Default: the pack's entry, else hub.repo.", False),
+        create=field("boolean", "Create the repository (private) if it does not exist.", False, default=False),
+        dry_run=field("boolean", "Check the pack and the plan; upload and write nothing.", False, default=False),
     ),
 )
 add(

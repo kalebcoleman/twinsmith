@@ -6,8 +6,10 @@
 - **The repository ships no assets.** It is code only, so nothing with a licence question is ever pushed.
 - **There is one model.** A pack is `<asset root>/<pack id>/<version>/` with a `pack.yaml` that lists every file with its
   hash, source and licence. The UR5e Jenga work cell, the pack tools, the CLI and `sim__quick_start` all read it the same way.
-- **Nothing is ever downloaded.** A file is in a pack or it is not. NVIDIA's own robots (`franka`, `ur5e`, `unitree_g1`, ...)
-  are not packs: `sim__quick_start` takes them by name from the running simulator's assets root.
+- **Only `pull` downloads**, and only what your own sources file pins: a pack version from a Hugging Face repository at a
+  fixed commit, checked against its `pack.yaml` before it lands ([pulling and pushing](#pulling-and-pushing-packs)). Nothing
+  else fetches a file. NVIDIA's own robots (`franka`, `ur5e`, `unitree_g1`, ...) are not packs: `sim__quick_start` takes them
+  by name from the running simulator's assets root.
 - **A version never changes.** To change a pack, write a new version.
 
 ## What a pack is
@@ -72,10 +74,11 @@ is found from the working directory, so it never approves a folder.
 
 ## The tools
 
-The same six actions are the MCP tool `assets__pack` (`action=list|doctor|dependencies|adopt|pin|build`; each is also callable
-as `assets__packs`, `assets__pack_doctor`, ...) and, apart from `dependencies`, the CLI `scripts/assets.py`. They run on
-the host and need no Kit, apart from parsing USD (below). A tool writes only under the asset root and never takes a
-destination path.
+The same eight actions are the MCP tool `assets__pack` (`action=list|doctor|dependencies|adopt|pin|build|pull|push`; each is
+also callable as `assets__packs`, `assets__pack_doctor`, ...) and, apart from `dependencies`, the CLI `twinsmith assets`
+(`python3 scripts/assets.py` from a checkout that is not installed; the examples use that form). They run on the host and
+need no Kit, apart from parsing USD (below). A tool writes only under the asset root and never takes a destination path.
+`pull` and `push` are described in [their own section](#pulling-and-pushing-packs).
 
 **list** shows every `<id>/<version>` with its file count, size and whether it verifies. A folder with files or a `SHA256SUMS`
 and no `<version>/pack.yaml` is listed as *old format*, with a hint to convert it.
@@ -222,9 +225,96 @@ For how a pack is authored (flattening the CAD, keeping it self-contained, recor
 check and the BOM audit), follow [the work cell's pack guide](../exts/workcell/workcell/README.md#making-or-updating-a-pack).
 This page does not repeat it.
 
+## Without private packs
+
+Nothing in twinsmith needs a pack of yours, a Hugging Face account or a token. With no sources file, `pull` answers
+`NO_SOURCE` and every other tool works as before. Three ways to get assets into a scene:
+
+| Source | How | Cost |
+|---|---|---|
+| NVIDIA's own robots and scenes | `sim__quick_start robot="franka"` (or `ur5e`, `unitree_g1`, ...), `environment="warehouse"`; they load by name from the running simulator's assets root | Free with Isaac Sim; not packs, nothing to pull |
+| Files you already have (a URDF, a USD, vendor CAD you converted) | `assets__import_path` for one scene, or `twinsmith assets adopt <folder> --pack my-robot/v1 --source ... --license ...` to make a pack that every machine can check | Your files stay on your machine |
+| A part an agent designs | SolidCraft beside twinsmith, then `hardware(action="part")`, `assets__mesh` and `assets__validate` ([from a SolidCraft part to the work cell](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)); `adopt` the result to keep it as a pack | Free, open source |
+
+A public Hugging Face repository also works with no token: list the pack in the sources file below and `pull` is anonymous.
+The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v2`, `jenga/v1`); they hold vendor CAD that
+may not be redistributed, so each owner builds them from their own copy ([rebuild](REBUILD.md#the-sequence)).
+
+## Pulling and pushing packs
+
+Keep your packs in a **private Hugging Face dataset repository** and pull them onto every machine. twinsmith stays open source
+and ships no assets: the repository name, the pinned commits and the tokens are yours, in files outside every checkout.
+
+| File | Holds | Secret? |
+|---|---|---|
+| `~/.config/twinsmith/pack-sources.toml` | Each pack version's repository, pinned commit and folder; `[hub]` defaults | No. `push` rewrites it |
+| `~/.config/agent-secrets/hf_token` (`hub.token_file`) | A read token, used by `pull` | Yes, mode 600 |
+| `~/.config/agent-secrets/hf_write_token` (`hub.write_token_file`) | A write token, used only by `push` | Yes, mode 600 |
+
+The format is in [`config/pack-sources.example.toml`](../config/pack-sources.example.toml):
+
+```toml
+[hub]
+repo = "<hf-user>/twinsmith-assets"      # where push sends a pack that has no entry yet
+
+[packs."ur5e-workcell/v2"]
+revision = "<40-character commit>"       # pinned; a branch name is refused
+# repo = "...", path = "...": default hub.repo and "<pack id>/<version>"
+
+[packs."realsense-d400-cad/v1"]          # a vendor entry: reported, never downloaded
+vendor = "https://dev.realsenseai.com/download/41950"
+how = "download from the vendor, export STEP, convert, then adopt"
+```
+
+Both need the optional `hub` extra (`huggingface_hub`); without it they answer `HUB_EXTRA_MISSING` with the command:
+
+```bash
+UV_PROJECT_ENVIRONMENT=<repo>/mcp/.venv uv sync --project <repo>/mcp --locked --extra hub --no-dev   # add the extras you use
+```
+
+**pull** downloads one pack version (`twinsmith assets pull ur5e-workcell/v2`) or every entry (`--all`) at its pinned commit.
+Only that pack's folder is fetched, into a hidden staging folder under the asset root, then checked with the strict reader:
+every listed file present with its hash, nothing unlisted, no symlink. It is moved into place only if it verifies, so a
+failed or tampered download leaves nothing. A version that is already there is compared by its `pack.yaml`: the same one is
+`up to date` (nothing is downloaded), a different one is `LOCAL_DIFFERS`, and nothing local is ever replaced. A vendor entry
+is listed with its URL and is never fetched. With `--all`, every entry is tried and each failure is reported. The token is
+read from `hub.token_file` and passed to `huggingface_hub` directly; with no such file, the pull is anonymous (public
+repositories only), never the `HF_TOKEN` of the environment.
+
+```bash
+twinsmith assets pull --all
+#   jenga/v1: pulled, 1 file(s), 0.0 MB, verified (<hf-user>/twinsmith-assets @ 61c1bcd47fdf)
+#   realsense-d400-cad/v1: vendor download, not fetched: https://dev.realsenseai.com/download/41950 (...)
+#   ur5e-workcell/v2: pulled, 16 file(s), 74.9 MB, verified (<hf-user>/twinsmith-assets @ 91acc31360a1)
+# run it again: each pack is "up to date" and nothing is downloaded
+```
+
+**push** uploads a version that verifies (`twinsmith assets push my-robot/v2`) and writes its new commit into the sources
+file. It uses only the write token. It refuses a public repository when any file of the pack has `redistributable: false`
+(`NOT_PRIVATE`), and a version the repository already holds with other contents (`VERSION_EXISTS`: write a new version);
+the same contents answer `already_there` and pin that commit. `--create` makes the repository, always private. `--dry-run`
+checks the pack and the plan and contacts nothing.
+
+| Code | Meaning |
+|---|---|
+| `NO_ACCESS` | The repository does not exist, or the token cannot read it (a private repository answers "not found"). The message names the token file, never the token |
+| `NO_WRITE_TOKEN` | No write token file: make a fine-grained token with write access to that one repository and store it with `agent-secret-set hf-write` (or any mode-600 file named by `hub.write_token_file`) |
+| `REVISION_NOT_FOUND`, `NOT_IN_REPO` | The pinned commit, or the pack's folder at that commit, is not in the repository |
+| `NOT_VERIFIED` | The download does not match its `pack.yaml`; nothing was written |
+| `LOCAL_DIFFERS`, `LOCAL_NOT_VERIFIED` | A local copy of that version exists and is not the pinned one; move it aside |
+| `INVALID_SOURCES` | The sources file has an unknown key, a branch for a revision, a bad path or repository name |
+
+After a push, copy `pack-sources.toml` to your other machines (it holds no secret) and run `pull` there. A token is never
+printed, logged or returned, and any message from the hub is scrubbed of it.
+
+**Vendor files.** A vendor whose terms say "download from us, do not mirror" (the RealSense D400 CAD archive is one) stays a
+vendor entry: fetch it yourself, then make a pack with `adopt`. Files you may keep but not redistribute go only to a private
+repository.
+
 ## Moving packs between machines
 
-A pack is a plain folder, and `pack.yaml` carries its own hashes, so copy it and check it:
+`pull` is the usual way ([above](#pulling-and-pushing-packs)). A pack is also a plain folder, and `pack.yaml` carries its own
+hashes, so you can copy it and check it:
 
 ```bash
 rsync -a <asset root>/my-robot/v1/ other-host:<asset root>/my-robot/v1/

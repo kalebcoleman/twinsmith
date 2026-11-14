@@ -173,7 +173,11 @@ the task, which these tools do not override. See [Isaac Lab tools](TOOLS-ISAACLA
 
 Assets are not in the repository. They live in an **asset root** of versioned **packs**, each a folder with one `pack.yaml`
 that lists every file with its hash, source and licence (`mcp/twinsmith/pack_manifest.py` reads it; the host tools in
-`asset_packs.py` list, check, adopt, pin and build packs), and in project folders the user has approved. The server will only
+`asset_packs.py` list, check, adopt, pin and build packs), and in project folders the user has approved. `pack_sources.py`
+pulls and pushes pack versions against the owner's Hugging Face repository: the owner's
+`~/.config/twinsmith/pack-sources.toml` pins each version to a commit, the tokens are mode-600 files read only by it, and a
+download reaches the asset root only after the same reader has verified it. It is the one place the host downloads files,
+through the optional `hub` extra. `twinsmith assets` (`assets_cli.py`) is the command line for all of these. The server will only
 read a file inside one of those; only the user can approve a folder. `assets__import_path` picks the format, converts URDF,
 xacro, SDF and MuJoCo files on the host without running any code from them, and hands Kit a verified snapshot in a staging
 folder both processes can read. Kit then references the snapshot into the scene's session layer, so source files never change.
@@ -234,7 +238,9 @@ its default and reader, and a test keeps it exact. The ones that shape the syste
 | `TWINSMITH_ENABLE_SCENE_SCRIPTS` | Kit | Opt in to tools that run the caller's Python inside Kit. |
 
 The server reads two files for settings: `~/.config/twinsmith/config.toml` and the nearest `twinsmith.toml` above the
-working directory. Precedence is: defaults, user file, project file, environment, command line.
+working directory. Precedence is: defaults, user file, project file, environment, command line. The pack commands also read
+`~/.config/twinsmith/pack-sources.toml` ([pulling packs](ASSET-PACKS.md#pulling-and-pushing-packs)); it names token files
+and holds no token.
 
 ## Tool groups
 
@@ -318,6 +324,7 @@ Gaussian splats come that way.
 | **Service** (separate process, reached over loopback) | FoundationPose; any other model with a restrictive licence | Research-only or custom licences must not touch an MIT repository |
 | **Beside** (another MCP server in the client's configuration) | FreeCAD, SolidCraft, build123d or agentcad, Blender, NVIDIA's documentation servers | Mature servers; twinsmith only receives their output as files (SolidCraft's through `hardware(action="part")`) |
 | **Library, in the `mesh` extra** | CoACD (MIT), fast-simplification (MIT), trimesh (MIT) | Used as dependencies, not copied |
+| **Library, in the `hub` extra** | `huggingface_hub` (Apache-2.0), for pack pull and push | Used as a dependency; imported only by `pack_sources.py` |
 | **Not used** | ROS control servers such as ros-mcp-server; MoveIt servers | They give an agent publish, service and action tools. twinsmith does not wrap them and none is installed on any of the owner's machines. See [safety](#safety-boundaries) |
 
 Every wrapper follows one contract, the one `robosim` already has:

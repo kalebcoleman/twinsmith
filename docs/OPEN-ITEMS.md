@@ -188,6 +188,6 @@ These were open on the old checklist but name things the code no longer has. Clo
 made.
 
 - Scope strict mode and required assets to the lab work cell without blocking public robots. The strict and offline asset settings
-  were removed with the old asset model; packs are the only model now, and nothing is downloaded.
+  were removed with the old asset model; packs are the only model now, and only the owner's pinned packs are pulled.
 - Review work cell quick-start variants. The work cell's quick-start tools were replaced by the work cell's `workcell__cell`
   grouped tool.

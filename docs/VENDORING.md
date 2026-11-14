@@ -42,7 +42,8 @@ JSON-lines message shape and the portfile location, so existing tool packages an
   sensor and material files, the Vention bench and the Poliigon oak textures must stay out of a
   public repository; the Husarion gripper files (Apache-2.0) and the FMB objects (CC BY 4.0) may
   ship with notices (`THIRD-PARTY-NOTICES.md`). Each pack records the source, licence and
-  `redistributable` flag of every file in its `pack.yaml`; nothing is downloaded.
+  `redistributable` flag of every file in its `pack.yaml`. Only the owner's own pinned packs are pulled, and a pack with
+  files that are not redistributable is pushed only to a private repository.
 
 ## Project scene implementation references
 

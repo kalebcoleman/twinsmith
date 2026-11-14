@@ -1,7 +1,7 @@
 """Adopt, convert, pin, check and build asset packs in the ``pack.yaml`` format. Standard library only; no Kit.
 
-``scripts/assets.py`` (run by the user) and the host-side ``assets__pack_*`` MCP tools share
-this code. The tools add the trust rules in :func:`run_tool`; the rules are documented in
+``twinsmith assets`` (``assets_cli``, run by the user) and the host-side ``assets__pack_*`` MCP tools share
+this code; ``pack_sources`` adds pull and push. The tools add the trust rules in :func:`run_tool`; the rules are documented in
 ``docs/ASSET-PACKS.md``. The reader and the asset root are in ``pack_manifest``. This module never
 prints from a tool path: stdout is the MCP protocol there. USD files are parsed only by the helper
 process or the selected Kit (``usd_closure``).
@@ -1422,5 +1422,15 @@ def run_tool(canonical: str, params: dict, broker, kit_call=None) -> dict:
             dry_run=bool(params.get("dry_run", False)), notes=notes, urdf_root=urdf_root, defaults=defaults, inherit=inherit,
         )
         return dict(status="ok", **context, backend=closure.name, notes=notes, **report)
+
+    if canonical in ("assets.pack_pull", "assets.pack_push"):
+        from . import pack_sources
+        if canonical == "assets.pack_pull":
+            report = pack_sources.pull(need_root(), pack=params.get("pack"), all_packs=bool(params.get("all", False)))
+        else:
+            pack_id, version = _pack_argument(params, "pack", context["selected_pack"])
+            report = pack_sources.push(need_root(), f"{pack_id}/{version}", repo=params.get("repo"),
+                                       create=bool(params.get("create", False)), dry_run=bool(params.get("dry_run", False)))
+        return {**report, **context, "status": report["status"]}
 
     raise PackError(f"not a pack tool: {canonical}", "UNKNOWN")
