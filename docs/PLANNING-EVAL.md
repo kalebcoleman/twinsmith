@@ -123,7 +123,7 @@ bound to loopback, and point the endpoint at it:
 
 ```bash
 vllm serve Qwen/Qwen3-VL-32B-Instruct-FP8 --host 127.0.0.1 --port 8000 \
-  --kv-cache-memory-bytes 4G --max-model-len 16384 --max-num-seqs 4 --limit-mm-per-prompt '{"image": 4, "video": 0}'
+  --kv-cache-memory-bytes 5G --max-model-len 16384 --max-num-seqs 4 --limit-mm-per-prompt '{"image": 4, "video": 0}'
 ```
 
 ```toml
@@ -133,7 +133,7 @@ vlm_url = "http://127.0.0.1:8000/v1"
 vlm_model = "Qwen/Qwen3-VL-32B-Instruct-FP8"     # the name the server lists at /v1/models
 ```
 
-- Qwen3-VL-32B-Instruct in FP8 holds about 40 GB with a 4 GiB KV cache, which leaves room on a 96 GB card for
+- Qwen3-VL-32B-Instruct in FP8 holds about 41 GB with a 5 GiB KV cache, which leaves room on a 96 GB card for
   Graph-as-Policy's SAM 3, GroundingDINO and cuRobo (about 16 GB) and Kit. Graph nodes send one request at a time.
 - **Reasoning models.** Upstream's VLM client caps a reply at 1024 tokens and sends no extra request fields, so a
   model that thinks first can spend the whole reply on reasoning and return no answer (`content: null`). Use an Instruct

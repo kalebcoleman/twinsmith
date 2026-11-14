@@ -29,6 +29,7 @@ PERCEPTION = ("oracle", "vision")
 _TASK = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+")
 _CELL = re.compile(r"[a-z0-9_]+/L[0-9]+")
 _LABEL = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}")
+_SUITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")         # a suite folder that --set suites.<suite>.<key> can name
 _EPISODES = re.compile(r"[0-9]+(:[0-9]+(:[0-9]+)?|(,[0-9]+)+)?")
 RESULT_FILES = 200
 RESULT_BYTES = 8 * 1024 * 1024   # read at most this much of one episode_results.jsonl
@@ -58,16 +59,15 @@ def model_sets(co: sibling.Checkout, model: str | None, task=None) -> list[str]:
     """``--set suites.<suite>.env.GAP_VLM_MODEL=<model>`` for the owner's ``[planning] vlm_model``. A suite's ``env``
     wins over the environment (upstream's ``apply_env``; ``tool_sort`` pins ``gemini-2.5-flash``), so without this the
     endpoint would be sent another provider's model name. ``run`` names its task's suite; ``bench`` cells are named by
-    task class, not suite, so it sets every suite in the checkout's ``tasks/``."""
+    task class, not suite, so it sets every suite in the checkout's ``tasks/``. A folder ``--set`` cannot name (upstream
+    splits its key on dots, and skips ``_`` and ``.`` folders) gets none, rather than failing the whole command."""
     if not model:
         return []
-    if task:
-        suites = [task.split("/")[0]]
-    else:
-        suites = sorted(path.name for path in (co.root / "tasks").glob("*")
-                        if path.is_dir() and not path.name.startswith(("_", ".")) and _LABEL.fullmatch(path.name))
-    value = json.dumps(model)          # a TOML basic string, so upstream never reads it as a number or boolean
-    return [part for suite in suites for part in ("--set", f"suites.{suite}.env.GAP_VLM_MODEL={value}")]
+    names = [task.split("/")[0]] if task else sorted(path.name for path in (co.root / "tasks").glob("*") if path.is_dir())
+    # A TOML basic string, so upstream never reads it as a number or boolean. Characters stay as they are, because
+    # JSON's surrogate-pair escapes are not TOML; DEL is the one character JSON leaves bare that TOML refuses.
+    value = json.dumps(model, ensure_ascii=False).replace("\x7f", "\\u007f")
+    return [part for name in names if _SUITE.fullmatch(name) for part in ("--set", f"suites.{name}.env.GAP_VLM_MODEL={value}")]
 
 
 def argv(co: sibling.Checkout, action: str, *, task=None, solve="routine", graph=None, episodes=None, cell=None,

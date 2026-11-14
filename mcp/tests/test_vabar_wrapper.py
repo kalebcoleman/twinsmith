@@ -249,6 +249,20 @@ def test_no_vlm_model_leaves_the_suites_pin_alone(workspace, tmp_path):
     assert vabar.model_sets(co, "8", task="tool_sort/x") == ["--set", 'suites.tool_sort.env.GAP_VLM_MODEL="8"']
 
 
+def test_the_model_pin_is_one_toml_string_whatever_the_name_holds(workspace):
+    from twinsmith.config import tomllib                           # tomli before Python 3.11
+
+    co = vabar.checkout(workspace=workspace)
+    for suite in ("tool_sort", "tool_sort.bak", "_shared", "a=b"):
+        (co.root / "tasks" / suite).mkdir(parents=True)
+    for model in ('a"b', "a\\b=c", 'x"]#y', "{a=1}", "mödel", "m\U0001f600", "a\x7fb"):
+        flag, expression = vabar.model_sets(co, model)             # only tool_sort: --set cannot name the others
+        key, _, value = expression.partition("=")                  # as upstream splits it (vabar/config.py _apply_set)
+        assert (flag, key) == ("--set", "suites.tool_sort.env.GAP_VLM_MODEL")
+        assert tomllib.loads(f"v = {value}")["v"] == model
+    assert vabar.model_sets(co, "m", task="tool_sort.bak/x") == [] and vabar.model_sets(co, "m", task="_shared/x") == []
+
+
 def test_a_graph_run_can_ask_for_vision_perception_and_a_recording(workspace):
     co = vabar.checkout(workspace=workspace)
     started = vabar.call(co, "run", task="tool_sort/level1_1", solve="graph", graph="gap_perception_loop",
