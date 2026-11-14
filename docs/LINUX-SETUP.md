@@ -193,7 +193,9 @@ viewport and URDF follow-ups have superseded some early pending checks, while th
 
 The host connection and `sim__stage(action="info")` do not require a robot or workstation, and NVIDIA's public robots
 (`ur5e`, `franka`, `unitree_g1`, ...) load by name from the running simulator's own asset root. The UR5e Jenga work cell uses
-[a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) (`ur5e-jenga-workcell/v1`) that you supply. The
+[a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) that you supply: the base cell is
+`ur5e-workcell/v2` and its task objects are `jenga/v1`, both built from the source pack `ur5e-jenga-workcell/v2` by
+`scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py` ([the whole sequence](REBUILD.md)). The
 repository ships **no assets**, `install.sh` installs packages, not assets, and nothing is ever downloaded for you.
 
 Every pack lives in one **asset root**: `TWINSMITH_ASSET_ROOT`, else `<workspace>/assets`. See [asset packs](ASSET-PACKS.md) for the format and the tools.
@@ -202,8 +204,12 @@ Copy the pack folder onto the machine, then check it:
 ```bash
 export TWINSMITH_ASSET_ROOT=<asset-root>        # outside Git; set it for the MCP server and for any Kit you start yourself
 python3 scripts/assets.py list              # every <id>/<version> and whether it verifies
-python3 scripts/assets.py doctor ur5e-jenga-workcell/v1
+python3 scripts/assets.py doctor ur5e-workcell/v2
 ```
+
+`doctor` checks the USD dependencies only when it has a USD parser: run it from `mcp/` with
+`uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/assets.py doctor <pack>`, or set
+`TWINSMITH_USD_PYTHON`. Without one it reports the dependencies as not checked.
 
 `list` also names any pack in the old format (files or a `SHA256SUMS`, no `pack.yaml`), which nothing reads; convert one with
 `assets.py adopt --from-old` ([converting an old pack](ASSET-PACKS.md#converting-an-old-pack)). Setting the root

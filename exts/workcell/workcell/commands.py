@@ -21,9 +21,10 @@ def summarize(report):
     if isinstance(cameras, dict):
         summary["cameras"] = {name: {key: camera.get(key) for key in ("status", "prim_path")}
                               for name, camera in cameras.items() if isinstance(camera, dict)}
-    jenga = report.get("jenga") or {}
-    summary["jenga"] = {key: jenga[key] for key in ("block_count", "layers", "variation_profile", "variation_seed")
-                        if key in jenga}
+    summary["task"] = (report.get("task") or {}).get("name")
+    if "jenga" in report:
+        summary["jenga"] = {key: report["jenga"][key] for key in ("block_count", "layers", "variation_profile", "variation_seed")
+                            if key in report["jenga"]}
     summary["parts"] = len(report.get("parts") or [])
     audit = report.get("bom_audit") or {}
     summary["bom_audit"] = {"ok": audit.get("ok"), "errors": (audit.get("errors") or [])[:5]}
@@ -45,9 +46,9 @@ def summarize(report):
 
 class Commands:
     async def _cmd_workcell_quick_start(self, config_path=None, mode="physics", discard_changes=False,
-                                        environment="none"):
-        report = await self.workcell.quick_start(config_path=config_path, mode=mode,
-                                                 discard_changes=discard_changes, environment=environment)
+                                        environment="none", task=None):
+        report = await self.workcell.quick_start(config_path=config_path, mode=mode, discard_changes=discard_changes,
+                                                 environment=environment, task=task)
         return summarize(report)
 
     def _cmd_workcell_status(self):

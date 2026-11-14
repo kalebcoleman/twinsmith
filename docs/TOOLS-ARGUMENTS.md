@@ -1479,6 +1479,7 @@ Build a stopped workcell from an external asset pack, on PhysX or Newton (Newton
 - `config_path` (string, optional): Optional hardware configuration path.
 - `mode` (physics|mirror_real, default `"physics"`): Physics mode, or zero-gravity mirror mode.
 - `discard_changes` (boolean, default `false`): Allow replacement of an unsaved stage.
+- `task` (string, optional): Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block) or an absolute task file. Omitted: the base cell only, with no objects.
 - `environment` (none|simple_room, default `"none"`): A room around the cell: simple_room references NVIDIA's Simple Room from the Isaac Sim assets server (needs network), floor level with the bench feet.
 
 ### `workcell__workcell_shutdown`
