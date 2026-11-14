@@ -151,7 +151,7 @@ def test_wrist_offset_and_optical_to_usd_conversion(config, tmp_path):
     assert camera["optical"]["translation_m"] == pytest.approx([-0.1, -0.2, -0.3])
     bracket = next(part for part in build(shifted, tmp_path)["parts"]
                    if part["role"] == "wrist_mount")
-    assert bracket["local"]["translation_m"] == pytest.approx([0.05, 0.1, 0.15])
+    assert bracket["local"]["translation_m"] == pytest.approx([0.1, 0.2, 0.3])      # tool0, seen from the wrist root
 
 
 def test_overhead_look_at_pose_and_reach_clearance(config, tmp_path):
@@ -201,7 +201,6 @@ def test_gantry_outside_reach_and_removable_are_enforced(config, tmp_path):
 
 
 def test_parts_carry_asset_id_and_bom_tag(config, tmp_path):
-    config["wrist_camera"]["offset_in_tool0_m"] = [0.012, 0.09, -0.005]   # farther out than the 60 mm bracket proxy
     report = build(config, tmp_path)
     parts = report["parts"]
     assert len(parts) == 6
@@ -223,8 +222,11 @@ def test_parts_carry_asset_id_and_bom_tag(config, tmp_path):
         [posts[0][0], (posts[0][1] + posts[1][1]) / 2, height / 2])
     bracket = next(part for part in parts if part["role"] == "wrist_mount")
     offset = config["wrist_camera"]["offset_in_tool0_m"]
-    assert bracket["local"]["scale"][1] > 1.0  # stretched to span the tool0-to-camera gap
-    assert bracket["local"]["translation_m"][0] == pytest.approx(0.5 * -offset[0] * 1.0, abs=0.02)
+    # The bracket is modelled in tool0, so it sits on tool0: the inverse of the wrist root's pose, unscaled.
+    assert "scale" not in bracket["local"]
+    inverse = cameras._quat_conjugate(cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_tool0_deg"]))
+    assert bracket["local"]["quaternion_wxyz"] == pytest.approx(inverse)
+    assert bracket["local"]["translation_m"] == pytest.approx(cameras._rotate_vector(inverse, [-v for v in offset]))
     assert str(tmp_path) not in json.dumps(report)
 
 

@@ -941,9 +941,9 @@
       "source": "Kaleb, 2026-11-14: the base cell is the robot, gripper stack, wrist camera, bench and mounting hardware only; task objects are separate packs. Built from ur5e-jenga-workcell/v2 by scripts/workcell_split_packs.py."
     },
     "version": {
-      "value": "v1",
+      "value": "v2",
       "status": "confirmed",
-      "source": "ur5e-jenga-workcell/v2 without its Jenga block (now the jenga pack): the same robot, RG2 in the arm's articulation, and bench collision layer."
+      "source": "v1 (ur5e-jenga-workcell/v2 without its Jenga block) with RealSense's own D415 mesh and a FreeCAD wrist bracket in place of the box proxies, built by scripts/workcell_camera_assets.py."
     }
   },
   "assets": {

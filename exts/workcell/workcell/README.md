@@ -17,8 +17,9 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 
 | File | What it is |
 |---|---|
-| `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v1` |
+| `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v2` |
 | `exts/workcell/workcell/bom.csv` | The base cell's BOM |
+| `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2`: RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and the FreeCAD wrist bracket (clamp ring on the wrist 3 housing, arm, tilted plate with the D415's two M3 holes) with its STEP file |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
 | `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
 
@@ -247,7 +248,7 @@ The current candidate contains:
   it: an ideal placeholder (Kaleb, 2026-11-14) until the real bracket CAD arrives, not a measurement. From there the
   Bota, Quick Changer and wrist are outside the image and the RG2 fingertips are about 70 percent of the way down it; a test projects
   the pack's meshes through the camera to check both. Max's `localizer_bridge.py` has the camera 38 mm from the
-  axis, where the Quick Changer fills the lower image. The near clip is 0.02 m, past the camera's own body proxy.
+  axis, where the Quick Changer fills the lower image. The near clip is 0.02 m, past the camera's own front glass. The D415 body is the vendor's mesh and the bracket a FreeCAD placeholder design whose fit on the real arm is not measured.
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads

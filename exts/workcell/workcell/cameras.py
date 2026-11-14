@@ -276,22 +276,12 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     usd = _usd_block(cam_path, root, [0.0, 0.0, 0.0], list(USD_CAMERA_ROTATION))
 
     body_size = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    bracket_size = _vector(section.get("bracket_size_m"), 3, "wrist_camera.bracket_size_m") or list(WRIST_BRACKET_SIZE_M)
-    # In the wrist root frame, tool0 sits at -R^T * offset; centre the proxy bracket between them.
-    bridge = [-0.5 * value for value in _rotate_vector(_quat_conjugate(optical_q), offset)]
-    # The pack bracket is a unit proxy; stretch it along its long axis so it spans the
-    # lateral gap between the tool axis and the camera instead of leaving the camera floating.
-    gap = math.hypot(offset[0], offset[1])
-    stretch = max(1.0, gap / bracket_size[1])
-    if stretch > 1.0:
-        limitations.append(
-            f"Wrist bracket proxy is stretched x{stretch:.2f} along its long axis to span the "
-            f"{gap:.3f} m lateral tool0 offset; confirm the real bracket CAD before lab use.")
-
+    # The bracket asset is modelled in tool0 coordinates, so it is placed on tool0: in the wrist root frame, which
+    # carries the optical pose, that is the inverse of that pose.
+    inverse = _quat_conjugate(optical_q)
     parts = []
     bracket = _part(config, assets, assets_cfg, "wrist_mount", f"{root}/bracket", root,
-                    bridge, optical_q, "printed wrist bracket", limitations,
-                    scale=[1.0, stretch, 1.0] if stretch > 1.0 else None)
+                    _rotate_vector(inverse, [-value for value in offset]), inverse, "wrist camera bracket", limitations)
     if bracket:
         parts.append(bracket)
     body = _part(config, assets, assets_cfg, "d415", f"{root}/body", root,
@@ -329,8 +319,8 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "physics": _physics_block(tool0),
     }
     limitations.append(
-        "Wrist body geometry is centred on the optical origin; the pack declares no body-to-optical datum, "
-        "and the bracket proxy is bridged from the configured tool0 offset, so overlap is possible.")
+        "The D415 body asset is in the colour optical frame and the bracket asset in tool0; a bracket fits "
+        "only the camera pose it was modelled for (scripts/workcell_camera_assets.py).")
     root_entry = {"name": "wrist_mount", "prim_path": root, "parent": tool0,
                   "translation_m": list(offset), "quaternion_wxyz": list(optical_q)}
     return camera, parts, root_entry
