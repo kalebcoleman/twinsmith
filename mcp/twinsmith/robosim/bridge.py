@@ -23,6 +23,7 @@ from twinsmith import sibling
 
 from . import plan
 from . import template as scene_template_module
+from . import tower
 from .template import FRAME, PARAMETERS, SHAPES, SIZE_MEANING
 
 PIN = "ba3650c"
@@ -237,6 +238,15 @@ class RoboSimBridge:
         path = folder / f"scene-template-{resolved['shape']}-{digest}.py"
         path.write_text(text)
         shown = {key: value for key, value in resolved.items() if key not in ("mask_key", "push_default")}
+        if resolved["shape"] == "tower":
+            return dict(info, ok=True, path=str(path), shape="tower", template=shown, parameters=tower.PARAMETERS,
+                        size_meaning=tower.SIZE_MEANING, mask_key=resolved["mask_key"],
+                        use=("start(name=..., device='cuda:0', template={'shape': 'tower', ...}) builds this tower; "
+                             "rollout(routine='settle'), rollout(push={'block': 'L08_1', 'distance': 0.03, 'seconds': 3}) or, with "
+                             "a hold in the template, rollout(routine='pull'). update_scene(template={'friction': ...}) changes a value."),
+                        note=("Every rollout writes traj-<take>.npz (block poses) and push-<take>.json (what the rest of the tower "
+                              "did) beside the scene. Physics: cpu runs plain MuJoCo, cuda:0 runs Newton's MuJoCo-Warp. The physical "
+                              "defaults are one clip's best point, not measurements. tune_push does not apply to a tower."))
         return dict(info, ok=True, path=str(path), shape=resolved["shape"], template=shown, parameters=PARAMETERS,
                     size_meaning=SIZE_MEANING[resolved["shape"]], mask_key=resolved["mask_key"], frame=FRAME,
                     use=("start(name=..., device='cpu', template={...}) builds this scene from data, no file needed; "
@@ -309,6 +319,9 @@ class RoboSimBridge:
                 if action in ("compare", "compare_take", "tune_push") and (not keys or any(not isinstance(key, str) or "=" not in key for key in keys)):
                     raise ValueError("keys must contain RSS masks such as ['block=red'].")
                 if action == "tune_push":
+                    if (self._current_template(ledger) or {}).get("shape") == "tower":
+                        raise ValueError("tune_push fits one object's pusher path. A tower is tuned by changing template values "
+                                         "with update_scene and comparing rollouts.")
                     take = take or "tune"
                     if max_trials is None:
                         max_trials = plan.TUNE_DEFAULT_TRIALS
@@ -323,7 +336,14 @@ class RoboSimBridge:
                     if any((path / f"{each}.json").exists() for each in taken):
                         raise ValueError("Take already exists; choose a new take name.")
                     if push is not None:
-                        push, _ = plan.validate_push(push)
+                        current = self._current_template(ledger) or {}
+                        if current and (current["shape"] == "tower") != (isinstance(push, dict) and "block" in push):
+                            raise ValueError("A tower's push is {'block', 'distance', 'seconds'}; a single object's is "
+                                             "{'waypoints': [[seconds, x, y], ...]}. This run's scene is the other kind.")
+                        if current.get("shape") == "tower":
+                            push = tower.validate_push(push, tower.block_names(current))
+                        else:
+                            push, _ = plan.validate_push(push)
                     for value, label in ((duration_s, "duration_s"), (steps, "steps"), (record_fps, "record_fps")):
                         if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)):
                             raise ValueError(f"{label} must be a finite number.")

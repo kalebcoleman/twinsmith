@@ -63,10 +63,15 @@ def validate_push(push):
 
     ``push`` is ``{"waypoints": [[t, x, y], ...], "object_velocity": [vx, vy, yaw_rate]}``. Times are
     seconds and strictly increase; x and y are pusher positions on the table in metres. Either key may
-    be left out, but not both.
+    be left out, but not both. A tower's push is ``{"block", "distance", "seconds", "direction"}`` instead
+    (``tower.validate_push``): the finger pushes that block along its long side.
     """
     if not isinstance(push, dict):
         raise ValueError("push must be an object like {'waypoints': [[0, x, y], [2, x, y]], 'object_velocity': [vx, vy, wz]}.")
+    if "block" in push:
+        from . import tower
+
+        return tower.validate_push(push), []
     unknown = sorted(set(push) - set(PUSH_KEYS))
     if unknown:
         raise ValueError(f"push has unknown keys {unknown}; use {list(PUSH_KEYS)}.")
@@ -125,7 +130,7 @@ def rollout_plan(control_hz, *, duration_s=None, steps=None, record_fps=10.0, pu
     else:
         if duration_s is None:
             waypoints = (push or {}).get("waypoints")
-            duration_s = waypoints[-1][0] if waypoints else 2.0
+            duration_s = waypoints[-1][0] if waypoints else (push["seconds"] + 1.0 if push and "seconds" in push else 2.0)
         duration_s = _number(duration_s, "duration_s")
         if duration_s <= 0:
             raise ValueError("duration_s must be positive.")

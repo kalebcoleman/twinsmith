@@ -1751,9 +1751,9 @@ PCB and enclosure outputs from tools beside twinsmith; no simulator. status: ver
 
 <a id="real2sim"></a>
 
-## `real2sim`: RoboSimStudio real-to-sim and MuJoCo sysid
+## `real2sim`: RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3.1 video masks
 
-Toolset `real2sim` is off until you select it with `+real2sim`. Reference: [ROBOSIM.md](ROBOSIM.md). 2 tools, listed as 2: `robosim`, `sysid`.
+Toolset `real2sim` is off until you select it with `+real2sim`. Reference: [ROBOSIM.md](ROBOSIM.md). 3 tools, listed as 3: `robosim`, `sam3`, `sysid`.
 
 ### `robosim`
 
@@ -1767,11 +1767,11 @@ RoboSimStudio real-to-sim in its own Python, no Isaac bridge needed. start a sce
 - `video` (str | None, default `None`): reference: absolute local video file; copied before extracting frames.
 - `keys` (list[str] | None, default `None`): compare/compare_take: RSS object masks, e.g. ['block=red'] or ['block=#d01a10~0.1'].
 - `take` (str | None, default `None`): rollout/compare_take: take name. tune_push: base name; trials are NAME-1, NAME-2.
-- `routine` (str | None, default `None`): rollout: 'push' (default in the template) or 'settle', or a routine your scene defines.
+- `routine` (str | None, default `None`): rollout: 'push' (the template's default), 'settle', a tower's 'pull', or a routine your scene defines.
 - `camera` (str | None, default `None`): Camera name from start's RSS status; omit for the scene's first camera.
 - `at` (str | None, default `None`): reference: RSS anchors in clip seconds, e.g. '0:start,3:middle,6:end'; default from start_s/end_s.
-- `shape` (Literal['box', 'tee', 'jenga'], default `'tee'`): scene_template: tee, box or jenga, unless template gives a shape.
-- `push` (dict | None, default `None`): rollout/tune_push: {'waypoints': [[s, x, y], ...] pusher path in m, 'object_velocity': [vx, vy, wz]}.
+- `shape` (Literal['box', 'tee', 'jenga', 'tower'], default `'tee'`): scene_template: tee, box, jenga (one block) or tower (18 x 3 blocks), unless template gives one.
+- `push` (dict | None, default `None`): rollout/tune_push: {'waypoints': [[s, x, y], ...], 'object_velocity': [vx, vy, wz]}. Tower: {'block', 'distance'}.
 - `duration_s` (float | None, default `None`): rollout: simulated seconds; default the last waypoint time. Not with steps.
 - `steps` (int | None, default `None`): rollout: control steps instead of duration_s.
 - `record_fps` (float, default `10.0`): rollout: frames per simulated second to record (nearest whole step stride).
@@ -1784,9 +1784,29 @@ RoboSimStudio real-to-sim in its own Python, no Isaac bridge needed. start a sce
 - `port` (int | None, default `None`): start: viewer port; omit to pick a free one. RSS listens on all interfaces.
 - `wait_s` (float, default `0`): Wait at most this many seconds; poll status with run for completion.
 - `allow_concurrent_gpu` (bool, default `False`): start: knowingly permit cuda:0 despite other GPU workloads or an unavailable GPU check.
-- `template` (dict | None, default `None`): start/update_scene/scene_template: plain data {shape, size, position [x,y], yaw, color, camera, push}.
+- `template` (dict | None, default `None`): start/update_scene/scene_template: plain data {shape, size, position, yaw, color, camera, push}; a tower has more.
 - `all` (bool, default `False`): status without run: every run in full, not live servers and the 5 newest.
 - `max_trials` (int | None, default `None`): tune_push: most rollouts to try (default 6, at most 12).
+
+### `sam3`
+
+SAM 3.1 masks for prompted things through a video or a recorded RGB-D clip, in its own environment on the GPU; no simulator bridge. track is a job (follow with jobs, then report) writing per-frame id masks, object rows and overlay.mp4. With depth and intrinsics an object gets a 3-D point, and a box of known size a pose; fuse merges the box poses of several views. Reads files only: no camera, no ROS topic.
+
+- `action` (Literal['status', 'track', 'report', 'fuse'], required): status: environment, recent runs. track: start a job. report: read a run. fuse: merge views' box poses.
+- `source` (str | None, default `None`): track: absolute video file, or clip folder with rgb/ (depth/ and camera.json for 3-D).
+- `prompts` (list[str] | None, default `None`): track: TAG=TEXT per thing to find, e.g. ['blocks=wooden block'].
+- `box_size_m` (dict[str, list[float]] | None, default `None`): track: {tag: [length, width, height]} metres; that tag's objects get box poses. Needs depth.
+- `zone` (dict[str, str] | None, default `None`): track: {tag: zone tag}, e.g. {'hand': 'tower'}: report when a hand is at the tower.
+- `name` (str | None, default `None`): track/report/fuse: run name; folder <workspace>/runs/sam3/<name>/. track, fuse: omit for a timestamp.
+- `start_s` (float | None, default `None`): track, video: window start, seconds.
+- `end_s` (float | None, default `None`): track, video: window end, seconds.
+- `every` (int, default `1`): track: use every n-th frame.
+- `fps` (float | None, default `None`): track: frame rate, if the source gives none.
+- `timeout_s` (float, default `3600.0`): track: stop the job after this long.
+- `allow_concurrent_gpu` (bool, default `False`): track: knowingly run beside other GPU work.
+- `tag` (str | None, default `None`): report: also return one frame's objects of this tag. fuse: the boxes' tag.
+- `runs` (list[str] | None, default `None`): fuse: finished runs of one scene from different sides, each with world poses.
+- `frame` (int | None, default `None`): report with tag: frame index (default 0; -1 is the last).
 
 ### `sysid`
 
