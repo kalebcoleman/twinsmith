@@ -63,9 +63,15 @@ assembled pieces 0.1 mm above resting for that reason.
 
 `puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
 and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
-bound for a print with infill) and friction are `unconfirmed`. Verified: the host tests, and one build on Newton
-(Isaac Sim 6.2.0, 2026-11-15): ten pieces, 27 rigid bodies, parts audit clean. Not run yet: settling, contact and
-gripping.
+bound for a print with infill) and friction are `unconfirmed`.
+
+Measured on Newton (2026-11-15, Isaac Sim 6.2.0, one run): ten pieces, 27 rigid bodies, parts audit clean, no
+contact-buffer warning. Over 3 s of settling no piece moved more than 0.06 mm from where the task put it, and no pair
+of pieces overlapped by more than 0.05 mm. The RG2 gripped the yellow fork by its centre tab (pads closed to 20.6 mm on
+its 21 mm) and drew it out of the green base: the deepest overlap on the way was 0.06 mm, the base and its other pieces
+shifted 0.8 mm together, and afterwards the fork touched only the two fingertips. The fork slipped 9 mm in the gripper
+on the way out and hung 2.3 degrees tilted, so the grip (fingertip friction, grip force and the piece's mass are all
+estimates) is weak for this piece.
 
 ### Scan to scene
 
