@@ -1,8 +1,11 @@
-# Wrist camera bracket (CAD)
+# Wrist camera bracket and the vendors' CAD
 
 | File | What it is |
 |---|---|
 | `rg2_camera_bracket.py` | **Current.** Parametric FreeCAD model of the real printed bracket: a two-piece clamp on the RG2 body, a truss arm and a tilted plate for the D415. Pack `ur5e-workcell/v3` |
+| `rg2_from_step.py` | Reads OnRobot's official RG2 STEP (a local copy, checked by SHA-256 by `scripts/workcell_rg2_assets.py`) and writes one mesh per link and material for the pack's RG2. Nothing of the STEP is kept here |
+| `part_from_step.py` | The same for one rigid part: OnRobot's Quick Changer robot side and Bota Systems' Rokubi (`scripts/workcell_stack_assets.py`) |
+| [`docs/media/workcell-rg2-front-real-vs-sim.jpg`](../../../docs/media/workcell-rg2-front-real-vs-sim.jpg) | The real RG2 from the front (photo before the bracket was fitted, cropped) beside an Isaac Sim 6.2 capture of the built cell |
 | `wrist_bracket.py` | Superseded placeholder (a ring on the wrist 3 housing). Kept only so `scripts/workcell_camera_assets.py` can rebuild pack `v2` |
 | [`docs/media/workcell-bracket-real-vs-sim.jpg`](../../../docs/media/workcell-bracket-real-vs-sim.jpg) | The real bracket (photo, cropped to the wrist) beside an Isaac Sim 6.2 capture of the built cell from the same viewpoint, gripper open |
 | [`docs/media/workcell-wrist-view-sim.jpg`](../../../docs/media/workcell-wrist-view-sim.jpg) | What the simulated wrist D415 sees, gripper fully open and partly open |
@@ -11,7 +14,8 @@
 
 What still differs: the simulated arm is posed with the tool horizontal, not as in the photo; the printed blocks and the
 truss are a reconstruction, squarer and heavier than the real ones; the bolt ends, the hot glue at the foot of the
-arm, the cable and the AprilTag are not modelled; the simulated RG2 has add-on finger pads and no tape.
+arm, the cable and the AprilTag are not modelled; the simulated RG2 is OnRobot's CAD with its bare standard fingertips
+(the tape on the real ones is a friction value, not geometry).
 
 ![What the simulated wrist camera sees](../../../docs/media/workcell-wrist-view-sim.jpg)
 
@@ -51,9 +55,20 @@ SolidCraft, because the pack build regenerates the part headlessly from the conf
 | Quick Changer robot side: diameter 71 mm, 13.6 mm from the robot flange to the tool; tool side diameter 63 mm | OnRobot Quick Changers datasheet v2.0, sections 1.3 and 1.7: <https://onrobot.com/storage/datasheets/quick-changers/datasheet_quick_changers_v2.0_en.pdf> (context only: the bracket does not touch it) |
 | UR5e tool flange EN ISO 9409-1-50-4-M6, M8 8-pin tool connector | Universal Robots UR5e technical specification: <https://www.universal-robots.com/media/1807465/ur5e_e-series_datasheets_web.pdf> (context only: the bracket does not touch it) |
 
-Not confirmed in a vendor document: the pack's RG2 mesh puts the top of the Quick Changer tool side 16 mm above the
-datasheet's mounting plane, and the arms of the mounting bracket end 53 mm below that plane (read off the datasheet
-drawing, which gives no number for it). The D415's colour field of view (69.4 x 42.5 degrees, used for the simulated
+Checked against OnRobot's official RG2 STEP ("RG2 Tier 2 - 101631", <https://onrobot.com/storage/303_rg2_tool.step>),
+which is now the pack's RG2, 2026-11-14. The frame's origin is the rim of the Quick Changer's robot side, 2.5 mm on
+the robot's side of the flange plane; the datasheet's mounting plane is at Z = 16:
+
+| What the bracket model assumed | In OnRobot's CAD | Change |
+|---|---|---|
+| Body section at the collar 54 x 36 mm | 54.0 x 36.0 mm from Z = 71 to Z = 104 | none |
+| That section centred on the tool axis | It leans 1.0 degree toward the back: its centre is 0.39 mm behind the axis at Z = 72 and 0.83 mm at Z = 98 (front face at +17.6 to +17.2 mm, back face at -18.4 to -18.8 mm) | The collar's pocket is centred 0.6 mm behind the axis (`rg2_waist_centre_y`); with the pocket on the axis the back half overlapped the body by up to 0.5 mm |
+| Mounting bracket's arms end near Z = 69 | Z = 70.7 | none: the collar starts at Z = 72, 1.3 mm below them |
+| Body widens near Z = 100 | From Z = 104; 65 mm wide from Z = 120 | none: the collar ends at Z = 98 |
+| Finger linkage within 16.5 mm of the mid-plane on both sides | 16.7 mm behind it and 13.9 mm in front of it, below Z = 111 | The printed front bar is 3.7 mm in front of the linkage's slab (it was taken as 1.8 mm) |
+| Lower end of the body at Z = 148 | Z = 148.3 | none |
+
+The D415's colour field of view (69.4 x 42.5 degrees, used for the simulated
 view above) is the config's existing value from Max's camera model; it was not re-read in a vendor document here.
 
 ## Estimated from photo, measure to confirm
@@ -123,8 +138,8 @@ The bracket is on the RG2, so which side of tool0 the camera is on depends on ho
 axis. From the photos of the wrist before the bracket was fitted, the RG2's front face (logo, AprilTag) is on the side
 of wrist 3's M8 tool connector, which is tool0 -Y (Universal Robots: "Y is away from the Tool connector"). The config
 mounts the RG2 that way (`asset_layout.rg2.mount_pose`, status unconfirmed, from photos, confirm on the robot), so the
-camera, on the back face, is on the tool0 +Y side: optical origin at (0.033, 0.066, 0.165) m in tool0 with the shipped
-stack, optical axis (0, -0.423, 0.906).
+camera, on the back face, is on the tool0 +Y side: optical origin at (0.033, 0.066, 0.1145) m in tool0 with the shipped
+stack (no Bota; 0.1625 m along the tool axis with `bota.mounted`), optical axis (0, -0.423, 0.906).
 
 ## Collision
 
@@ -138,8 +153,8 @@ a sensible follow-up: it is the part that sticks out furthest).
 | In the scene | `<assembly>/rg2/onrobot_rg2_base_link/wrist_mount_collision/<shape>`, referenced there by `cameras.py` |
 | Rigid body | The RG2 body, `onrobot_rg2_base_link`, which the bracket clamps. Not `wrist_3_link`, where the camera prims hang |
 | Filtered pairs | None. The collar overlaps the RG2 body's own hull, and shapes of one rigid body never collide |
-| Mass | None added. The RG2 body's mass, centre of mass and inertia are explicit, so the collider changes none of them |
-| Wrench | A push on the bracket reaches the arm through the Bota joint, as on the real stack. The bracket and camera weigh nothing in the reading |
+| Mass | The shapes add none. The RG2 body's mass, centre of mass and inertia are explicit, and the builder adds the bracket (0.100 kg with its bolts, an estimate) and the D415 (0.064 kg) to them as point masses at their centres of gravity |
+| Wrench | A push on the bracket reaches the arm through the stack's joints, as on the real arm, and the bracket and camera are in the weight the wrist force/torque read reports |
 
 Why not one hull: the bracket wraps the gripper and reaches out to the camera, so one hull would fill the space
 between the arm and the gripper. Why the collar can be a solid box: what it would otherwise fill is the RG2 body
@@ -149,30 +164,34 @@ Near the finger linkage the collider is deliberately smaller than the print: `fr
 Z = 104 mm (`collision_top_z_near_fingers`), 12 mm short of the printed bar. That keeps every shape more than two of
 Newton's 4 mm contact gaps away from the linkage, so no contact point is created at any opening.
 
-Minimum distances, computed on the built stage over both driven joints' whole range (-45 to 20 degrees) against the
+Minimum distances, computed on the built stage over the driven joint's whole range (-44.0 to 26.1 degrees) against the
 links' own collision hulls (`mcp/tests/test_workcell_real_pack.py` repeats it):
 
-| Shape | Finger linkage | Finger pads |
+| Shape | Finger linkage | Fingertips |
 |---|---|---|
-| `front_bar_extension` | 10.9 mm | 74.0 mm |
-| `collar` | 12.8 mm | 77.7 mm |
-| `truss` | 21.4 mm | 81.1 mm |
-| `camera_plate` | 46.5 mm | 89.6 mm |
-| `plate_support` | 50.8 mm | 93.0 mm |
+| `front_bar_extension` | 11.1 mm | 66.6 mm |
+| `collar` | 12.4 mm | 68.1 mm |
+| `truss` | 21.0 mm | 70.4 mm |
+| `camera_plate` | 44.2 mm | 77.3 mm |
+| `plate_support` | 49.0 mm | 80.7 mm |
 
-Any shape to the Quick Changer: 72.8 mm; to the Bota: 87.8 mm; to wrist 3: 119.8 mm.
+Any shape to the Quick Changer: 55.8 mm; to wrist 3: 69.4 mm (the stack is 34 mm shorter than it was with the Bota and
+the old Quick Changer height in it).
 
-Against the bench at the two poses the cell is used in (a test repeats this for every bench collider, the base plate
-and every other body of the robot, and requires 8 mm):
+Against the bench at the two poses the cell is used in (a test repeats this for every bench collider, which now
+includes the plates the robot stands on, and every other body of the robot, and requires 8 mm; the robot's base is
+80 mm above the table top):
 
-| Shape | Bench, as built (every joint at zero) | Bench, tool down (0, -80, 100, -110, -90, 0) |
-|---|---|---|
-| `collar` | 37.6 mm | 176.7 mm |
-| `front_bar_extension` | 39.3 mm | 175.3 mm |
-| `truss` | 91.9 mm | 171.5 mm |
-| `camera_plate` | 120.3 mm | 152.6 mm |
-| `plate_support` | 122.2 mm | 162.2 mm |
-| D415 body (no collider) | 117.2 mm | 137.6 mm |
+| Shape | Bench, as built (every joint at zero) | Bench, tool down (0, -80, 100, -110, -90, 0) | Tool down with `bota.mounted` |
+|---|---|---|---|
+| `collar` | 114.2 mm | 299.7 mm | 252.3 mm |
+| `front_bar_extension` | 115.0 mm | 296.4 mm | 249.5 mm |
+| `truss` | 168.7 mm | 297.0 mm | 249.0 mm |
+| `camera_plate` | 197.0 mm | 262.1 mm | 218.2 mm |
+| `plate_support` | 198.7 mm | 287.7 mm | 239.7 mm |
+| D415 body (no collider) | 193.3 mm | 251.1 mm | 208.5 mm |
+
+With `bota.mounted` the as-built distances are the same within 0.3 mm.
 
 The cell is built with every joint at zero: the arm lies stretched out along the bench with the tool axis about 66 mm
 above it, and the camera is on the upper side there. Turning wrist 3 at that pose swings the camera down into the
@@ -193,13 +212,14 @@ from `config/lab_hardware.json` (any tilt from 0 to 45 degrees).
 
 | Piece | Volume | Size | Prints |
 |---|---|---|---|
-| `clamp_front` | 42.1 cm3 | 82.6 x 28.0 x 44.0 mm | On its front face (nut pockets down), no supports |
-| `camera_arm` | 70.7 cm3 | 167.2 x 87.3 x 43.2 mm | On the collar's upper face (the Quick Changer side down), with supports under the tilted plate where it overhangs the truss |
+| `clamp_front` | 41.7 cm3 | 82.6 x 27.4 x 44.0 mm | On its front face (nut pockets down), no supports |
+| `camera_arm` | 70.9 cm3 | 167.2 x 87.3 x 43.2 mm | On the collar's upper face (the Quick Changer side down), with supports under the tilted plate where it overhangs the truss |
 
 Hardware: four M4 socket head screws about 55 mm long with four M4 hex nuts (pressed into the pockets of the front
 piece), two M3 x 6 screws for the camera (the plate is 3.5 mm and the D415 takes at most 3 mm of thread). Slide the
 front piece onto the RG2's front face and the arm piece onto the back face, below the mounting bracket's arms, and
 tighten the four bolts evenly; the 0.6 mm gap between the pieces must stay open. The collar is clear of the Quick
-Changer's release button and of the tool connector (both more than 50 mm away, at the other end of the mounting
-bracket) and of the finger linkage at any opening (the linkage stays within 16.5 mm of the gripper's mid-plane and
-below the collar; the printed bracket is at least 1.8 mm outside that slab, and the camera 33 mm from the RG2 body).
+Changer's latch and of the tool connector (both more than 50 mm away, at the other end of the mounting
+bracket) and of the finger linkage at any opening (the linkage stays between 16.7 mm behind the gripper's mid-plane
+and 13.9 mm in front of it, and below the collar; the printed bracket is at least 3.7 mm outside that slab, and the
+camera 32 mm from the RG2 body).

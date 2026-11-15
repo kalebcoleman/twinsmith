@@ -234,7 +234,9 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
     from .environment import ROOT
-    return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT,))
+    # Labelled placeholders (the Bota's unmeasured adapter plates) are not BOM hardware: they are reported, not audited.
+    proxies = tuple(str(prim.GetPath()) for prim in Usd.PrimRange(stage.GetPseudoRoot()) if prim.GetCustomDataByKey("workcell:proxy"))
+    return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT, *proxies))
 
 
 def fingertip_friction(stage, config, parts):

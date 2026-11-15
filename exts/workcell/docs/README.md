@@ -29,12 +29,14 @@ the ground plane is off. The config's `bench_top` section colours the top panel 
 engines (black HDPE; the friction values are placeholders until a tilt test measures them). The `contact` section makes
 contact the same on both engines: every collider without a material gets a default one (PhysX's 0.5; Newton would give
 it 1.0), every material combines friction by max (MuJoCo's rule) and does not bounce, and on Newton, which reads one
-coefficient, each material's static value is used. The finger pads carry convex colliders, so the pad material is what
-touches a block. `workcell__robot(action="wrench")` reads the Bota F/T sensor on both engines with the weight it carries;
+coefficient, each material's static value is used. The RG2's fingertips carry their own convex colliders with a friction
+material (`fingertips` in the config), so that is what touches a block. `workcell__robot(action="wrench")` reads the wrist
+force/torque sensor on both engines with the weight it carries: the UR5e's own flange sensor by default, the Bota when
+`bota.mounted` is `true`;
 `scripts/workcell_static_wrench.py` checks the two agree at rest. The `inertials` section sets explicit mass, centre of
 mass and principal inertia on named bodies (the UR5e links from Universal Robots' ROS 2 description, the RG2 links at the
-datasheet's 0.78 kg), so neither engine computes them from collider shapes; the Bota and Quick Changer masses come from their
-own sections.
+datasheet's 0.78 kg), so neither engine computes them from collider shapes; the Quick Changer's mass, the Bota's and
+what the RG2 body carries (the camera bracket and the D415) come from their own sections.
 
 There is no legacy extension ROS graph setup or custom `rclpy` build prerequisite for
 this API. Generic `sim__*` tools are separate from the workcell interface.

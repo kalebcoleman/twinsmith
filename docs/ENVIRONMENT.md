@@ -126,6 +126,9 @@ These must be the same for the host and for Kit: each reads its own environment.
 | `TWINSMITH_USD_PYTHON` | unset | host | A Python with `usd-core` for USD dependency checks on the host; without it they use the selected Kit. |
 | `TWINSMITH_WORKSPACE` | the folder that holds the checkout (when it has `envs/` or an asset folder), else `<home>/robotics-workspace`; `scripts/env.py init` uses `<home>/robotics-workspace` | host, Kit, installer | The [workspace folder](LINUX-SETUP.md#one-workspace-folder); `<workspace>/assets` is where the asset root is looked for. |
 | `TWINSMITH_PROJECT` | walk up from the working directory | host, Kit | A project directory or its `twinsmith.json`; its `"pack"` key (`"<id>/<version>"`) is the default pack for `doctor` and `pin`. Only a project named here can set `isaaclab_python` and `isaaclab_root`. |
+| `TWINSMITH_RG2_STEP` | unset | `scripts/workcell_bracket_assets.py` | A local copy of OnRobot's official RG2 STEP, needed only to rebuild the private work-cell pack. Checked against a pinned SHA-256; nothing is downloaded. |
+| `TWINSMITH_QC_STEP` | unset | `scripts/workcell_bracket_assets.py` | The same for OnRobot's official Quick Changer robot-side STEP. |
+| `TWINSMITH_BOTA_STEP` | unset | `scripts/workcell_bracket_assets.py` | The same for Bota Systems' official Rokubi STEP. |
 
 ## Set by the code, read by the code
 

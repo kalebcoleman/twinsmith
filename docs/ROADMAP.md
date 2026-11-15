@@ -10,8 +10,8 @@ Checked against `origin/main` at `33ff56e` on 2026-11-13, and updated after the 
 
 ## The thesis in one paragraph
 
-A UR5e plays Jenga. The simulated cell is the lab's cell: the Vention bench, the Bota force-torque sensor, the OnRobot RG2 with
-its finger pads, a wrist D415 (the overhead one is not bought and not built), and, as a task pack loaded on top, 54 blocks that each differ a little in size, mass and friction, as real
+A UR5e plays Jenga. The simulated cell is the lab's cell: the Vention bench, the OnRobot RG2 on its
+Quick Changer (the lab's Bota force-torque sensor is not mounted and is built only on request), a wrist D415 (the overhead one is not bought and not built), and, as a task pack loaded on top, 54 blocks that each differ a little in size, mass and friction, as real
 blocks do. It runs on Newton's MuJoCo-Warp solver. Perception is markerless. Real recordings tune the simulation offline
 (system identification), a planner and a benchmark run in simulation, and the loop closes on the real robot only through ROS 2
 code the owner has approved.

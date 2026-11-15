@@ -7,9 +7,11 @@ does not run the simulator or inspect private assets.
 
 ## Scope
 
-The work cell is one UR5e on a Vention bench with a Bota Rokubi, OnRobot Quick Changer,
-standard OnRobot RG2, black finger pads and one camera: a D415 on the wrist. That camera is the
-cell's only sensor for perception and real-to-sim. A second, overhead D415 on a removable gantry is
+The work cell is one UR5e on a Vention bench with an OnRobot Quick Changer, a standard OnRobot RG2
+with its standard fingertips, and one camera: a D415 on a printed bracket on the gripper. That camera is the
+cell's only sensor for perception and real-to-sim. The lab also owns a Bota Rokubi force/torque sensor; it is not
+mounted on the arm, and the cell builds it only when `bota.mounted` is `true`
+([the tool stack](#the-tool-stack-as-on-the-real-arm)). A second, overhead D415 on a removable gantry is
 a proposal that is not bought and is not built (`overhead_camera.enabled` is `false` in the
 config; `true` builds it).
 
@@ -20,6 +22,7 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 | `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v3` |
 | `exts/workcell/workcell/bom.csv` | The base cell's BOM |
 | `scripts/workcell_bracket_assets.py`, `exts/workcell/cad/rg2_camera_bracket.py` | Build pack `ur5e-workcell/v3` from `v2`: the wrist bracket becomes a parametric copy of the real printed one, a two-piece clamp on the RG2 body with a truss arm and a plate for the D415 ([parameters, sources and what to measure](../cad/README.md)). The pack keeps the USD, a STEP of the assembly and a STEP and STL of each printable piece |
+| `scripts/workcell_rg2_assets.py`, `scripts/workcell_stack_assets.py`, `exts/workcell/cad/rg2_from_step.py`, `exts/workcell/cad/part_from_step.py` | Called by the script above: the RG2, the Quick Changer's robot side and the Bota Rokubi from the vendors' official STEP files, read from local copies checked by SHA-256 ([the tool stack](#the-tool-stack-as-on-the-real-arm)) |
 | `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2` (superseded): RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and a placeholder bracket on the wrist 3 housing |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
 | `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
@@ -45,7 +48,7 @@ default: add `+sim`):
 | Group | Actions | Purpose |
 | --- | --- | --- |
 | `workcell__cell` | `quick_start`, `status`, `shutdown` | Build a stopped pack-backed scene, read its report, or release workcell state without clearing the stage |
-| `workcell__robot` | `status`, `wrench` | Read the robot build report, or the simulated Bota F/T sensor with the weight it carries |
+| `workcell__robot` | `status`, `wrench` | Read the robot build report, or the simulated wrist force/torque sensor with the weight it carries: the UR5e's own flange sensor, or the Bota when `bota.mounted` is `true` |
 | `workcell__perception` | `status` | Read camera configuration, not captured sensor data |
 | `workcell__jenga` | `build`, `status` | With the `jenga_tower` task loaded: replace the tower on a stopped timeline or read its build report |
 
@@ -104,12 +107,11 @@ physical part must map to one of these rows.
 | Area | BOM IDs and quantity |
 | --- | --- |
 | Scene | `bench` 1 |
-| Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1, `finger_pad` 2 |
+| Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1 (built: `robot`, `quick_changer`, `rg2`; `bota` only with `bota.mounted`, `base_plate` only with `base_plate.present`) |
 | Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
 | Jenga (task packs, not the cell) | `jenga_block` 54 for `jenga_tower`, 1 for `push_block` |
 
-Both cameras use the single `d415` logical asset; the BOM records two physical units. The
-two finger pads use the single `finger_pad` logical asset. A partial tower may instantiate
+Both cameras use the single `d415` logical asset; the BOM records two physical units. A partial tower may instantiate
 fewer blocks than the BOM quantity, but each instantiated block maps to `jenga_block`.
 
 ## Pricing
@@ -229,14 +231,162 @@ from. The changes:
 - The 54-block tower settled by at most 0.95 mm over 2 s.
 - Not tested: Newton, grasp contact and cameras.
 
+## The tool stack, as on the real arm
+
+The default cell is the arm as it stands in the lab (photos of 2026-11-14): wrist 3's flange, the OnRobot Quick Changer,
+the RG2 with its standard fingertips, the printed camera bracket and the D415. Nothing else hangs from the flange, and
+nothing that is not on the real arm is built.
+
+![Real RG2 and simulated RG2 from the front](../../../docs/media/workcell-rg2-front-real-vs-sim.jpg)
+
+What still differs in the picture: the photo was taken before the camera bracket was fitted; the simulated gripper has
+no logo, AprilTag, tape or cables, and its materials are look only.
+
+| Part | Geometry | Source |
+|---|---|---|
+| Quick Changer, robot side | Official CAD: 13.6 mm from the flange to its face toward the tool, 71 mm across. The large cable holder of the file is left out (the photos show the connector free); the small clip opposite the connector is kept | OnRobot "Quick Changer Robot side" v2, <https://onrobot.com/storage/quick-changer-robot-side_v2_with_cable_holder.step>, linked from <https://onrobot.com/en/products/quick-changer>; datasheet v2.0 gives the same 13.6 mm |
+| RG2 with the Quick Changer's tool side | Official CAD, 107,599 triangles after decimation | OnRobot "RG2 Tier 2 - 101631", <https://onrobot.com/storage/303_rg2_tool.step>, linked from <https://onrobot.com/en/products/rg2-finger-gripper> |
+| Camera bracket | Parametric copy of the printed part, estimated from one photo ([CAD](../cad/README.md)) | `exts/workcell/cad/rg2_camera_bracket.py` |
+| D415 | Vendor mesh | RealSense ROS description (Apache-2.0) |
+| Bota Rokubi (only with `bota.mounted`) | Official CAD, 32 mm high, 48 mm across | Bota Systems "Rokubi/Medusa Gen 0 Series Side" (ROK-A000), <https://shop.botasys.com/shop/rokubi-medusa-gen-0-series-kit-1877/document/180>, listed on <https://shop.botasys.com/shop/rokubi-medusa-gen-0-series-kit-1877> |
+
+The vendors' STEP files are not in this repository and not in the pack. Neither OnRobot nor Bota Systems states
+redistribution terms for them, so `scripts/workcell_bracket_assets.py` reads each from a local path
+(`TWINSMITH_RG2_STEP`, `TWINSMITH_QC_STEP`, `TWINSMITH_BOTA_STEP`), checks it against a pinned SHA-256, and writes the
+converted geometry into the private pack only; the pack's manifest records the URL, the hash and "do not redistribute".
+A STEP is parsed as data by FreeCAD; nothing in it is run.
+
+OnRobot's RG2 STEP also holds the Quick Changer's robot side, in place on the gripper. That fixes how the two meet:
+the robot's flange plane is 2.5 mm into the RG2 body frame (`onrobot_rg2_base_link`, whose origin is the rim of the
+robot side) and the robot side ends 13.6 mm further (`asset_layout.rg2.mount_pose`, `quick_changer.standoff_m`). The
+15.92 mm the cell used before was a CAD value of unknown origin.
+
+### One switch for the Bota
+
+The lab owns a Bota Rokubi force/torque sensor (BFT-ROKS-SER-M8, to be confirmed); it is not mounted on the arm.
+`bota.mounted` in `lab_hardware.json` is `false`. Setting it to `true`, and editing nothing else, puts an adapter plate,
+the sensor and a second adapter plate between the flange and the Quick Changer; everything below follows from
+`exts/workcell/workcell/stack.py`:
+
+| | `bota.mounted: false` (default) | `bota.mounted: true` |
+|---|---|---|
+| Stack from the flange | Quick Changer, RG2 | plate, Bota, plate, Quick Changer, RG2 |
+| Bota prims | none | `<assembly>/bota`, `bota_robot_plate`, `bota_tool_plate` |
+| Flange plane to the RG2's inlet | 13.6 mm | 61.6 mm (8 + 32 + 8 + 13.6) |
+| RG2 body frame origin in tool0 | (0, 0, -2.5) mm | (0, 0, 45.5) mm |
+| Tool centre point in tool0 (centre of the fingertip pads, pads together) | (0, 0, 216.1) mm | (0, 0, 264.1) mm |
+| Wrist camera optical origin in tool0 | (33.0, 66.0, 114.5) mm | (33.0, 66.0, 162.5) mm |
+| Payload below the flange | 1.004 kg, centre of gravity (5.6, 5.6, 77.1) mm in tool0 | 1.251 kg, (4.5, 4.5, 105.1) mm |
+| `workcell__robot(action="wrench")` | the UR5e's own flange sensor | the Bota's reading, with the flange reading under `flange` |
+
+The tool centre point moves along the tool axis as the fingers open: 216.1 mm with the pads together, 199.3 mm at
+joint zero (pads 75 mm apart) and 178.0 mm fully open, from the flange, without the Bota. Before this change the
+simulated stack had the Bota in it and a 15.92 mm Quick Changer: the RG2's inlet was 47.92 mm from the flange and the
+same point 266.5 mm from it.
+
+With the switch on, two things are **not measured** and the build report says so (`robot.tool.unmeasured`,
+`robot.proxies`): the two adapter plates. No drawing or part exists for them and Bota publishes none for this flange
+(its Universal Robots kit is built on the SensONE, which bolts to the flange directly). Each is a labelled placeholder
+disc from `bota.robot_side_plate` and `bota.tool_side_plate`: 63 mm across, 8 mm thick, 67 g. Which face of the sensor
+is toward the tool and where its connector points are not confirmed either.
+
+### Payload
+
+What hangs from the flange, as a pendant wants it (`robot.tool.payload` in the build report; tool0's origin is the
+centre of the flange plane, +Z along the tool axis; fingers at joint zero):
+
+| Item | Mass | Centre of gravity in tool0 (mm) | Source | Status |
+|---|--:|---|---|---|
+| Quick Changer, robot side | 0.060 kg | (2.4, 0.6, 4.3) | OnRobot Quick Changer datasheet v2.0; centre of volume of the official CAD | datasheet; not weighed |
+| RG2 with the Quick Changer's tool side | 0.780 kg | (-0.2, 0.0, 78.5) | OnRobot RG2 datasheet v1.8; centre from the link masses in `inertials` | datasheet; taken to include the tool side (it is part of OnRobot's RG2 CAD): weigh it |
+| Camera bracket with its four M4 bolts | 0.100 kg | (13.2, 13.6, 85.9) | CAD volume 112.6 cm3 (140 g solid PLA), about 80 g as printed, plus 20 g of bolts | estimate: weigh it |
+| D415 | 0.064 kg | (68.0, 66.1, 114.3) | Intel D400 datasheet rev 017, table 3-51 | datasheet, within 10 percent |
+| **Total** | **1.004 kg** | **(5.6, 5.6, 77.1)** | | cables not included |
+
+With the Bota mounted the two plates (0.067 kg each, placeholders) and the sensor (0.113 kg, datasheet) are added:
+1.251 kg at (4.5, 4.5, 105.1) mm.
+
+The simulation carries the same mass. The bracket and the D415 have no rigid body of their own (their prims hang from
+tool0 and their collider is on the RG2 body), so their masses are added to the RG2 body's mass properties as point
+masses at their centres of gravity (`robot.carried_on_rg2`). A test sums the masses below the flange on the built
+stage and compares them with this table.
+
+### Force/torque read
+
+`workcell__robot(action="wrench")` reads the cell's wrist force/torque sensor. Its reply names the sensor in `source`.
+
+- **Default: the UR5e's own tool flange sensor** (`source: "ur5e_tool_flange_sensor"`, `flange_ft_sensor` in the config).
+  The value is the reaction at the fixed joint between wrist 3 and the first part bolted to the flange: force and
+  torque exerted on the tool by the arm, at the centre of the flange plane, in tool0's axes (`frame_id` `tool0`, the
+  stock `ur_robot_driver` name; the lab's own files do not subscribe to that topic, so this is not confirmed for the
+  lab). It carries everything below the flange, and `load_below_sensor` gives that mass and weight.
+- **With `bota.mounted`: the Bota's reading** (`source: "bota_rokubi"`): the reaction at the sensor's tool-side face, in
+  the sensor frame (`bota_ft_sensor`), carrying everything below the sensor. The flange reading comes with it under
+  `flange`.
+- **Raw, not what the real controller publishes.** The simulated value holds the whole weight below the sensor. The
+  real controller reports the force at the tool centre point after subtracting the payload set on the pendant, so
+  compare the two after removing the payload's weight, or with the pendant's payload at zero. The real driver's sign
+  convention has not been checked against this one.
+- **Not modelled:** noise, drift, range and accuracy. The UR5e's sensor is specified at 50 N range, 3.5 N precision
+  and 4.0 N accuracy in force, and 10 N m, 0.2 N m and 0.3 N m in torque (Universal Robots, UR5e technical details,
+  <https://www.universal-robots.com/media/1807465/ur5e_e-series_datasheets_web.pdf>); the config records these as the
+  error bars for a comparison with the real reading. A 15 g Jenga block (0.147 N) is far below them.
+
+Measured (2026-11-14, Isaac Sim 6.2.0, one run each; arm joints in degrees):
+
+| State, engine | Pose | Reading | Force | Expected (mass below) |
+|---|---|---|--:|--:|
+| off, Newton | as built (all zero) | flange | 9.8492 N | 9.8492 N (1.003999 kg) |
+| off, Newton | tool down (0, -80, 100, -110, -90, 0) | flange | 9.8492 N, (-0.0001, 0.0210, -9.8492) | 9.8492 N |
+| off, Newton | tool horizontal (0, -80, 100, -10, -90, 0) | flange | 9.8492 N | 9.8492 N |
+| off, PhysX | as built / tool down / tool horizontal | flange | 9.8496 / 9.8545 / 9.8485 N | 9.8492 N |
+| on, Newton | tool down | Bota | 10.5065 N, (-10.5065, -0.0001, 0.0236) | 10.5065 N (1.070999 kg) |
+| on, Newton | tool down | flange | 12.2723 N | 12.2723 N (1.250999 kg) |
+| on, PhysX | as built / tool down / tool horizontal | Bota | 10.5073 / 10.5163 / 10.5066 N | 10.5065 N |
+| on, PhysX | as built / tool down / tool horizontal | flange | 12.2732 / 12.2829 / 12.2724 N | 12.2723 N |
+
+At tool down without the Bota the torque is (-0.0564, 0.0544, 0.0001) N m: the weight acting at the payload's centre
+of gravity, 5.6 mm off the axis on both sides. `scripts/workcell_static_wrench.py` repeats the check (both readings
+when the Bota is mounted) and passed on Newton in both states. In every run the RG2 body had 0 contact pairs at the
+built pose and with the tool down, with and without `task="jenga_tower"` on Newton.
+
+### Where the robot stands
+
+The bench asset is Vention's CAD of the lab's bench (`VentionAssembly_393251_v88`) and already holds what the photo of
+the base shows: a rail along one long side of the table with its belt (`MO_LM_024`), the carriage plate on it
+(`MO_LM_027_0001`, 268 x 268 mm, top face 58 mm above the table top) and the robot plate (`ST_RB_001_0002`,
+180 x 180 x 22 mm, top face 80 mm above the table top, centred within 1 mm of the robot's axis). The robot's base now
+sits on that plate (`robot.placement` z = 0.080 m) and the 5 mm proxy plate is not built (`base_plate.present` is
+`false`; `true` builds it again for a bench without plates). Until 2026-11-14 the base sat 5 mm above the table top,
+inside these parts. The 80 mm is the CAD's, not a lab measurement: measure the underside of the base flange above the
+table top.
+
+### What quick_start builds
+
+| Prim group (default build, no task) | On the real cell? |
+|---|---|
+| `/World/Bench` (frame, table top, rail, carriage plate, robot plate) | Yes (photos); Vention's CAD. Colliders are one box per part; the top's colour and friction are placeholders |
+| `/World/RobotAssembly/robot` (UR5e) | Yes (photos); vendor mesh |
+| `/World/RobotAssembly/quick_changer` | Yes (photos); OnRobot's CAD. Its connector plug and cable are not modelled |
+| `/World/RobotAssembly/rg2`, with its fingertips | Yes (photos); OnRobot's CAD. The tape on the fingertips is a friction value, not geometry |
+| `<tool0>/wrist_d415/bracket` and `<rg2 body>/wrist_mount_collision` | Yes, **proxy shape**: a parametric copy estimated from one photo; the collider is five convex hulls |
+| `<tool0>/wrist_d415/body` and the camera prim | Yes (photos); vendor mesh. No collider |
+| `/World/RobotAssembly/joints`, lights, physics scene, materials | Not hardware |
+
+Not on the real cell, and no longer built by default (each stays available behind its switch): the Bota and its adapter
+plates (`bota.mounted`), the 5 mm base plate proxy (`base_plate.present`), the overhead camera with its gantry, release
+plate and shelf (`overhead_camera.enabled`, already off). The add-on finger pads are gone altogether: the real gripper
+has none. Task objects (Jenga blocks) appear only with `task=`.
+
 ## Physical fidelity
 
 The current candidate contains:
 
-- Genuine UR5e, Vention bench, OnRobot Quick Changer and OnRobot RG2 meshes, flattened from
-  preserved local vendor CAD. Their MDL materials were replaced with preview materials, so
-  appearance is not vendor-accurate.
-- No genuine Bota Rokubi or gantry CAD is available: these are dimensioned, unconfirmed proxies. The D415 body is
+- Genuine UR5e and Vention bench meshes, flattened from preserved local vendor CAD, and the OnRobot Quick Changer
+  (robot side), the OnRobot RG2 and the Bota Rokubi converted from the vendors' official STEP files
+  ([the tool stack](#the-tool-stack-as-on-the-real-arm)). Materials are preview materials, so appearance is not
+  vendor-accurate.
+- No gantry CAD is available: it is a dimensioned, unconfirmed proxy, and so are the Bota's adapter plates. The D415 body is
   the vendor's mesh; the wrist bracket is a FreeCAD copy of the lab's printed bracket estimated from one photo
   ([what was sourced and what must be measured](../cad/README.md)), not the lab's own CAD.
 - With `overhead_camera.enabled` (off in the shipped config), the overhead support is the pack's three-member gantry (two posts and a cross-member).
@@ -261,24 +411,25 @@ The current candidate contains:
   The RG2 is mounted with its front face (logo, AprilTag) on the side of wrist 3's tool connector, tool0 -Y, as the
   photos of the real wrist show (`asset_layout.rg2.mount_pose`: from photos, confirm on the robot), so the camera is on
   the tool0 +Y side. Known limits: the cell is built with every joint at zero, the arm stretched out along the bench
-  with the tool axis about 66 mm above it (`robot.initial_joint_deg` is read by nothing); the camera is on the upper
-  side there, 117 mm clear of the bench, and turning wrist 3 at that pose swings it into the bench, as it would on a
-  real arm that low. A test checks every bracket shape and the camera body against the bench, the base plate and
-  the rest of the robot at that pose and with the tool down.
+  with the tool axis about 141 mm above the table top (`robot.initial_joint_deg` is read by nothing); the camera is on
+  the upper side there, 193 mm clear of the bench. A test checks every bracket shape and the camera body against the
+  bench (with the plates the robot stands on) and the rest of the robot at that pose and with the tool down, with and
+  without the Bota in the stack.
   The bracket has a collider; the D415 body has none. The pack's bracket asset carries five convex hulls (`collar`,
   `front_bar_extension`, `truss`, `plate_support`, `camera_plate`, each with `physics:approximation = "convexHull"`),
   and the builder references them under the RG2 body it clamps, at
   `<assembly>/rg2/onrobot_rg2_base_link/wrist_mount_collision`. Because they belong to that body, they cannot press on
   the gripper body they wrap (shapes of one body never collide; no pair is filtered), and a push on the bracket
-  reaches the arm through the Bota joint, as on the real stack. No mass is added, so the bracket and camera still
-  weigh nothing in the wrench. Near the finger linkage the collider stops 12 mm short of the printed front bar, so
-  it stays at least 10.9 mm from the linkage over the whole stroke, more than two of Newton's 4 mm contact gaps; a
-  test sweeps both driven joints over their limits against the links' own collision hulls and the pads. The render
+  reaches the arm through the stack's joints, as on the real arm. The shapes add no mass themselves: the bracket's
+  and the camera's masses are on the RG2 body from the config, so both weigh what they should in the wrench. Near the
+  finger linkage the collider stops 12 mm short of the printed front bar, so it stays at least 11.1 mm from the
+  linkage over the whole stroke, more than two of Newton's 4 mm contact gaps; a test sweeps the driven joint over its
+  limits against the links' and fingertips' own collision hulls. The render
   bracket and the camera body under tool0 stay visual only ([details and measurements](../cad/README.md#collision)).
 - Pack leftovers that PhysX warned about are fixed in `v2` itself: the geometry-free `gripper_center` body is a plain
   frame, the UR5e's disabled `robot_gripper_joint` is gone, and the RG2's own articulation settings (16 velocity
   iterations) went with its articulation root. The assembly builder still patches them in the session layer when it loads
-  `v1`. The RG2 stays the standard 110 mm gripper.
+  `v1`. The RG2 is the standard gripper; between its standard fingertips it opens to 100.8 mm, not the datasheet's 110 mm.
 - A plain Jenga block proxy without measured chamfers.
 
 This is not a high-fidelity-qualified model. Flattening preserves mesh and articulation
@@ -292,16 +443,20 @@ configuration or a design envelope and are not vendor drawings.
 | --- | --- | --- |
 | Bench height | 0.885 m default; 0.801 m alternative | `conflict` |
 | Bench top | 1.4 x 0.9 m | `unconfirmed` |
-| Base plate thickness | 0.005 m (5 mm), replacing the old zero placeholder | Provisional; installed thickness `unconfirmed` |
-| Bota diameter / length / mass | 0.048 m / 0.032 m / 0.113 kg; sensor frame on the tool-side face (0.032 m) | `confirmed` (Bota datasheet and URDF); the lab's adapter plates are not modelled |
-| Quick Changer standoff | 0.01592 m (15.92 mm) in CAD | CAD `confirmed`; installed size `unconfirmed` |
-| Quick Changer mass | 0.2 kg (robot side 0.06 + tool side 0.14), pack inertia scaled to it | `unconfirmed` (OnRobot datasheet v2.0; 0.41 kg was the Dual Quick Changer; the RG2's 0.78 kg may include the tool side) |
+| Robot base height | 0.080 m above the table top, on the bench asset's own robot plate | `unconfirmed`: the bench CAD's height, not measured in the lab |
+| Base plate (not built: `base_plate.present` is `false`) | 0.005 m proxy | Superseded by the plates in the bench asset |
+| Bota diameter / length / mass (not built: `bota.mounted` is `false`) | 0.048 m / 0.032 m / 0.113 kg; sensor frame on the tool-side face (0.032 m) | size `confirmed` (Bota's STEP and datasheet); the model of the lab's unit is to be confirmed |
+| Bota adapter plates (only with `bota.mounted`) | 0.063 m across, 0.008 m thick, 0.067 kg each | `unconfirmed` placeholder: measure both |
+| Quick Changer standoff | 0.0136 m (13.6 mm) | `confirmed` (OnRobot datasheet v2.0 and official STEP) |
+| Quick Changer mass | 0.06 kg, the robot side | `confirmed` as a datasheet value; the tool side (0.14 kg) is taken to be in the RG2's 0.78 kg; not weighed |
 | RG2 mass and link split | 0.78 kg total, split by pack-v2 hull volume (base 0.639 kg, CoM z 0.064 m) | total `confirmed` (OnRobot datasheet v1.8); split `unconfirmed` |
+| Bracket and D415 mass | 0.100 kg (estimate) and 0.064 kg (datasheet), on the RG2 body | bracket `unconfirmed`: weigh it with its screws |
 | UR5e link inertials | 3.761 / 8.058 / 2.846 / 1.37 / 1.3 / 0.365 kg with UR's CoMs and inertia tensors | `confirmed` (Universal Robots ROS 2 description `physical_parameters.yaml`; UR's DH article) |
-| RG2 maximum opening | 0.110 m | `confirmed` |
-| Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
+| RG2 maximum opening | 0.110 m in the datasheet; 0.1008 m between the standard fingertips' pads in OnRobot's CAD | `confirmed` |
+| Fingertip | block 9.9 x 20.5 x 29.9 mm with a 1.5 mm rubber pad (OnRobot's CAD) | `confirmed`; the real fingertips are wrapped in tape |
+| Fingertip friction | 0.7 static, 0.6 dynamic | `unconfirmed` estimate for the tape, no source found: measure with a tilt test |
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
-| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; 0.033, 0.066, 0.165 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, estimated from photo |
+| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; 0.033, 0.066, 0.1145 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, estimated from photo |
 | Wrist camera rotation | 25, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 25 degrees toward the tool axis | `unconfirmed`, estimated from photo |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
@@ -312,14 +467,11 @@ configuration or a design envelope and are not vendor drawings.
 | Jenga block mass and friction | Not measured | `unconfirmed` |
 | Jenga tower | 54 blocks, 18 layers | `confirmed` |
 
-The lead's pending CSV updates distinguish the provisional 5 mm plate and confirmed
-15.92 mm Quick Changer CAD standoff from unmeasured installed hardware. Older CSV notes
-may still show a zero plate or an unqualified standoff confirmation until those updates
-land; this documentation does not edit the CSV. Confirmed nominal Jenga dimensions do not
-confirm manufacturing tolerances, mass, friction or chamfers.
+Confirmed nominal Jenga dimensions do not confirm manufacturing tolerances, mass, friction or chamfers.
 
-Measure the bench, base plate, Bota envelope and mass, Quick Changer installed size and mass, pad geometry,
-camera offsets and gantry before calling the model dimensionally faithful.
+Measure the bench, the height of the robot's base above the table top, the masses of the gripper, the bracket and the
+Quick Changer, the tape's friction, the camera offsets and, if the Bota is to be mounted, its adapter plates, before
+calling the model dimensionally faithful.
 
 ## BOM audit
 
@@ -378,28 +530,40 @@ It also refuses a bench without its own collision layer, as in pack `v1`.
 - No physics warnings in Kit's log.
 - Commanding every joint at once from the zero pose (arm stretched out) drove the arm into the cell, so start from a pose
   inside the workspace.
-- Not qualified on Newton: the cameras and `mirror_real`. The Bota force/torque read passes the static check on both
+- Not qualified on Newton: the cameras and `mirror_real`. The wrist force/torque read passes the static check on both
   engines (`scripts/workcell_static_wrench.py`).
 
-**Gripping on Newton (2026-11-14, same build, `task="push_block"`, through the MCP tools; one run each).**
-- The finger pads were mounted at the finger joint, inside the finger's collision shape, so a part touched the bare finger
-  (friction 0.5), never a pad. They now sit on the fingertip gripping face (`finger_pads.mounts`, from the pack's finger mesh).
-- The RG2 has two driven joints, `finger_joint` and `right_outer_knuckle_joint`: command both to the same value, or only one
-  finger moves. Fully open (0.34 rad) the pad faces are about 80 mm apart and the bare fingertips 96 mm, not the RG2's 110 mm;
-  the pad thickness (8 mm) is a proxy. The fingertips move on an arc and drop as they close, so approach with the pads a few
-  millimetres wider than the part, or the tips press on the bench and the 1 N m drive stalls. A full stroke takes about 3 s.
-- Grasp: pads 30 mm apart over the 24 mm side of a block lying flat, closed with both joints at their lower limit. Each pad
-  pressed with 22 N, the block was lifted 0.10 m and held for 3 s with 0.09 mm of slip, and the Bota force rose by 0.1471 N
-  for a 0.1472 N block. Each pad sank 1.3 mm into the block (MuJoCo's soft contact), so a width read from the joints is about
-  2.5 mm small.
+**Gripping on Newton (2026-11-14, Isaac Sim 6.2.0, pack `v3`, the stack without the Bota, `task="push_block"`, through
+the bridge; one run each).**
+- The gripper is OnRobot's CAD and grips with its own fingertips. There are no add-on pads: the collision shape that
+  touches a part is the fingertip (the 9.9 mm block with its 1.5 mm rubber pad), bound to the `FingertipTape` physics
+  material, whose friction the cell sets from `fingertips` (0.7 static, 0.6 dynamic: an estimate for the tape on the real
+  fingertips, no source found, measure it).
+- **One driven joint, as the real gripper has one motor: command `finger_joint` only.** The other five joints follow it
+  through `NewtonMimicAPI` at exactly 1 or -1 (the linkage is an exact parallelogram in OnRobot's CAD); they stayed within
+  0.004 degrees of it over a full stroke. Limits: -44.009 degrees, where the rubber pads meet, to 26.065 degrees, the
+  datasheet's 149 mm overall width. The gap between the pads runs from 0 to 100.8 mm (75.3 mm at joint zero): the
+  datasheet's 110 mm is not reachable between the standard fingertips, whose mounting faces are 123.6 mm apart fully
+  open. Measured: 100.68 mm open after 1.44 s, 0.38 mm closed after 1.68 s.
+- The fingertips move on an arc: they are 38.1 mm further along the tool axis closed than fully open (16.8 mm from
+  joint zero to closed). Approach with the fingertips a few millimetres wider than the part and their ends clear of
+  the table once closed, or the tips press on the bench and the 1 N m drive stalls.
+- Grasp: fingertips 39.7 mm apart over the 24 mm side of a block lying flat, tool down, RG2 body origin 232.9 mm above
+  the table top, closed with `finger_joint` at its lower limit. The drive stalled at -32.28 degrees with the pads
+  22.25 mm apart: each pad sank 0.87 mm into the block (MuJoCo's soft contact), so a width read from the joint is about
+  1.7 mm small. Each fingertip pressed with 8.9 N before the lift and 9.4 to 9.5 N after it, and held 0.07 to 0.08 N of
+  friction each. The block was lifted 0.0998 m with 0.13 mm of slip and held for 3 s with 0.09 mm more and no rotation;
+  the arm stayed within 0.05 degrees. The flange force rose from 9.8492 N to 9.9964 N, by 0.14715 N for a 0.14715 N
+  block.
 - Arm: a ramped joint move (3 s) and Cartesian moves through `sim__arm(action="ik")` end within 1 mrad and about 1 mm. A
   1.57 rad step on four joints at once overshoots (wrist 1 reached 13 rad/s): Newton does not apply the pack's 180 deg/s joint
   velocity limit, so send interpolated targets.
-- Tower (`task="jenga_tower"`): 3.9 mm of settling in the first second at the top block, then 0.12 mm over the next 9 s.
+- Tower (`task="jenga_tower"`): 3.9 mm of settling in the first second at the top block, then 0.12 mm over the next 9 s
+  (measured with the earlier stack; not repeated).
 - Wrist camera: its picture follows the arm. A camera first captured after the arm had moved used to look from its pose at
   build time (the robot drawn where physics had it), with no warning: a paused capture now publishes Newton's poses to the
   renderer first. Checked live: the first capture after a tool-down move shows the bench from above.
-- Not done: PhysX, a grasp on the 14 mm side, a tower pull, and any comparison with the real gripper.
+- Not done: a grasp on PhysX, a grasp on the 14 mm side, a tower pull, and any comparison with the real gripper.
 
 ## Authoring/BOM smoke
 
@@ -427,7 +591,7 @@ home-PC qualification before claiming a runtime pass.
   pack; those structural results do not establish a PhysX or render pass.
 - The integrated baseline includes a BOM contract and stage-mapping audit with CPU
   fixtures. No real-stage BOM audit, PhysX smoke or render pass is claimed here.
-- No genuine Bota or mount CAD is available; those parts remain unconfirmed proxies or placeholder designs. The D415 body is the vendor's mesh.
+- No gantry CAD is available and the wrist bracket is a copy estimated from a photo; the Quick Changer, the RG2 and the Bota are the vendors' CAD and the D415 body is the vendor's mesh.
 - The old-store unreferenced report must wait until the pack loads, PhysX smoke passes,
   renders are reviewed and the BOM audit passes on the real stage. It is intentionally not
   produced here.

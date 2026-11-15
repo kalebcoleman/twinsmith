@@ -1466,7 +1466,7 @@ No arguments.
 
 Listed as `workcell__robot(action="wrench")`.
 
-Read the simulated Bota F/T sensor (its mount joint's reaction, sensor frame, N and N m) on PhysX or Newton, with the engine's mass of everything below the sensor and its weight. Needs an initialized, paused or playing simulation; not gravity-compensated or hardware-calibrated.
+Read the simulated wrist force/torque sensor on PhysX or Newton: by default the UR5e's own tool flange sensor (the reaction at the flange, at the flange centre in tool0's axes, N and N m), with the engine's mass of everything below the flange and its weight. `source` in the reply names the sensor: with `bota.mounted` true in the cell's config it is the Bota's reading in its own frame, and the flange reading comes with it under `flange`. Needs an initialized, paused or playing simulation. Raw: not payload-compensated or hardware-calibrated, and no noise is modelled.
 
 No arguments.
 
