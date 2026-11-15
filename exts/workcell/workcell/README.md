@@ -135,12 +135,13 @@ is 0.5 or more):
 
 | Prompt | Pieces masked, of 10 |
 |---|---|
-| `block`, `plastic block`, `building block` | 10, as 10 objects, each 0.88 to 0.96 of its piece; nothing else masked |
-| `toy block` | 10, two of them loosely (0.51 and 0.66) |
+| `block`, `plastic block` | 10, as 10 objects, each 0.88 to 0.96 of its piece; nothing else masked |
+| `building block`; `toy block` | 10 (one at 0.80); 10 (two loosely, 0.51 and 0.66) |
 | `toy`; `square` | 6; the 2 base plates |
-| `green block`; `red block`; `dark red block`; `dark green block` | green base and green bar; red bar, maroon bar and maroon U; maroon U; green bar |
-| `yellow plastic piece`; `orange plastic piece` | the 3 yellow and orange pieces each (and the red base as "orange") |
-| `piece`, `puzzle piece`, `object`, `plate`, `green square plate`, `red square plate`, `tray`, `board`, `bar`, `red bar`, `dark green bar`, `brick`, `brown block`, `maroon block`, `pink block`, `dark red plastic piece` | 0 |
+| `green block`, `green box`, `green board`; `green square` | green base and green bar; green base |
+| `red block`; `dark red block`; `dark green block` | red bar, maroon bar and maroon U; maroon U; green bar |
+| `yellow plastic piece`; `orange plastic piece` | both forks and the yellow U; the orange fork, the orange U and the red base |
+| `puzzle piece`, `object`, `green square plate`, `red square plate`, `red square`, `green tray`, `red tray`, `red board`, `bar`, `red bar`, `dark green bar`, `brick`, `brown block`, `maroon block`, `pink block`, `dark red plastic piece` | 0 |
 
 Use `block` and `plastic block` together: each sometimes joins two touching pieces that the other separates, and the
 matcher takes the same thing masked twice as one object. On four recorded pile and assembled layouts they masked 29
