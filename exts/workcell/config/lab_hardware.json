@@ -523,66 +523,62 @@
       "value": 5.0,
       "status": "confirmed",
       "source": "Max RISL_onrobot_ros rg_gripper.py feedback_rate default."
+    },
+    "pad_gap_range_m": {
+      "value": [
+        0.0,
+        0.1008
+      ],
+      "status": "confirmed",
+      "source": "OnRobot's official RG2 STEP 'RG2 Tier 2 - 101631' (https://onrobot.com/storage/303_rg2_tool.step, linked from https://onrobot.com/en/products/rg2-finger-gripper), with the datasheet's 149 mm overall width fully open (OnRobot RG2 datasheet v1.8, section 1.3): the gap between the fingertips' rubber pads runs from 0 to 100.8 mm. The datasheet's 110 mm stroke is not reachable between these fingertips: the finger mounting faces are 123.6 mm apart fully open (the datasheet's 124), and each standard fingertip with its pad is 11.4 mm thick."
+    },
+    "joint_limits_deg": {
+      "value": [
+        -44.009,
+        26.065
+      ],
+      "status": "confirmed",
+      "source": "OnRobot's official RG2 STEP 'RG2 Tier 2 - 101631' (https://onrobot.com/storage/303_rg2_tool.step, linked from https://onrobot.com/en/products/rg2-finger-gripper): finger_joint, the one driven joint. Lower: the rubber pads meet. Upper: the datasheet's 149 mm overall width. Joint zero is unchanged from pack v2: the outer arm 46.04 degrees from the approach axis, pads 75.3 mm apart. The fingertips move on an arc: they reach 38.1 mm further along the approach axis closed than fully open (16.8 mm from joint zero to closed)."
+    },
+    "driven_joint": {
+      "value": "finger_joint",
+      "status": "confirmed",
+      "source": "The real RG2 has one motor. right_outer_knuckle_joint and the four inner joints follow finger_joint through NewtonMimicAPI at exactly 1 or -1 (the CAD's linkage is an exact parallelogram). Command finger_joint only."
     }
   },
-  "finger_pads": {
-    "present": {
-      "value": true,
+  "fingertips": {
+    "surface": {
+      "value": "standard RG2 fingertips, wrapped in tape",
       "status": "confirmed",
-      "source": "Kaleb: small add-on black finger pads."
+      "source": "Kaleb, 2026-11-14, and the photos of the real gripper: the fingertips are OnRobot's standard ones, wrapped in tape. There are no add-on pads; the simulated grip is on the fingertips' own collision shapes. The tape itself is not modelled as geometry."
     },
-    "size_m": {
+    "block_size_m": {
       "value": [
-        0.012,
-        0.008,
-        0.025
+        0.0099,
+        0.0205,
+        0.0299
       ],
-      "status": "unconfirmed",
-      "source": "Dimensions of private candidate proxy, not measured standard RG2 pads"
+      "status": "confirmed",
+      "source": "OnRobot's official RG2 STEP 'RG2 Tier 2 - 101631' (https://onrobot.com/storage/303_rg2_tool.step, linked from https://onrobot.com/en/products/rg2-finger-gripper): fingertip block 101791, 9.9 mm thick, 20.5 mm wide, 29.9 mm along the approach axis."
+    },
+    "pad_size_m": {
+      "value": [
+        0.0015,
+        0.0205,
+        0.0299
+      ],
+      "status": "confirmed",
+      "source": "OnRobot's official RG2 STEP 'RG2 Tier 2 - 101631' (https://onrobot.com/storage/303_rg2_tool.step, linked from https://onrobot.com/en/products/rg2-finger-gripper): the rubber pad on the fingertip's gripping face (part 100084, 1.5 mm), 20.5 x 29.9 mm. The datasheet names the material: EPDM."
     },
     "static_friction": {
-      "value": 0.8,
-      "status": "unconfirmed",
-      "source": "Placeholder for black rubber-like pad on wood."
-    },
-    "dynamic_friction": {
       "value": 0.7,
       "status": "unconfirmed",
-      "source": "Placeholder."
+      "source": "Estimate, no source found: cloth-backed tape on a wooden block. Applied to the fingertip collision shapes (the pack's FingertipTape physics material). Measure with a tilt test: lay a block on a taped fingertip surface and raise it until the block slides; static friction = tan(angle)."
     },
-    "mounts": {
-      "value": [
-        {
-          "parent": "left_inner_finger",
-          "position_m": [
-            0,
-            0.0229,
-            0.04
-          ],
-          "orientation_wxyz": [
-            1,
-            0,
-            0,
-            0
-          ]
-        },
-        {
-          "parent": "right_inner_finger",
-          "position_m": [
-            0,
-            0.0229,
-            0.04
-          ],
-          "orientation_wxyz": [
-            1,
-            0,
-            0,
-            0
-          ]
-        }
-      ],
+    "dynamic_friction": {
+      "value": 0.6,
       "status": "unconfirmed",
-      "source": "On the fingertip gripping face, measured from the pack's RG2 finger mesh: in the inner finger frame the tip block spans z 0.020 to 0.053 m and its inner face is the plane y = 0.0189 m. The pad (8 mm thick, 25 mm long) sits on that face, flush with the tip: centre y = 0.0189 + 0.004, z = 0.040. The real pads' thickness and fastening are not measured."
+      "source": "Estimate, as above: the angle at which a sliding block keeps sliding. MuJoCo (Newton) uses one sliding coefficient per pair; PhysX uses both."
     }
   },
   "finger_force_sensors": {
@@ -968,11 +964,6 @@
       "status": "confirmed",
       "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
     },
-    "finger_pad": {
-      "value": "finger_pad",
-      "status": "confirmed",
-      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
-    },
     "d415": {
       "value": "d415",
       "status": "confirmed",
@@ -1082,15 +1073,6 @@
       "value": {
         "model": "base_plate",
         "bom_id": "base_plate",
-        "fidelity": "placeholder"
-      },
-      "status": "unconfirmed",
-      "source": "CPU inspection of private ur5e-jenga-workcell/v1 USD prims; physical inlet pose and roll not measured"
-    },
-    "finger_pad": {
-      "value": {
-        "model": "finger_pad",
-        "bom_id": "finger_pad",
         "fidelity": "placeholder"
       },
       "status": "unconfirmed",

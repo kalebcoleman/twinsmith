@@ -224,8 +224,8 @@ d415 = optical_box(P["d415_body_cx"] - P["d415_length"] / 2, P["d415_body_cx"] +
                    P["d415_height"] / 2, P["d415_back"], P["d415_back"] + P["d415_depth"])
 waist = box(-P["rg2_waist_width"] / 2, P["rg2_waist_width"] / 2, -P["rg2_body_thickness"] / 2, P["rg2_body_thickness"] / 2, 60.0, 100.0)
 lower = box(-P["rg2_lower_width"] / 2, P["rg2_lower_width"] / 2, -P["rg2_body_thickness"] / 2, P["rg2_body_thickness"] / 2, 100.0, 148.0)
-# The finger linkage moves in the X-Z plane; in the pack's RG2 it stays within 16.5 mm of that plane and below Z = 111.
-fingers = box(-80.0, 80.0, -16.5, 16.5, 111.0, 230.0)
+# The finger linkage moves in the X-Z plane; in OnRobot's CAD it stays within 16.7 mm of that plane and below Z = 111.
+fingers = box(-80.0, 80.0, -16.7, 16.7, 111.0, 230.0)
 screws = [Part.makeCylinder(4.0, 60.0, Vector(x, 0, PLATE_BACK - 60.0 - 0.01)).transformGeometry(CAMERA) for x in M3_OX]
 checks = {"halves": front.common(arm).Volume, "d415_vs_rg2_body": d415.common(waist).Volume + d415.common(lower).Volume,
           "d415_vs_finger_sweep": d415.common(fingers).Volume,

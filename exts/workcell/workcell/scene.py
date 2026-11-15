@@ -4,7 +4,7 @@ import copy
 import math
 from pathlib import Path
 
-ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2", "finger_pad",
+ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2",
          "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf", "materials")
 
 
@@ -223,25 +223,45 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
 
     materials = UsdGeom.Scope.Define(stage, "/World/Materials")
     materials.GetPrim().GetReferences().AddReference(str(assets["materials"]))
-    for role, name, section in (("finger_pad", "BlackPad", "finger_pads"),):
-        material = UsdShade.Material.Get(stage, f"/World/Materials/{name}")
-        if not material:
-            raise ValueError(f"Pack materials must define {name}")
-        physics = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
-        physics.CreateStaticFrictionAttr().Set(config[section]["static_friction"])
-        physics.CreateDynamicFrictionAttr().Set(config[section]["dynamic_friction"])
-        for part in parts:
-            if part["asset_id"] != config["assets"][role]:
-                continue
-            for prim in Usd.PrimRange(stage.GetPrimAtPath(part["prim_path"])):
-                if prim.IsA(UsdGeom.Gprim) or str(prim.GetPath()) == part["prim_path"]:
-                    binding = UsdShade.MaterialBindingAPI.Apply(prim)
-                    binding.Bind(material)
-                    binding.Bind(material, materialPurpose="physics")
+    fingertip_friction(stage, config, parts)
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
     from .environment import ROOT
     return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT,))
+
+
+def fingertip_friction(stage, config, parts):
+    """Set ``fingertips`` friction on the physics material the RG2's two fingertip colliders are bound to.
+
+    The grip is on the gripper's own fingertips (the pack's RG2 has a ``fingertip`` collision shape on each finger,
+    bound to one physics material); there are no add-on pads. Returns the material's path and the colliders."""
+    from pxr import Usd, UsdPhysics, UsdShade
+
+    section = config.get("fingertips")
+    if not section:
+        return None
+    static, dynamic = float(section["static_friction"]), float(section["dynamic_friction"])
+    if not (math.isfinite(static) and math.isfinite(dynamic) and 0 <= dynamic <= static):
+        raise ValueError("fingertips friction must be finite, with 0 <= dynamic_friction <= static_friction")
+    colliders, materials = [], set()
+    for part in parts:
+        if part["asset_id"] != config["assets"]["rg2"]:
+            continue
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(part["prim_path"])):
+            if prim.GetName() != "fingertip" or not prim.HasAPI(UsdPhysics.CollisionAPI):
+                continue
+            material, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial(materialPurpose="physics")
+            if not material or not material.GetPrim().HasAPI(UsdPhysics.MaterialAPI):
+                raise ValueError(f"{prim.GetPath()} has no physics material; the RG2 asset must bind one to its fingertips")
+            api = UsdPhysics.MaterialAPI(material.GetPrim())
+            api.CreateStaticFrictionAttr().Set(static)
+            api.CreateDynamicFrictionAttr().Set(dynamic)
+            api.CreateRestitutionAttr().Set(0.0)
+            colliders.append(str(prim.GetPath()))
+            materials.add(str(material.GetPath()))
+    if len(colliders) != 2 or len(materials) != 1:
+        raise ValueError("The RG2 asset needs one fingertip collision shape on each finger, bound to one physics material")
+    return {"material": materials.pop(), "colliders": colliders, "static_friction": static, "dynamic_friction": dynamic}
 
 
 def bench_top(stage, top, bench="/World/Bench"):

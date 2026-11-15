@@ -98,15 +98,21 @@ def test_bom_path_is_relative_to_configuration_directory():
     assert raw["documentation"]["bom_csv"]["source"]
 
 
-def test_finger_pads_sit_on_the_fingertip_gripping_face():
-    """The pack's RG2 inner finger: the tip block spans z 0.020..0.053 m and its inner face is the plane y = 0.0189 m.
-    A pad nearer the finger joint, or inside that face, is buried in the finger's collision shape and never touches a part."""
-    cfg, _ = hardware.load_config()
-    thickness, length = cfg["finger_pads"]["size_m"][1], cfg["finger_pads"]["size_m"][2]
-    mounts = cfg["finger_pads"]["mounts"]
-    assert [mount["parent"] for mount in mounts] == ["left_inner_finger", "right_inner_finger"]
-    for mount in mounts:
-        x, y, z = mount["position_m"]
-        assert x == 0 and mount["orientation_wxyz"] == [1, 0, 0, 0]
-        assert y - thickness / 2 >= 0.0189 - 1e-9                    # the whole pad stands proud of the finger face
-        assert 0.020 <= z - length / 2 and z + length / 2 <= 0.053   # on the tip block, not at the joint
+def test_grip_is_on_the_real_fingertips_and_there_are_no_add_on_pads():
+    """The real RG2 has its standard fingertips, wrapped in tape, and nothing added to them. The config has no pad
+    bodies; the fingertip block and its rubber pad are OnRobot's CAD dimensions, and the friction on the fingertip
+    collision shapes is an estimate for tape, marked as one."""
+    cfg, raw = hardware.load_config()
+    assert "finger_pads" not in cfg and "finger_pad" not in cfg["assets"] and "finger_pad" not in cfg["asset_layout"]
+    tips = cfg["fingertips"]
+    assert tips["block_size_m"] == [0.0099, 0.0205, 0.0299] and tips["pad_size_m"] == [0.0015, 0.0205, 0.0299]
+    assert 0 < tips["dynamic_friction"] <= tips["static_friction"] <= 1.2
+    for key in ("static_friction", "dynamic_friction"):
+        assert raw["fingertips"][key]["status"] == "unconfirmed" and raw["fingertips"][key]["source"].startswith("Estimate")
+    for key in ("block_size_m", "pad_size_m"):
+        assert "onrobot.com/storage/303_rg2_tool.step" in raw["fingertips"][key]["source"]
+    # One motor, one driven joint; the pads cannot open to the datasheet's 110 mm.
+    assert cfg["rg2"]["driven_joint"] == "finger_joint"
+    low, high = cfg["rg2"]["joint_limits_deg"]
+    assert -46 < low < -43 and 25 < high < 27
+    assert cfg["rg2"]["pad_gap_range_m"][0] == 0.0 and 0.100 < cfg["rg2"]["pad_gap_range_m"][1] < 0.102

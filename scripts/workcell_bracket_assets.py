@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build ``ur5e-workcell/v3``: v2 with the placeholder wrist bracket replaced by a copy of the real one.
+"""Build ``ur5e-workcell/v3``: v2 with the real wrist bracket and with the RG2 rebuilt from OnRobot's official CAD.
+
+* ``rg2``: OnRobot's official STEP (a local copy named by ``TWINSMITH_RG2_STEP``, checked by SHA-256), converted by
+  ``scripts/workcell_rg2_assets.py``; see that module. The add-on finger pad proxy of v2 is not carried over: the real
+  fingertips, with their rubber pads, are part of the RG2.
 
 * ``wrist_mount``: ``exts/workcell/cad/rg2_camera_bracket.py`` run by ``freecadcmd`` for the camera pose in
   ``exts/workcell/config/lab_hardware.json`` (``wrist_camera.offset_in_rg2_m``). The printed bracket clamps the RG2
@@ -32,6 +36,7 @@ sys.path.insert(0, str(REPO / "mcp"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 import workcell_camera_assets as camera_assets  # noqa: E402  (STL reading, welding and the USD writer)
+import workcell_rg2_assets as rg2_assets  # noqa: E402
 from twinsmith import asset_packs, pack_manifest  # noqa: E402
 
 PACK, SOURCE, TARGET = "ur5e-workcell", "v2", "v3"
@@ -145,16 +150,25 @@ def main() -> int:
     if (root / PACK / TARGET / "pack.yaml").is_file():
         print(json.dumps({f"{PACK}/{TARGET}": "exists, left alone"}))
         return 0
+    step = rg2_assets.step_path()                                         # refuses before anything is built
     source = pack_manifest.AssetPack(root, PACK, SOURCE)                  # verifies every hash first
     folder = root / PACK / SOURCE
     manifest = pack_manifest.read_manifest(folder, PACK, SOURCE)
     work = Path(tempfile.mkdtemp(prefix="workcell-bracket-"))
     try:
         report, summary = build_bracket(work, source.asset("d415"))
+        (work / "rg2_cad").mkdir()
+        (work / "rg2").mkdir()
+        rg2_assets.run_cad(step, work / "rg2_cad")
+        rg2 = rg2_assets.build_rg2(source.asset("rg2"), work / "rg2_cad", work / "rg2" / "rg2.usdc")
+        (work / "rg2" / "rg2.json").write_text(json.dumps(rg2, indent=1) + "\n")
         files, records = {}, {}
         for record in manifest["files"]:
-            if not record["path"].startswith("wrist_mount/"):
+            if not record["path"].startswith(("wrist_mount/", "rg2/", "finger_pad/")):
                 files[record["path"]], records[record["path"]] = folder / record["path"], record
+        files["rg2/rg2.usdc"], records["rg2/rg2.usdc"] = work / "rg2" / "rg2.usdc", rg2_assets.manifest_records()
+        files["rg2/rg2.json"] = work / "rg2" / "rg2.json"
+        records["rg2/rg2.json"] = {key: value for key, value in rg2_assets.manifest_records().items() if key != "asset_id"}
         common = dict(source=f"{CAD} (FreeCAD), for wrist_camera.offset_in_rg2_m in config/lab_hardware.json",
                       license="Locally authored lab geometry; private pack", redistributable=False, fidelity=FIDELITY)
         made = work / "wrist_mount"
@@ -166,11 +180,13 @@ def main() -> int:
         for name in ("wrist_bracket.step", "bracket.json", *(f"{piece}.{kind}" for piece in PIECES for kind in ("step", "stl"))):
             files[f"wrist_mount/{name}"] = made / name
             records[f"wrist_mount/{name}"] = dict(common)
-        extra = {key: manifest[key] for key in ("mimic",) if key in manifest}
-        extra.update(qualification=f"{PACK}/{SOURCE} with the wrist bracket replaced by a copy of the real one on the RG2",
+        extra = dict(mimic={"driven": rg2["driven_joint"], "followers": rg2["followers"], "limits_deg": rg2["limits_deg"],
+                            "note": "exact parallelogram from the CAD's pin axes: ratios are exactly -1 and 1"},
+                     qualification=f"{PACK}/{SOURCE} with the RG2 from OnRobot's official CAD and a copy of the real wrist bracket on it",
                      derived_from=f"{PACK}/{SOURCE}")
         written = asset_packs.write_version(root, PACK, TARGET, files, records, defaults={}, notes=[], extra=extra)
-        print(json.dumps({"written": str(written)[:160], "bracket": summary, "pieces": report["pieces"],
+        print(json.dumps({"written": str(written)[:160], "rg2": {key: value for key, value in rg2.items() if key != "links"},
+                          "bracket": summary, "pieces": report["pieces"],
                           "interference_mm3": report["interference_mm3"], "clearance_mm": report["clearance_mm"]}, indent=1))
         return 0
     finally:

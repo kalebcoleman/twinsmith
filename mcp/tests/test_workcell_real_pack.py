@@ -178,7 +178,7 @@ def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
     for path in sorted(set(moving) - {frame}):
         points = _in_cad_frame(stage, report, config, [path])
         slab, lowest = max(slab, np.abs(points[:, 1]).max()), min(lowest, points[:, 2].min())
-    assert slab <= 16.5 + 0.05 and lowest >= 111.0
+    assert slab <= 16.7 and lowest >= 111.0
     root = camera_report["cameras"]["wrist"]["root_path"]
     bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket", f"{root}/body"])
     near = bracket[bracket[:, 2] >= lowest - 4.0]            # the only part of the bracket level with the linkage
@@ -316,9 +316,11 @@ def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
     joints = _linkage(stage, stage.GetPrimAtPath(report["gripper_path"]))
     base = body.GetPath()
     drivers = [name for name, joint in joints.items() if joint["mimic"] is None]
-    assert len(drivers) == 2 and len(joints) == 6
+    assert drivers == ["finger_joint"] and len(joints) == 6                  # one motor: every other joint follows it
     hulls = {joint["body1"]: _collision_points(stage, stage.GetPrimAtPath(joint["body1"])) for joint in joints.values()}
-    assert all(hulls.values()) and len(report["pad_paths"]) == 2          # the pads are colliders of the inner fingers
+    assert all(hulls.values()) and report["pad_paths"] == []              # no add-on pads: the fingertips are part of the fingers
+    for name in ("left_inner_finger", "right_inner_finger"):                # each finger: its carrier and its fingertip
+        assert len(hulls[body.GetPath().GetParentPath().AppendChild(name)]) == 2
     for driver in drivers:
         at_rest = _link_frames(joints, base, driver, 0.0)
         for link, matrix in at_rest.items():                               # the chain reproduces the authored poses
@@ -564,11 +566,21 @@ def test_rg2_has_no_geometry_free_body_and_all_joint_frames_agree(cell):
     assert roots == [report["articulation_root"]] and report["gripper_articulation_root"] is None
     followers = {p.GetName(): p for p in Usd.PrimRange(stage.GetPrimAtPath(report["gripper_path"]))
                  if p.GetMetadata("apiSchemas") and "NewtonMimicAPI" in p.GetMetadata("apiSchemas").ApplyOperations([])}
-    assert set(followers) == {"left_inner_finger_joint", "left_finger_knuckle_joint", "right_inner_finger_joint", "RevoluteJoint"}
-    for prim in followers.values():
-        assert prim.GetRelationship("newton:mimicJoint").GetTargets()[0].name in ("finger_joint", "right_outer_knuckle_joint")
-        assert 0.98 < abs(prim.GetAttribute("newton:mimicCoef1").Get()) < 1.0
+    # One motor: finger_joint is the only driven joint; the other side's arm and the four inner joints follow it. The
+    # CAD's linkage is an exact parallelogram, so every ratio is exactly 1 or -1.
+    assert set(followers) == {"right_outer_knuckle_joint", "left_inner_finger_joint", "left_finger_knuckle_joint",
+                              "right_inner_finger_joint", "RevoluteJoint"}
+    for name, prim in followers.items():
+        assert prim.GetRelationship("newton:mimicJoint").GetTargets()[0].name == "finger_joint"
+        assert prim.GetAttribute("newton:mimicCoef1").Get() == (-1.0 if "inner_finger_joint" in name else 1.0)
         assert not prim.GetAttribute("physics:excludeFromArticulation").Get()
+        assert not prim.HasAPI(UsdPhysics.DriveAPI, "angular")
+        joint = UsdPhysics.RevoluteJoint(prim)
+        assert math.isfinite(joint.GetLowerLimitAttr().Get()) and math.isfinite(joint.GetUpperLimitAttr().Get())   # PhysX needs them
+    driver = next(p for p in Usd.PrimRange(stage.GetPrimAtPath(report["gripper_path"])) if p.GetName() == "finger_joint")
+    assert driver.HasAPI(UsdPhysics.DriveAPI, "angular")
+    limits = [UsdPhysics.RevoluteJoint(driver).GetLowerLimitAttr().Get(), UsdPhysics.RevoluteJoint(driver).GetUpperLimitAttr().Get()]
+    assert limits == pytest.approx(config["rg2"]["joint_limits_deg"], abs=1e-3)
     for prim in Usd.PrimRange(stage.GetPrimAtPath(report["assembly_path"])):
         count = prim.GetAttribute("physxArticulation:solverVelocityIterationCount")
         assert not count or (count.Get() or 0) <= 4, prim.GetPath()
