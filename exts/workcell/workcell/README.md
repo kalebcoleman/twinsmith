@@ -59,15 +59,17 @@ real pieces are not modelled.
 and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
 bound for a print with infill) and friction are `unconfirmed`.
 
-Measured on Newton (2026-11-15, Isaac Sim 6.2.0, one run; the scripts and reports are in the puzzle project, not in
-this repository): ten pieces, 27 rigid bodies, parts audit clean, no contact-buffer warning. Each piece's mesh lies on
-its collision boxes exactly. Over 3 s of settling no piece moved more than 0.06 mm from where the task put it, and no
-pair of pieces overlapped by more than 0.05 mm. The RG2 gripped the yellow fork by its centre tab and drew it out of
-the green base: the fork rose 118.5 mm of the 120 mm asked, slipped 0.4 mm in the gripper on the way and 0.2 mm more
-over a 3 s hold, and hung 0.1 degrees tilted; the base and its other pieces shifted 0.4 mm together and nothing
-overlapped. Each fingertip pressed with 40 N, the force the lab's RG2 driver commands with every move (the pack caps
-the finger drive at 1 N m, about 9 N at this width; with that grip the same lift slipped 0.2 mm). Fingertip friction,
-the piece's mass and the printed dimensions are still estimates.
+Measured on Newton (2026-11-15, Isaac Sim 6.2.0, three runs; the scripts and reports are in the puzzle project, not
+in this repository): ten pieces, 27 rigid bodies, parts audit clean, no contact-buffer warning. Each piece's mesh lies
+on its collision boxes exactly. Over 3 s of settling no piece moved more than 0.06 mm from where the task put it, and
+no pair of pieces overlapped by more than 0.05 mm. The RG2 gripped the yellow fork by its centre tab and drew it out
+of the green base: the fork rose 118.5 mm of the 120 mm asked, slipped 0.4 mm in the gripper on the way and 0.2 mm
+more over a 3 s hold, and hung 0.1 to 0.5 degrees tilted; the base and its other pieces shifted 0.2 to 0.4 mm together
+and nothing overlapped. Each fingertip pressed with 40 N, the force the lab's RG2 driver commands with every move (the
+pack caps the finger drive at 1 N m, about 9 N at this width; with that grip the same lift slipped 0.2 mm, one run).
+Fingertip friction, the piece's mass and the printed dimensions are still estimates. Once, in the first build after a
+simulator start, the red bar sat 0.10 mm into its slot's floor after the arm had moved to look; two repeats did not
+show it.
 
 An earlier run of this lift slipped 9 mm and hung 2.3 degrees tilted. That was the script, not the grip: it sent the
 arm a new joint target every 50 ms, and Newton's stiff drives jerked the gripper at each one. Send interpolated
