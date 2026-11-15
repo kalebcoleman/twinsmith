@@ -214,7 +214,7 @@ import json
 import math
 import re
 
-SHAPES = ("tee", "box", "jenga")
+SHAPES = ("tee", "box", "jenga", "tower")
 TEMPLATE_KEYS = ("shape", "size", "position", "yaw", "color", "mass", "friction", "camera", "push")
 COLOURS = {  # name -> RGB in [0, 1]; each name is also an RSS mask colour word (compare.py NAMED_COLOURS)
     "red": (0.85, 0.05, 0.05), "orange": (0.95, 0.50, 0.10), "yellow": (0.90, 0.80, 0.10),
@@ -289,10 +289,14 @@ def resolve(spec=None, previous=None):
     spec = {} if spec is None else spec
     if not isinstance(spec, dict):
         raise ValueError("template must be an object such as {'shape': 'tee', 'position': [0, 0], 'yaw': 0}.")
+    shape = spec.get("shape") or (previous or {}).get("shape") or "tee"
+    if shape == "tower":
+        from . import tower
+
+        return tower.resolve(spec, previous)
     unknown = sorted(set(spec) - set(TEMPLATE_KEYS))
     if unknown:
         raise ValueError(f"template has unknown keys {unknown}; use {list(TEMPLATE_KEYS)}.")
-    shape = spec.get("shape") or (previous or {}).get("shape") or "tee"
     if shape not in SHAPES:
         raise ValueError(f"template shape must be one of {list(SHAPES)}.")
     base = previous if previous and previous.get("shape") == shape else None
@@ -363,6 +367,10 @@ def scene_text(shape="tee", spec=None, previous=None):
 
 
 def scene_source(resolved):
+    if resolved["shape"] == "tower":
+        from . import tower
+
+        return tower.scene_source(resolved)
     text = TEMPLATE
     for name, value in constants(resolved).items():
         shown = json.dumps(value) if isinstance(value, str) else repr(value)
@@ -374,7 +382,7 @@ def scene_source(resolved):
 
 
 PARAMETERS = {
-    "shape": "tee (default), box or jenga",
+    "shape": "tee (default), box or jenga: one object and a pusher. tower: a Jenga tower, with its own parameters",
     "size": ("tee [bar_length, stem_length, thickness, height]; box and jenga [x, y, height]; metres. "
              "jenga default [0.072, 0.024, 0.014]: x is the long axis"),
     "position": "[x, y] of the object on the table, metres",
