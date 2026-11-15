@@ -215,7 +215,7 @@
         }
       ],
       "status": "unconfirmed",
-      "source": "Demo layout, not a lab measurement. Assembled poses in the green base's frame are from github.com/inbarajaldrin/isaac-sim-mcp@27f610056017 exts/ur5e-dt/assets/fmb_assembly3.json (lines at their resting height of 23.45 mm, the fork's 1 degree of recorded pitch dropped); where the bases and the loose pieces lie on the bench is chosen for reach and the wrist camera's view."
+      "source": "Demo layout, not a lab measurement. Assembled poses in the green base's frame are from fmb_assembly3.json of github.com/inbarajaldrin/isaac-sim-mcp@27f610056017 (lines at their resting height of 23.45 mm, the fork's 1 degree of recorded pitch dropped); where the bases and the loose pieces lie on the bench is chosen for reach and the wrist camera's view."
     },
     "density_kg_m3": {
       "value": 1240.0,
