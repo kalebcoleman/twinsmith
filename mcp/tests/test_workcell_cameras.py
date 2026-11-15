@@ -124,24 +124,31 @@ def test_intrinsics_follow_config_resolution_and_fov(config, tmp_path):
         assert camera["depth"]["units"] == "m"
 
 
+def same_rotation(first, second):
+    """Two unit quaternions that are the same rotation (q and -q are)."""
+    return abs(sum(a * b for a, b in zip(first, second))) == pytest.approx(1.0)
+
+
 def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_path):
     """The pose is configured in the RG2 body frame; with the shipped stack that frame is tool0 moved 47.92 mm along
-    the tool axis (Bota 32 mm + Quick Changer 15.92 mm) and turned -90 degrees about it."""
+    the tool axis (Bota 32 mm + Quick Changer 15.92 mm) and turned +90 degrees about it: the RG2's front face (body -X)
+    is on tool0 -Y, the side of wrist 3's tool connector, as on the real arm."""
     rg2_t, rg2_q, length = cameras.rg2_in_tool0(config)
     assert length == pytest.approx(config["bota"]["length_m"] + config["quick_changer"]["standoff_m"])
     assert rg2_t == pytest.approx([0, 0, length])
     half = math.sqrt(0.5)
-    assert rg2_q == pytest.approx([half, 0, 0, -half])
+    assert same_rotation(rg2_q, [half, 0, 0, half])
     assert cameras._rotate_vector(rg2_q, [0, 0, 1]) == pytest.approx([0, 0, 1])      # approach axis = tool0 +Z
-    assert cameras._rotate_vector(rg2_q, [0, 1, 0]) == pytest.approx([1, 0, 0])      # finger-opening axis
-    assert cameras._rotate_vector(rg2_q, [1, 0, 0]) == pytest.approx([0, -1, 0])     # out of the back face
+    assert cameras._rotate_vector(rg2_q, [0, 1, 0]) == pytest.approx([-1, 0, 0])     # finger-opening axis
+    assert cameras._rotate_vector(rg2_q, [1, 0, 0]) == pytest.approx([0, 1, 0])      # out of the back face: tool0 +Y
+    assert cameras._rotate_vector(rg2_q, [-1, 0, 0]) == pytest.approx([0, -1, 0])    # the front face: the connector's side
 
     config["wrist_camera"]["rotation_in_rg2_deg"] = [0.0, 0.0, 0.0]
     config["wrist_camera"]["offset_in_rg2_m"] = [0.01, -0.02, 0.03]
     wrist = build(config, tmp_path)["cameras"]["wrist"]
-    offset = [-0.02, -0.01, 0.03 + length]
+    offset = [0.02, 0.01, 0.03 + length]
     assert wrist["optical"]["translation_m"] == pytest.approx(offset)
-    assert wrist["optical"]["quaternion_wxyz"] == pytest.approx(rg2_q)
+    assert same_rotation(wrist["optical"]["quaternion_wxyz"], rg2_q)
     assert wrist["mount"]["offset_in_tool0_m"] == pytest.approx(offset)
     assert wrist["mount"]["frame"] == "rg2" and wrist["mount"]["stack_length_m"] == pytest.approx(length)
     matrix = wrist["optical"]["matrix4x4_row_major"]
@@ -154,7 +161,7 @@ def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_p
     rotated = copy.deepcopy(config)
     rotated["wrist_camera"]["rotation_in_rg2_deg"] = [0, 0, 90]
     camera = build(rotated, tmp_path)["cameras"]["wrist"]
-    assert camera["optical"]["quaternion_wxyz"] == pytest.approx([1, 0, 0, 0])       # -90 (stack) + 90 (camera)
+    assert same_rotation(camera["optical"]["quaternion_wxyz"], [0, 0, 0, 1])         # +90 (stack) + 90 (camera)
     # The wrist root carries the optical rotation; the camera prim keeps only Rx(180 deg).
     assert camera["usd_camera"]["quaternion_wxyz"] == pytest.approx([0, 1, 0, 0])
     bracket = next(part for part in build(rotated, tmp_path)["parts"] if part["role"] == "wrist_mount")
@@ -171,11 +178,11 @@ def test_wrist_camera_tilt_is_carried_through_the_pose_math(config, tmp_path):
     rg2_t, rg2_q, length = cameras.rg2_in_tool0(config)
     optical = wrist["optical"]["quaternion_wxyz"]
     half, sine, cosine = math.sqrt(0.5), math.sin(math.radians(30)), math.cos(math.radians(30))
-    # In the RG2 body frame the optical axis is (-sin, 0, cos); the body's +X is tool0 -Y and its +Y is tool0 +X.
-    assert cameras._rotate_vector(optical, [0, 0, 1]) == pytest.approx([0, sine, cosine])
-    assert cameras._rotate_vector(optical, [1, 0, 0]) == pytest.approx([-1, 0, 0])
-    assert cameras._rotate_vector(optical, [0, 1, 0]) == pytest.approx([0, -cosine, sine])
-    assert wrist["optical"]["translation_m"] == pytest.approx([-0.03, -0.07, 0.12 + length])
+    # In the RG2 body frame the optical axis is (-sin, 0, cos); the body's +X is tool0 +Y and its +Y is tool0 -X.
+    assert cameras._rotate_vector(optical, [0, 0, 1]) == pytest.approx([0, -sine, cosine])
+    assert cameras._rotate_vector(optical, [1, 0, 0]) == pytest.approx([1, 0, 0])
+    assert cameras._rotate_vector(optical, [0, 1, 0]) == pytest.approx([0, cosine, sine])
+    assert wrist["optical"]["translation_m"] == pytest.approx([0.03, 0.07, 0.12 + length])
     bracket = next(part for part in report["parts"] if part["role"] == "wrist_mount")["local"]
     # The bracket asset is in the RG2 body frame: seen from the camera it is the inverse of the camera's pose there.
     in_rg2 = cameras._euler_xyz_deg_to_quat([30.0, 0.0, -90.0])
@@ -183,7 +190,7 @@ def test_wrist_camera_tilt_is_carried_through_the_pose_math(config, tmp_path):
     back = cameras._rotate_vector(in_rg2, bracket["translation_m"])
     assert [value + offset for value, offset in zip(back, [0.07, -0.03, 0.12])] == pytest.approx([0, 0, 0], abs=1e-12)
     assert cameras._rotate_vector(in_rg2, [0, 0, 1]) == pytest.approx([-sine, 0, cosine])
-    assert half > 0 and rg2_q == pytest.approx([half, 0, 0, -half])
+    assert same_rotation(rg2_q, [half, 0, 0, half])
 
 
 def test_wrist_camera_follows_the_rg2_when_the_stack_changes(config, tmp_path):

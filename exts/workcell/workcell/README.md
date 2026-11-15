@@ -258,6 +258,13 @@ The current candidate contains:
   image ([capture](../../../docs/media/workcell-wrist-view-sim.jpg)). Tests build the real pack and check that the
   collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate, that bracket and camera stay
   out of the slab the finger linkage moves in, and that the image shows the fingertips and not the arm or the bracket.
+  The RG2 is mounted with its front face (logo, AprilTag) on the side of wrist 3's tool connector, tool0 -Y, as the
+  photos of the real wrist show (`asset_layout.rg2.mount_pose`: from photos, confirm on the robot), so the camera is on
+  the tool0 +Y side. Known limits: the cell is built with every joint at zero, the arm stretched out along the bench
+  with the tool axis about 66 mm above it (`robot.initial_joint_deg` is read by nothing); the camera is on the upper
+  side there, 117 mm clear of the bench, and turning wrist 3 at that pose swings it into the bench, as it would on a
+  real arm that low. A test checks every bracket shape and the camera body against the bench, the base plate and
+  the rest of the robot at that pose and with the tool down.
   The bracket has a collider; the D415 body has none. The pack's bracket asset carries five convex hulls (`collar`,
   `front_bar_extension`, `truss`, `plate_support`, `camera_plate`, each with `physics:approximation = "convexHull"`),
   and the builder references them under the RG2 body it clamps, at
@@ -294,7 +301,7 @@ configuration or a design envelope and are not vendor drawings.
 | RG2 maximum opening | 0.110 m | `confirmed` |
 | Finger pad size | 0.012 x 0.008 x 0.025 m | Provisional proxy; installed dimensions `unconfirmed` |
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
-| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; -0.033, -0.066, 0.165 m in tool0 with the shipped stack) | `unconfirmed`, estimated from photo |
+| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; 0.033, 0.066, 0.165 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, estimated from photo |
 | Wrist camera rotation | 25, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 25 degrees toward the tool axis | `unconfirmed`, estimated from photo |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |

@@ -1066,17 +1066,17 @@
             0
           ],
           "orientation_wxyz": [
+            0,
             0.7071067811865476,
             0,
-            -0.7071067811865476,
-            0
+            0.7071067811865476
           ]
         },
         "bom_id": "rg2",
         "fidelity": "unverified"
       },
       "status": "unconfirmed",
-      "source": "CPU inspection of private ur5e-jenga-workcell/v1 USD prims; physical inlet pose and roll not measured. Photo evidence, 2026-11-14 (before the camera bracket): the RG2's front face (logo, AprilTag, the two M3 holes) is on the same side as wrist 3's M8 tool connector, which is at tool0 -Y in the pack's robot mesh; this mount_pose puts the front face at tool0 +Y, half a turn about the tool axis away (which also puts the wrist camera, on the back face, on the other side of tool0). Not changed here: confirm on the robot, then turn mount_pose."
+      "source": "CPU inspection of private ur5e-jenga-workcell/v1 USD prims; physical inlet pose and roll not measured. Roll about the tool axis, from photos, confirm on the robot (2026-11-14): the RG2 is mounted with its front face (logo, AprilTag, the two M3 holes) on the same side as wrist 3's M8 tool connector. Evidence: (1) the photos of the wrist before the camera bracket was fitted (before_IMG_9206_wrist_stack.jpg, before_IMG_9213_wrist3_qc_rg2.jpg, and before_IMG_9212_rg2_front.jpg for the front face; in the workspace's runs/ur5e-rg2-real2sim/reference, not in this repository) show the connector, with its cable, and the logo both facing the camera. (2) In the pack's robot the connector is at tool0 -Y: prim wrist_3_link/visuals/wrist3/mesh has its one bump outside the 38 mm housing radius at (x, y) = (-0.002, -0.0435) m in tool0, between 30 and 40 mm behind the flange face. Universal Robots describes the tool frame the same way (\"Y is away from the Tool connector, and Z is normal to the tool flange\", https://forum.universal-robots.com/t/base-coordinate-system-documentation/140); no flange drawing that marks the axes was found. (3) The RG2's front face is the body's -X in the pack (the face with the pair of M3 holes of the OnRobot RG2 datasheet v1.8 front view). So the front face must point along tool0 -Y: mount_pose orientation (0, 0.7071, 0, 0.7071), the inlet's +X along the body's +Z as before and turned half a turn about it. Until 2026-11-14 it was (0.7071, 0, -0.7071, 0), which put the front face at tool0 +Y and the wrist camera, on the back face, on the tool0 -Y side: below the tool axis and inside the bench at the pose the cell is built in (every joint at zero)."
     },
     "base_plate": {
       "value": {

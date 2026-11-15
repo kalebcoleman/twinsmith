@@ -9,7 +9,7 @@
 
 ![Real bracket and simulated bracket from the same viewpoint](../../../docs/media/workcell-bracket-real-vs-sim.jpg)
 
-What still differs: the simulated arm is in the cell's presentation pose, not the photo's; the printed blocks and the
+What still differs: the simulated arm is posed with the tool horizontal, not as in the photo; the printed blocks and the
 truss are a reconstruction, squarer and heavier than the real ones; the bolt ends, the hot glue at the foot of the
 arm, the cable and the AprilTag are not modelled; the simulated RG2 has add-on finger pads and no tape.
 
@@ -117,6 +117,15 @@ does not move and the optical origin moves by 0.2 mm.
 6. The collar: its length along the body, the wall thicknesses, the bolt size and whether the far side also has two.
 7. The plate: length, width, thickness, and where the camera's two M3 holes are on it.
 
+## Which side of the wrist
+
+The bracket is on the RG2, so which side of tool0 the camera is on depends on how the RG2 is turned about the tool
+axis. From the photos of the wrist before the bracket was fitted, the RG2's front face (logo, AprilTag) is on the side
+of wrist 3's M8 tool connector, which is tool0 -Y (Universal Robots: "Y is away from the Tool connector"). The config
+mounts the RG2 that way (`asset_layout.rg2.mount_pose`, status unconfirmed, from photos, confirm on the robot), so the
+camera, on the back face, is on the tool0 +Y side: optical origin at (0.033, 0.066, 0.165) m in tool0 with the shipped
+stack, optical axis (0, -0.423, 0.906).
+
 ## Collision
 
 The bracket has a collider in the built cell; the D415 body does not (a single box on it, on the same body, would be
@@ -152,6 +161,22 @@ links' own collision hulls (`mcp/tests/test_workcell_real_pack.py` repeats it):
 | `plate_support` | 50.8 mm | 93.0 mm |
 
 Any shape to the Quick Changer: 72.8 mm; to the Bota: 87.8 mm; to wrist 3: 119.8 mm.
+
+Against the bench at the two poses the cell is used in (a test repeats this for every bench collider, the base plate
+and every other body of the robot, and requires 8 mm):
+
+| Shape | Bench, as built (every joint at zero) | Bench, tool down (0, -80, 100, -110, -90, 0) |
+|---|---|---|
+| `collar` | 37.6 mm | 176.7 mm |
+| `front_bar_extension` | 39.3 mm | 175.3 mm |
+| `truss` | 91.9 mm | 171.5 mm |
+| `camera_plate` | 120.3 mm | 152.6 mm |
+| `plate_support` | 122.2 mm | 162.2 mm |
+| D415 body (no collider) | 117.2 mm | 137.6 mm |
+
+The cell is built with every joint at zero: the arm lies stretched out along the bench with the tool axis about 66 mm
+above it, and the camera is on the upper side there. Turning wrist 3 at that pose swings the camera down into the
+bench, as it would on a real arm that low.
 
 ## Build, print and assemble
 

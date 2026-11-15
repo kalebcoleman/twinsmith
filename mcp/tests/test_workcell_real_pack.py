@@ -348,6 +348,138 @@ def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
     assert len(fixed) == 3 and min(fixed.values()) > 0.05, fixed
 
 
+ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
+POSES_DEG = {"as built (every joint at zero)": (0, 0, 0, 0, 0, 0), "tool down": (0, -80, 100, -110, -90, 0)}
+
+
+def _posed_bodies(stage, assembly, degrees):
+    """Row-vector world matrices of the assembly's rigid bodies with the arm's joints at ``degrees`` (every other joint
+    at zero), by walking the joints from the bodies that nothing moves."""
+    cache = UsdGeom.XformCache()
+    angles = dict(zip(ARM_JOINTS, degrees))
+    joints, bodies = [], [prim for prim in Usd.PrimRange(assembly) if prim.HasAPI(UsdPhysics.RigidBodyAPI)]
+    for prim in Usd.PrimRange(assembly):
+        if not prim.IsA(UsdPhysics.Joint) or UsdPhysics.Joint(prim).GetJointEnabledAttr().Get() is False:
+            continue
+        joint = UsdPhysics.Joint(prim)
+        ends = [joint.GetBody0Rel().GetTargets(), joint.GetBody1Rel().GetTargets()]
+        if not all(ends):
+            continue                                     # an anchor to the world
+        turn = Gf.Matrix4d(1.0)
+        if prim.IsA(UsdPhysics.RevoluteJoint):
+            axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[UsdPhysics.RevoluteJoint(prim).GetAxisAttr().Get()]
+            turn.SetRotate(Gf.Rotation(axis, float(angles.get(prim.GetName(), 0.0))))
+        joints.append((ends[0][0], ends[1][0], _joint_pose(joint.GetLocalPos0Attr().Get(), joint.GetLocalRot0Attr().Get()),
+                       _joint_pose(joint.GetLocalPos1Attr().Get(), joint.GetLocalRot1Attr().Get()), turn))
+    children = {child for _, child, *_ in joints}
+    world = {prim.GetPath(): cache.GetLocalToWorldTransform(prim) for prim in bodies if prim.GetPath() not in children}
+    while True:
+        moved = False
+        for parent, child, frame0, frame1, turn in joints:
+            if parent in world and child not in world:
+                world[child] = frame1.GetInverse() * turn * frame0 * world[parent]
+                moved = True
+        if not moved:
+            break
+    assert set(world) == {prim.GetPath() for prim in bodies}
+    return world
+
+
+def _static_collision_points(stage, root, meshes=False):
+    """World points of every collision shape under ``root``: a mesh's points, or the corners of a primitive's box.
+    With ``meshes``, every mesh counts, collider or not (the base plate is render geometry only)."""
+    cache = UsdGeom.XformCache()
+    boxes = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "guide", "proxy"])
+    chunks = {}
+    for prim in Usd.PrimRange(root):
+        if not (prim.HasAPI(UsdPhysics.CollisionAPI) or (meshes and prim.IsA(UsdGeom.Mesh))):
+            continue
+        if prim.IsA(UsdGeom.Mesh):
+            points = np.array(UsdGeom.Mesh(prim).GetPointsAttr().Get(), dtype=float)
+        else:
+            box = boxes.ComputeUntransformedBound(prim).ComputeAlignedRange()
+            points = np.array([[x, y, z] for x in (box.GetMin()[0], box.GetMax()[0]) for y in (box.GetMin()[1], box.GetMax()[1])
+                               for z in (box.GetMin()[2], box.GetMax()[2])], dtype=float)
+        chunks[str(prim.GetPath())] = (np.c_[points, np.ones(len(points))] @ np.array(cache.GetLocalToWorldTransform(prim)))[:, :3]
+    return chunks
+
+
+def bracket_clearances(cell):
+    """{pose: {shape: {"bench" | "base plate" | "robot": (metres, nearest collider)}}} for the five bracket collision
+    shapes and the D415 body box, against every collider of the bench, the base plate and every robot body except the
+    RG2 body the bracket belongs to."""
+    config, stage, report, camera_report, pack = cell
+    cache = UsdGeom.XformCache()
+    assembly = stage.GetPrimAtPath(report["assembly_path"])
+    body = stage.GetPrimAtPath(_rg2_frame(stage, report, config))
+    to_body = cache.GetLocalToWorldTransform(body).GetInverse()
+    root = stage.GetPrimAtPath(camera_report["colliders"][0]["prim_path"])
+    shapes = {prim.GetName(): (np.c_[points, np.ones(len(points))] @ np.array(cache.GetLocalToWorldTransform(prim) * to_body))[:, :3]
+              for prim in Usd.PrimRange(root) if prim.HasAPI(UsdPhysics.CollisionAPI)
+              for points in [np.array(UsdGeom.Mesh(prim).GetPointsAttr().Get(), dtype=float)]}
+    wrist = camera_report["cameras"]["wrist"]["root_path"]
+    optical = _vertices_in_frame(stage, wrist, [f"{wrist}/body"])                       # the D415 body: no collider, checked anyway
+    corners = np.array([[x, y, z] for x in (optical[:, 0].min(), optical[:, 0].max()) for y in (optical[:, 1].min(), optical[:, 1].max())
+                        for z in (optical[:, 2].min(), optical[:, 2].max())])
+    wrist_to_body = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(wrist)) * to_body
+    shapes["d415_body (no collider)"] = (np.c_[corners, np.ones(8)] @ np.array(wrist_to_body))[:, :3]
+
+    if not stage.GetPrimAtPath("/World/Bench"):                                          # placed as scene.py places it
+        bench = UsdGeom.Xform.Define(stage, "/World/Bench")
+        bench.GetPrim().GetReferences().AddReference(str(pack.asset(config["assets"]["bench"])))
+        xy, scale = config["world"]["workstation_xy_m"], config["world"]["bench_scale"]
+        bench.AddTranslateOp().Set(Gf.Vec3d(xy[0], xy[1], -config["world"]["bench_asset_top_z_m"]))
+        bench.AddScaleOp().Set(Gf.Vec3f(scale, scale, scale))
+    static = {"bench": _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench")),
+              "base plate": _static_collision_points(stage, stage.GetPrimAtPath(report["base_plate_path"]), meshes=True)}
+    assert len(static["bench"]) > 20 and static["base plate"]
+    links = {prim.GetPath(): _collision_points(stage, prim) for prim in Usd.PrimRange(assembly)
+             if prim.HasAPI(UsdPhysics.RigidBodyAPI) and prim != body}
+    assert sum(1 for chunks in links.values() if chunks) >= 12                          # the arm, the stack and the fingers
+
+    result = {}
+    for pose, degrees in POSES_DEG.items():
+        world = _posed_bodies(stage, assembly, degrees)
+        if not any(degrees):
+            for path, matrix in world.items():                                           # the walk reproduces the built stage
+                assert np.allclose(np.array(matrix), np.array(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(path))), atol=1e-5), path
+        placed = {name: (np.c_[points, np.ones(len(points))] @ np.array(world[body.GetPath()]))[:, :3] for name, points in shapes.items()}
+        others = {"bench": static["bench"], "base plate": static["base plate"],
+                  "robot": {f"{path.name}#{index}": (np.c_[chunk, np.ones(len(chunk))] @ np.array(world[path]))[:, :3]
+                            for path, chunks in links.items() for index, chunk in enumerate(chunks)}}
+        result[pose] = {}
+        for name, points in placed.items():
+            low, high = points.min(0), points.max(0)
+            result[pose][name] = {}
+            for kind, colliders in others.items():
+                best = (1.0, None)
+                for label, other in colliders.items():
+                    gap = np.maximum(0.0, np.maximum(other.min(0) - high, low - other.max(0)))
+                    if np.linalg.norm(gap) >= best[0]:
+                        continue                                                         # its bounding box is already further
+                    distance = _gilbert(points, other)
+                    if distance < best[0]:
+                        best = (distance, label)
+                result[pose][name][kind] = best
+    return result
+
+
+def test_bracket_and_camera_clear_the_bench_the_base_and_the_arm_at_the_built_pose_and_tool_down(cell):
+    """The cell is built with every joint at zero: the arm lies stretched out, the tool axis 66 mm above the bench.
+    Nothing of the bracket or the camera may be within two of Newton's 4 mm contact gaps of the bench, the base plate
+    or any other body of the robot there, or with the tool pointing down. (With the RG2 mounted half a turn round, the
+    camera plate was inside the bench at the built pose and threw the arm.)"""
+    clearances = bracket_clearances(cell)
+    assert set(clearances) == set(POSES_DEG)
+    for pose, shapes in clearances.items():
+        assert set(shapes) == BRACKET_SHAPES | {"d415_body (no collider)"}
+        for name, kinds in shapes.items():
+            for kind, (distance, nearest) in kinds.items():
+                assert distance >= 2 * NEWTON_CONTACT_GAP_M, f"{name} is {distance * 1000:.1f} mm from {kind} ({nearest}) at {pose}"
+    built = clearances["as built (every joint at zero)"]
+    assert built["camera_plate"]["bench"][0] > 0.10 and built["d415_body (no collider)"]["bench"][0] > 0.10      # above the tool axis
+
+
 def test_pack_is_complete_on_its_own(cell):
     """Every layer the built cell opens is inside the pinned pack version: no file of another version is needed."""
     config, stage, _, _, pack = cell
