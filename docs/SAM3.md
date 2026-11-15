@@ -1,9 +1,10 @@
-# SAM 3 video masks (`sam3`)
+# SAM 3.1 video masks (`sam3`)
 
-`sam3` runs SAM 3's video predictor over a video file or a recorded RGB-D clip. For each text prompt it follows every
-matching object through the clip and writes one mask image per frame. When the clip has depth and intrinsics, each
-object also gets a 3-D point, and a box of known size gets a pose. It runs on the GPU in the SAM 3 tool bundle's own
-Python environment and needs no Isaac Sim or Kit bridge. The tool is in the `real2sim` toolset, which is off by default
+`sam3` runs SAM 3.1's video predictor (the Object Multiplex checkpoint, `facebook/sam3.1`) over a video file or a
+recorded RGB-D clip. For each text prompt it follows every matching object through the clip and writes one mask image
+per frame. When the clip has depth and intrinsics, each object also gets a 3-D point, and a box of known size gets a
+pose. It runs on the GPU in its own Python environment and needs no Isaac Sim or Kit bridge. There is one model: no
+option selects SAM 3. The tool is in the `real2sim` toolset, which is off by default
 (`toolsets(action="enable", names=["real2sim"])`).
 
 **It reads files only.** It does not open a camera, subscribe to a ROS topic or read a bag. A recorder writes the clip
@@ -13,12 +14,45 @@ bag has to be exported to the same folder first; no exporter is provided.
 
 ## The environment
 
-The host never imports torch or SAM 3. The model runs with the interpreter of the `sam3` bundle in the
-`open-robot-skills` checkout beside Graph-as-Policy (`<workspace>/tools/open-robot-skills/tools/sam3/.venv`), the same
-checkout and pin the [`gap`](PLANNING-EVAL.md#gap) tool reports. The owner creates it (`uv sync` in the bundle's folder)
-and downloads the gated `facebook/sam3` weights once; [PLANNING-EVAL.md](PLANNING-EVAL.md) has the steps. `status` checks
-the interpreter, that torch sees CUDA and that the weights are in the Hugging Face cache. A job runs offline
-(`HF_HUB_OFFLINE=1`) and is given no token.
+The host never imports torch or SAM 3. The model runs in its own environment, by default
+`<workspace>/tools/sam3/.venv` (`TWINSMITH_SAM3_ROOT` names another folder). The owner creates it; `status` prints these
+steps when it is missing, and the tool never runs them:
+
+```bash
+uv venv --python 3.12 <workspace>/tools/sam3/.venv
+printf 'numpy>=1.26\n' > <workspace>/tools/sam3/overrides.txt
+uv pip install --python <workspace>/tools/sam3/.venv/bin/python --override <workspace>/tools/sam3/overrides.txt \
+    torch torchvision "sam3 @ git+https://github.com/facebookresearch/sam3.git@f1647e8d0c1d280991f4d1b7d974c2704537fe66" \
+    decord2 pycocotools pillow einops psutil
+<workspace>/tools/sam3/.venv/bin/python -c \
+    "from huggingface_hub import hf_hub_download; hf_hub_download('facebook/sam3.1', 'sam3.1_multiplex.pt')"
+```
+
+- **The pin is `facebookresearch/sam3` at `f1647e8`** (2026-10-23). SAM 3.1 needs upstream code from its release on
+  2026-03-27 or later. `status` reads the installed commit and warns when it differs.
+- **The checkpoint is gated.** `facebook/sam3.1` is a separate repository from `facebook/sam3`: the Hugging Face
+  account has to be granted access to it too. The download (3.5 GB) uses the login in the usual place
+  (`~/.cache/huggingface/token`); a job runs offline (`HF_HUB_OFFLINE=1`) and is given no token.
+- **It is not the environment of Graph-as-Policy's `sam3` bundle.** That bundle (in the `open-robot-skills` checkout the
+  [`gap`](PLANNING-EVAL.md#gap) tool pins) keeps its own SAM 3 at the commit VABAR 1.0 names; this tool does not touch it.
+- The override is needed because upstream's metadata asks for `numpy<2` while `decord2` asks for more.
+
+`status` checks the interpreter, the installed commit, that torch sees CUDA and that the checkpoint is in the Hugging
+Face cache.
+
+Three things the driver does to upstream's SAM 3.1 predictor, each stated in its source:
+
+- It starts a session through a two-line shim, because upstream's `start_session` passes an argument the SAM 3.1 model
+  does not take (upstream issue 544, open at the pin). Without it every clip fails with a `TypeError`.
+- It follows up to 128 objects (upstream's default is 16, one multiplex bucket).
+- It changes three of upstream's SAM 3.1 settings. Duplicates are judged by overlap over the union and not over the
+  smaller mask (`det_nms_use_iom` off, as upstream's SAM 3 builder has it): with the SAM 3.1 default, blocks that lie
+  against one another are taken for duplicates, and 25 of 36 visible blocks were found on one view where this finds
+  35. Objects are reported from their first frame (`masklet_confirmation_enable` off, as in the SAM 3 builder, and
+  `hotstart_delay` 0): a look of a few frames is over before upstream would confirm an object. All three together
+  find 36.
+
+FlashAttention 3 and `torch.compile`, upstream's optional speed-ups, are not used.
 
 ## The source
 
@@ -105,8 +139,8 @@ It is a per-clip answer, not a live one: a check is a job that loads the model (
 frames. Without depth it is a test in the picture only.
 
 **Not yet validated on a hand.** The zone test is covered by unit tests on object rows, and the `hand` prompt found
-the players' hands in the stock clip. It has not been run on footage of a hand at the lab's tower, which is where it
-is to be validated; a simulated hand is not a test of it (SAM 3 calls a hand built from simple shapes a "robot hand",
+the players' hands in the stock clip (with SAM 3 and with SAM 3.1). It has not been run on footage of a hand at the lab's tower, which is where it
+is to be validated; a simulated hand is not a test of it (a hand built from simple shapes was called a "robot hand",
 not a "hand"). The human-turn script therefore takes its hand-present signal from its own timer.
 
 ## Several views into one set of boxes: fuse
@@ -161,26 +195,70 @@ No fiducial markers are used in this cell. Two ways to get the pose without them
 After either, the check is the number the human-turn script reports as `agreement_between_cameras_mm`: how far apart
 the two cameras put the same blocks.
 
+## SAM 3.1 against SAM 3
+
+The tool was first built on SAM 3 (the `sam3` bundle's model) and switched to SAM 3.1 on 2026-11-15. The same clips
+through both, on the ASU PC (RTX PRO 6000 Blackwell), SAM 3.1 with the settings above:
+
+**The stock topple clip** (1920 x 1080, 164 frames, prompts tower, blocks and hand; job time includes loading the model):
+
+| | SAM 3 | SAM 3.1 |
+|---|--:|--:|
+| Whole job | 280 s | 177 s |
+| Tower pass (1 object) | 20.8 s | 17.2 s |
+| Block pass (about 40 objects) | 148.2 s | 55.0 s, 2.7 times faster |
+| Hand pass (4 to 6 objects) | 28.3 s | 18.3 s |
+| Blocks in frames 0 / 30 / 53 (tower standing) | 42 / 42 / 42 | 41 / 42 / 42 |
+| Blocks in frames 80 / 120 / 163 (falling, fallen) | 31 / 17 / 17 | 25 / 16 / 15 |
+| Block identities over the clip | 49 | 72 |
+| Hands in the first / last frame | 4 / 2 | 4 / 1 |
+
+Masks, SAM 3.1 against SAM 3 (overlap of everything masked, per frame): tower 0.97 on average (0.99 while it
+stands), hand 0.97, blocks 0.93 (0.96 while the tower stands, 0.91 once it falls, lowest 0.74). While the tower
+stands, every block SAM 3 found has a SAM 3.1 block on it (overlap 0.95 to 0.99); in the fall SAM 3.1 keeps fewer
+blocks and gives more of them a new identity.
+
+**Recorded looks at the simulated tower** (three frames each, colour and depth; the clips of the human-turn run):
+
+| View | Blocks, SAM 3 | Blocks, SAM 3.1 | SAM 3.1 with upstream's defaults |
+|---|--:|--:|--:|
+| fixed camera | 53 | 51 | 41 |
+| front | 35 | 36 | 32 |
+| above | 36 | 36 | 25 |
+| rail side | 38 | 36 | 33 |
+| back | 37 | 37 | 33 |
+| Tower rebuilt from all five | 53 of 53, median 0.85 mm, largest 2.1 mm | 53 of 53, median 0.71 mm, largest 2.4 mm | 49 of 53, one block 24 mm off |
+
+A look is a job of about 20 s with either model; nearly all of it is loading the model (the tracking itself is 2 s).
+
+**The wrist camera's clip of the push** (132 frames, the camera moving in to 0.2 m): SAM 3 followed 45 to 47 blocks
+to the end. **SAM 3.1 loses them**: 44 blocks in the first frame, 15 a quarter of the way in, 1 in the last, and it
+reaches its limit of 128 identities. No setting tried kept them. So for a tower of like blocks SAM 3.1 is as good on
+still looks and on a fixed camera, faster where there are many objects, and worse at following blocks through a
+moving close-up.
+
 ## Verified
 
-Local results on the ASU PC (2026-11-15, SAM 3 at the bundle's pin, RTX PRO 6000 Blackwell):
+Local results on the ASU PC (2026-11-15, RTX PRO 6000 Blackwell). The live simulator runs were made with SAM 3; the
+recorded clips of those runs were then put through SAM 3.1 ([the comparison](#sam-31-against-sam-3)).
 
-- **Video file.** Two stock clips of people playing Jenga, 1920 x 1080 and 1080 x 1920. On the first (164 frames,
-  prompts tower, blocks and hand) the job took 280 s and found 42 blocks in the first frame; its label images are
-  identical, pixel for pixel, to those of the stand-alone script this tool's driver was made from. On the second (every
-  third frame, 70 frames) it found 53 blocks in the first frame.
+- **Video file.** Two stock clips of people playing Jenga, 1920 x 1080 and 1080 x 1920. With SAM 3 the first (164
+  frames, prompts tower, blocks and hand) gave label images identical, pixel for pixel, to those of the stand-alone
+  script this tool's driver was made from; the second (every third frame, 70 frames) gave 53 blocks in the first
+  frame. With SAM 3.1 the first clip takes 177 s and finds 41 blocks in the first frame and 42 from then on.
 - **Recorded RGB-D clip with a camera pose.** The work cell's simulated wrist D415 (1280 x 720), 0.45 m from the face of
-  an 18-layer tower of 72 x 24 x 14 mm blocks: all 36 visible blocks found (27 ends, 9 sides), each with a pose, the
-  centres a median 0.93 mm (largest 1.19 mm) from the simulator's. The numbers are in the
-  [work cell's page](../exts/workcell/workcell/README.md#one-jenga-turn-look-predict-push-look-again).
-  The simulated blocks had to be drawn with visible edges first: the pack's block is a plain one-colour box, and SAM 3
-  returns a tower of them as one object.
+  an 18-layer tower of 72 x 24 x 14 mm blocks: with SAM 3 all 36 visible blocks (27 ends, 9 sides), each with a pose,
+  the centres a median 0.93 mm (largest 1.19 mm) from the simulator's; with SAM 3.1 on the same clip 35 of the 36. The
+  numbers are in the [work cell's page](../exts/workcell/workcell/README.md#one-jenga-turn-look-predict-push-look-again).
+  The simulated blocks had to be drawn with visible edges first: the pack's block is a plain one-colour box, and a
+  tower of them is returned as one object.
 - **Several views and a second camera.** Four wrist views and a fixed camera with other intrinsics and a millimetre
-  depth unit, fused: all 53 blocks of a tower one block short, a median 0.85 mm (largest 2.1 mm) from the simulator's,
-  with the wrongly read faces of single views left out
+  depth unit, fused: all 53 blocks of a tower one block short, with either model, about a millimetre from the
+  simulator's, with the wrongly read faces of single views left out
   ([the numbers](../exts/workcell/workcell/README.md#a-persons-turn-watch-look-again-from-all-sides-rebuild-the-twin)).
 - Host tests (`test_sam3.py`): the checks above, the wrapper around a fake launcher, the zone test, the fusion and the
   pose arithmetic on synthetic faces. They do not run the model.
 
-Not done: a real D415 recording, a hand at the lab's tower, a real second camera, a ROS topic or bag reader, a live
-(frame by frame) mode, and tracking that survives an object leaving the picture and coming back.
+Not done: a live simulator run with SAM 3.1 (its numbers here are from the recorded clips), a real D415 recording, a
+hand at the lab's tower, a real second camera, a ROS topic or bag reader, a model kept loaded between looks, and
+tracking that holds through a moving close-up.

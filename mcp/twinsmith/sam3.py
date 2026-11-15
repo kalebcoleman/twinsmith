@@ -1,8 +1,9 @@
-"""``sam3``: SAM 3 masks, and box poses from depth, for a video file or a recorded RGB-D clip.
+"""``sam3``: SAM 3.1 masks, and box poses from depth, for a video file or a recorded RGB-D clip.
 
-The model runs in the SAM 3 tool bundle of the ``open-robot-skills`` checkout beside Graph-as-Policy, with that
-bundle's own interpreter (``tools/sam3/.venv``); this module never imports torch or SAM 3. A ``track`` is a job
-(``jobs`` follows and cancels it) that runs ``sam3_driver.py`` and writes into ``<workspace>/runs/sam3/<name>/``.
+The model is SAM 3.1 (the Object Multiplex checkpoint) and runs in its own environment,
+``<workspace>/tools/sam3/.venv`` (``TWINSMITH_SAM3_ROOT`` names another folder), made by the owner; this module
+never imports torch or SAM 3 and never installs anything. A ``track`` is a job (``jobs`` follows and cancels it)
+that runs ``sam3_driver.py`` with that interpreter and writes into ``<workspace>/runs/sam3/<name>/``.
 
 A source is a video file, or a folder holding ``rgb/`` (frames in name order), and for 3-D results ``depth/`` (one
 image per colour frame: 16-bit PNG counts or ``.npy`` metres) with ``camera.json``: ``{"fx", "fy", "cx", "cy"}`` in
@@ -16,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 from pathlib import Path
 import re
 import shutil
@@ -24,9 +26,12 @@ from typing import Annotated, Literal
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import gap, sibling
+from . import pack_manifest, sibling
 from .robosim.bridge import _ffmpeg_exe
 
+PIN = "f1647e8d0c1d280991f4d1b7d974c2704537fe66"      # facebookresearch/sam3: the code SAM 3.1 needs
+REPOSITORY = "https://github.com/facebookresearch/sam3"
+MODEL, CHECKPOINT = "facebook/sam3.1", "sam3.1_multiplex.pt"
 ACTIONS = ("status", "track", "report", "fuse")
 VIDEOS = (".mp4", ".mov", ".avi", ".mkv", ".webm")
 IMAGES = (".jpg", ".jpeg", ".png")
@@ -37,9 +42,21 @@ FUSE_EXTENT_ERROR_M = 0.012        # a face whose extents miss the box's sides b
 RECENT = 5
 _DRIVER = Path(__file__).with_name("sam3_driver.py")
 _TAG = re.compile(r"[a-z][a-z0-9_]{0,31}")
-_PROBE = ("import json, torch, sam3\nfrom huggingface_hub import try_to_load_from_cache\n"
-          "print(json.dumps([torch.__version__, torch.cuda.is_available(), "
-          "isinstance(try_to_load_from_cache('facebook/sam3', 'config.json'), str)]))")
+_PROBE = ("import importlib.metadata, json, torch, sam3\nfrom huggingface_hub import try_to_load_from_cache\n"
+          "source = json.loads(importlib.metadata.distribution('sam3').read_text('direct_url.json') or '{}')\n"
+          "print(json.dumps([torch.__version__, torch.cuda.is_available(), source.get('vcs_info', {}).get('commit_id'), "
+          f"isinstance(try_to_load_from_cache({MODEL!r}, {CHECKPOINT!r}), str)]))")
+
+
+def setup_steps(root: Path) -> list[str]:
+    """What the owner runs to make the environment. The tool prints these and never runs them."""
+    python = f"{root}/.venv/bin/python"
+    return [f"uv venv --python 3.12 {root}/.venv",
+            f"printf 'numpy>=1.26\\n' > {root}/overrides.txt",
+            f'uv pip install --python {python} --override {root}/overrides.txt torch torchvision '
+            f'"sam3 @ git+{REPOSITORY}.git@{PIN}" decord2 pycocotools pillow einops psutil',
+            f"{python} -c \"from huggingface_hub import hf_hub_download; hf_hub_download('{MODEL}', '{CHECKPOINT}')\"   "
+            f"# once, logged in to a Hugging Face account that has been granted access to {MODEL}"]
 
 
 def parse_prompts(prompts, box_size_m=None) -> list[dict]:
@@ -165,35 +182,34 @@ def check_source(source, every=1) -> dict:
 
 class Sam3:
     def __init__(self, workspace=None, root=None, launch=None, job_status=None):
-        checkout = gap.checkout(workspace=workspace, root=root)
-        self.skills = gap.skills(checkout)
-        self.python = self.skills.root / "tools/sam3/.venv/bin/python"
-        self.runs = checkout.workspace / "runs/sam3"
+        self.workspace = Path(workspace or pack_manifest.workspace_dir()).expanduser().resolve()
+        self.root = Path(root or os.environ.get("TWINSMITH_SAM3_ROOT") or self.workspace / "tools/sam3").expanduser().resolve()
+        self.python = self.root / ".venv/bin/python"
+        self.runs = self.workspace / "runs/sam3"
         self._launch, self._job_status = launch or sibling.start_job, job_status
 
     def environment(self, probe=True) -> dict:
-        info = self.skills.info()
-        info = {"checkout": info["checkout"], "commit": info["commit"], "pin": info["pin"], "pin_match": info["pin_match"],
-                "warnings": info["warnings"], "python": str(self.python)}
-        setup = (f"The owner sets this up; twinsmith never installs it. In {self.skills.root}/tools/sam3 run `uv sync`, "
-                 "and download the gated weights once with a Hugging Face account that has access to facebook/sam3 "
-                 "(docs/PLANNING-EVAL.md).")
-        if not self.python.is_file():
-            return dict(info, ok=False, code="ENVIRONMENT_MISSING", setup=setup,
-                        error=f"No SAM 3 environment at {self.python}.")
+        info = {"environment": str(self.root), "python": str(self.python), "model": MODEL, "checkpoint": CHECKPOINT,
+                "repository": REPOSITORY, "pin": PIN, "commit": None, "pin_match": False, "warnings": []}
+        if not (self.python.is_file() and os.access(self.python, os.X_OK)):
+            return dict(info, ok=False, code="ENVIRONMENT_MISSING", setup=setup_steps(self.root),
+                        error=f"No SAM 3 environment at {self.root}. The owner creates it with the setup steps; "
+                              "this tool never installs anything.")
         if not probe:
             return dict(info, ok=True)
         done = sibling.run([self.python, "-I", "-c", _PROBE], env_pass=("HF_HOME",), env_set={"HF_HUB_OFFLINE": "1"},
                            timeout_s=180, stdout_chars=sibling.WHOLE)
         try:
-            torch_version, cuda, weights = json.loads(done["stdout"].strip().splitlines()[-1])
+            torch_version, cuda, commit, weights = json.loads(done["stdout"].strip().splitlines()[-1])
         except (ValueError, IndexError):
-            return dict(info, ok=False, code="ENVIRONMENT_BROKEN", setup=setup,
+            return dict(info, ok=False, code="ENVIRONMENT_BROKEN", setup=setup_steps(self.root),
                         error="The SAM 3 environment cannot import torch and sam3. " + done["stderr"][-600:])
-        info.update(torch=torch_version, cuda=cuda, weights_cached=weights)
+        info.update(torch=torch_version, cuda=cuda, commit=commit, pin_match=commit == PIN, weights_cached=weights)
+        if commit != PIN:
+            info["warnings"].append(f"The installed sam3 code is at {commit or 'an unknown commit'}, not the tested pin {PIN}.")
         if not cuda or not weights:
-            return dict(info, ok=False, code="ENVIRONMENT_BROKEN", setup=setup,
-                        error="SAM 3's video predictor needs CUDA and the cached facebook/sam3 weights: "
+            return dict(info, ok=False, code="ENVIRONMENT_BROKEN", setup=setup_steps(self.root),
+                        error=f"SAM 3.1's video predictor needs CUDA and the cached {MODEL} checkpoint: "
                               f"cuda={cuda}, weights_cached={weights}.")
         return dict(info, ok=True)
 
@@ -240,7 +256,8 @@ class Sam3:
         folder = self.runs / sibling.run_name(name, "sam3")
         sibling.new_run_folder(folder)
         shutil.copyfile(_DRIVER, folder / "driver.py")
-        request = {"source": checked["source"], "kind": checked["kind"], "camera": checked["camera"], "prompts": parsed, "zones": zones,
+        request = {"model": MODEL, "checkpoint": CHECKPOINT, "source": checked["source"], "kind": checked["kind"],
+                   "camera": checked["camera"], "prompts": parsed, "zones": zones,
                    "start_s": start_s, "end_s": end_s, "every": every, "fps": fps, "ffmpeg": ffmpeg, "out": str(folder)}
         (folder / "request.json").write_text(json.dumps(request, indent=1) + "\n")
         started = self._launch([self.python, "-I", folder / "driver.py", folder / "request.json"], task=f"sam3-{folder.name}",
@@ -338,7 +355,7 @@ def register_sam3_tools(server, *, sam3=None):
         runs: Annotated[list[str] | None, Field(description="fuse: finished runs of one scene from different sides, each with world poses.")] = None,
         frame: Annotated[int | None, Field(description="report with tag: frame index (default 0; -1 is the last).")] = None,
     ) -> str:
-        """SAM 3 masks for prompted things through a video or a recorded RGB-D clip, in its own environment on the GPU; no
+        """SAM 3.1 masks for prompted things through a video or a recorded RGB-D clip, in its own environment on the GPU; no
         simulator bridge. track is a job (follow with jobs, then report) writing per-frame id masks, object rows and
         overlay.mp4. With depth and intrinsics an object gets a 3-D point, and a box of known size a pose; fuse merges
         the box poses of several views. Reads files only: no camera, no ROS topic."""

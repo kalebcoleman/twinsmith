@@ -18,7 +18,7 @@ TOOLSETS = {
     "sim": Toolset("Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs"),
     "assets": Toolset("Import and manage assets"),
     "cad": Toolset("PCB checks, fab files, renders"),
-    "real2sim": Toolset("RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3 video masks"),
+    "real2sim": Toolset("RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3.1 video masks"),
     "planning": Toolset("Graph-as-Policy skill graphs"),
     "eval": Toolset("VABAR benchmark"),
 }

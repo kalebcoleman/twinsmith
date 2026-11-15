@@ -107,7 +107,7 @@ keeps the tool list small. Only `core` is on by default. Related tools share one
 | **`sim`** | off | Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs | `files`, `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `reload_tools`, `run_python`, `run_script`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__graph`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__occupancy_map`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__ros2_tf`, `sim__simulation`, `sim__stage`, `sim__timeline`, `sim__ui`, `sim__viewport`, `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
 | **`assets`** | off | Import and manage assets | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
 | **`cad`** | off | PCB checks, fab files, renders | `hardware` |
-| **`real2sim`** | off | RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3 video masks | `robosim`, `sam3`, `sysid` |
+| **`real2sim`** | off | RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3.1 video masks | `robosim`, `sam3`, `sysid` |
 | **`planning`** | off | Graph-as-Policy skill graphs | `gap` |
 | **`eval`** | off | VABAR benchmark | `vabar` |
 <!-- /generated -->

@@ -73,10 +73,11 @@ def test_a_clip_with_depth_needs_matching_frames_and_a_usable_camera(tmp_path):
 
 
 def wrapper(tmp_path, launch=None, job_status=None):
-    """A Sam3 over a fake skills checkout whose SAM 3 interpreter exists but is never run."""
-    python = tmp_path / "tools/open-robot-skills/tools/sam3/.venv/bin/python"
+    """A Sam3 whose environment's interpreter exists but is never run."""
+    python = tmp_path / "tools/sam3/.venv/bin/python"
     python.parent.mkdir(parents=True)
     python.write_text("")
+    python.chmod(0o755)
     launched = []
 
     def fake_launch(argv, **options):
@@ -95,6 +96,7 @@ def test_track_writes_the_request_and_starts_one_gpu_job_with_a_scrubbed_environ
     request = json.loads((folder / "request.json").read_text())
     assert request["prompts"] == [{"tag": "blocks", "text": "wooden block", "size_m": BLOCK}]
     assert request["camera"] == CAMERA and request["out"] == str(folder) and request["every"] == 1
+    assert (request["model"], request["checkpoint"]) == ("facebook/sam3.1", "sam3.1_multiplex.pt")   # SAM 3.1 and nothing else
     assert (folder / "driver.py").read_text() == sam3_module._DRIVER.read_text()
     (call,) = launched
     assert call["argv"] == [str(python), "-I", str(folder / "driver.py"), str(folder / "request.json")]
@@ -128,7 +130,15 @@ def test_a_missing_environment_is_reported_with_the_owner_steps(tmp_path):
     sam3 = Sam3(workspace=tmp_path)
     for action in ("status", "track"):
         answer = sam3.call(action, source="/x.mp4", prompts=["a=b"])
-        assert (answer["ok"], answer["code"]) == (False, "ENVIRONMENT_MISSING") and "never installs" in answer["setup"]
+        assert (answer["ok"], answer["code"]) == (False, "ENVIRONMENT_MISSING") and "never installs" in answer["error"]
+        steps = " ".join(answer["setup"])
+        assert sam3_module.PIN in steps and "facebook/sam3.1" in steps and str(tmp_path / "tools/sam3") in steps
+
+
+def test_the_environment_folder_can_be_named(tmp_path, monkeypatch):
+    monkeypatch.setenv("TWINSMITH_SAM3_ROOT", str(tmp_path / "elsewhere"))
+    assert Sam3(workspace=tmp_path).python == tmp_path / "elsewhere/.venv/bin/python"
+    assert Sam3(workspace=tmp_path, root=tmp_path / "given").python == tmp_path / "given/.venv/bin/python"
 
 
 def test_report_follows_the_job_and_returns_one_frame_on_request(tmp_path):

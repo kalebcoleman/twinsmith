@@ -1,4 +1,4 @@
-"""SAM 3 over a clip's frames, run by ``sam3.py`` with the SAM 3 tool bundle's own interpreter.
+"""SAM 3.1 over a clip's frames, run by ``sam3.py`` with the SAM 3 environment's own interpreter.
 
     sam3_driver.py <request.json>
 
@@ -30,6 +30,7 @@ IMAGES = (".jpg", ".jpeg", ".png")
 FACES = {"top": (0, 1, 2), "side": (0, 2, 1), "end": (1, 2, 0)}
 PLANE_TOLERANCE_M = 0.002          # a point this close to the fitted face plane belongs to the face
 MIN_FACE_POINTS = 30
+MAX_OBJECTS = 128                  # SAM 3.1 follows objects in buckets of 16; upstream's default of 16 objects is one bucket
 ZONE_MARGIN = 0.5                  # a zone is its objects' box grown on every side by this fraction of its longer side
 ZONE_DEPTH_M = 0.30                # with depth, an object counts only within this distance of the zone along the optical axis
 
@@ -289,11 +290,25 @@ def main():
             raise SystemExit(f"{len(depth_files)} depth images for {len(files)} colour frames; they must pair up.")
     import torch
     from PIL import Image
-    from sam3.model_builder import build_sam3_video_predictor
+    from huggingface_hub import hf_hub_download
+    from sam3.model_builder import build_sam3_predictor
 
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
-    predictor = build_sam3_video_predictor(gpus_to_use=[0])
+    # FlashAttention 3 and torch.compile are upstream's optional speed-ups; neither is in the environment's steps.
+    predictor = build_sam3_predictor(checkpoint_path=hf_hub_download(request["model"], request["checkpoint"]), version="sam3.1",
+                                     max_num_objects=MAX_OBJECTS, use_fa3=False)
+    # Upstream's start_session passes offload_state_to_cpu, which the SAM 3.1 model's init_state does not take
+    # (facebookresearch/sam3 issue 544, open at the pinned commit). Drop this once the pin has the fix.
+    init_state = predictor.model.init_state
+    predictor.model.init_state = lambda **options: init_state(**{k: v for k, v in options.items() if k != "offload_state_to_cpu"})
+    # Three of upstream's SAM 3.1 settings changed, measured on towers of blocks (docs/SAM3.md). Duplicates are judged
+    # by overlap over the union, not over the smaller mask, as upstream's SAM 3 builder does: blocks that lie against
+    # one another are not duplicates (25 of 36 blocks found on one view, 35 with this). And an object is reported
+    # from its first frame, because a look of a few frames is over before upstream would confirm it.
+    predictor.model.det_nms_use_iom = False
+    predictor.model.masklet_confirmation_enable = False
+    predictor.model.hotstart_delay = 0
     width, height = Image.open(files[0]).size
     summary = []
     for prompt in request["prompts"]:
@@ -340,7 +355,7 @@ def main():
         print(f"TWINSMITH_PROGRESS: {tag} done, {len(rows)} frames, {len(remap)} objects", flush=True)
     write_overlay(request, out, files, [prompt["tag"] for prompt in request["prompts"]], fps)
     (out / "result.json").write_text(json.dumps(
-        {"source": request["source"], "frames": len(files), "fps": fps, "depth": bool(camera), "prompts": summary,
+        {"model": request["model"], "source": request["source"], "frames": len(files), "fps": fps, "depth": bool(camera), "prompts": summary,
          "zones": mark_zones(out, request.get("zones") or []),
          "overlay": str(out / "overlay.mp4"), "frames_dir": str(out / "frames")}, indent=1) + "\n")
 

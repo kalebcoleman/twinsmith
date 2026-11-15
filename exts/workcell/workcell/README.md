@@ -598,7 +598,10 @@ Two things the cell forced, both worth knowing before a real game:
   own shade, on the stage's session layer only (the block's own mesh stays the collider). With that SAM 3 finds the
   blocks. A block asset with rounded edges and grain would replace this.
 
-**Result (2026-11-15, Isaac Sim 6.2.0 on Newton, pack `v3`, one run; a second run repeated every number within 0.1 mm).**
+**Result (2026-11-15, Isaac Sim 6.2.0 on Newton, pack `v3`, one run; a second run repeated every number within 0.1 mm;
+made with SAM 3, before the `sam3` tool moved to SAM 3.1).** On the recorded clips of this run SAM 3.1 finds 35 of the
+36 blocks of the first look, the five candidates among them, and loses the blocks in the moving clip of the push
+([the comparison](../../../docs/SAM3.md#sam-31-against-sam-3)).
 The tower is the `jenga_tower` task with the first real-to-sim run's block values (13 g, friction 0.392, per-block
 spread), which are one clip's best point and not measurements. "Real" below is this cell, standing in for the lab.
 
@@ -653,7 +656,8 @@ arguments and the same rules (simulation only).
    `robosim` tower template's `blocks`, and the twin's tower is started from them on Newton's MuJoCo-Warp.
 
 **Result (2026-11-15, Isaac Sim 6.2.0 on Newton, pack `v3`, the tower in the middle of the bench, `tripod` enabled,
-one run).** The scripted turn took block L15_1 (the middle block of layer 15) in 10 s; the rest of the tower moved by
+one run; made with SAM 3).** The recorded looks of this run through SAM 3.1 rebuild the same 53 blocks, a median
+0.71 mm (largest 2.4 mm) from the simulator's ([the comparison](../../../docs/SAM3.md#sam-31-against-sam-3)). The scripted turn took block L15_1 (the middle block of layer 15) in 10 s; the rest of the tower moved by
 at most 8.9 mm and stood.
 
 | View | Camera | Blocks found | Block centre against the simulator at that moment: median, largest |

@@ -168,6 +168,13 @@ depth. Checked on two stock clips and on the simulated wrist camera. What it doe
 - [ ] Run on a real D415 recording. The simulated depth has no noise, no holes and no minimum distance.
 - [ ] See the blocks a face hides. From one side, two of every three blocks in every other layer are not reported; the
   robot loop assumes they are there.
+- [ ] SAM 3.1 loses the blocks in a moving close-up: in the wrist camera's clip of a push it went from 44 blocks to 1
+  where SAM 3 kept 45 to 47 ([the comparison](SAM3.md#sam-31-against-sam-3)). Looks from a still camera are unaffected.
+  Either look only from rest, or find what in the multiplex tracker lets go.
+- [ ] Run the two Jenga scripts live with SAM 3.1. Their recorded clips were put through it; the simulator runs
+  themselves were made with SAM 3.
+- [ ] Drop the driver's `start_session` shim when upstream fixes its issue 544, and move the pin.
+- [ ] Keep the model loaded between looks. A look is a 20 s job of which 2 s is tracking.
 - [ ] Validate the hand-at-the-tower signal (`sam3` zones) on real footage of a hand at the lab's tower. It is covered
   by unit tests only; the human-turn script fakes it with a timer.
 - [ ] Calibrate a second camera without markers, against the robot or against the table and tower

@@ -1836,10 +1836,10 @@ _HELP_TOPICS = (
      "sysid, in the real2sim toolset (off by default: toolsets action=enable names=[\"real2sim\"]). It needs no simulator bridge. "
      "sysid action=status checks its MuJoCo environment; fit (a dataset folder inside an approved root, with SOURCE.md) "
      "starts a job; jobs action=status follows it; report returns nominal, fitted and bounds per parameter."),
-    ("segment or track objects in a video or a recorded RGB-D clip, and get block poses from depth (SAM 3)",
+    ("segment or track objects in a video or a recorded RGB-D clip, and get block poses from depth (SAM 3.1)",
      ("segment", "segmentation", "mask", "masks", "sam3", "sam 3", "track objects", "block pose", "rgb-d", "depth clip"),
      "sam3, in the real2sim toolset (off by default: toolsets action=enable names=[\"real2sim\"]). It needs no simulator bridge. "
-     "sam3 action=status checks the SAM 3 environment; track (a video file, or a clip folder with rgb/, depth/ and camera.json, "
+     "sam3 action=status checks the SAM 3.1 environment; track (a video file, or a clip folder with rgb/, depth/ and camera.json, "
      "with prompts such as ['blocks=wooden block']) starts a GPU job; jobs action=status follows it; report returns the masks, "
      "overlay.mp4 and, with box_size_m and depth, a pose per box."),
     ("plan a task as a skill graph or score it on a benchmark (Graph-as-Policy, VABAR)",

@@ -1751,7 +1751,7 @@ PCB and enclosure outputs from tools beside twinsmith; no simulator. status: ver
 
 <a id="real2sim"></a>
 
-## `real2sim`: RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3 video masks
+## `real2sim`: RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3.1 video masks
 
 Toolset `real2sim` is off until you select it with `+real2sim`. Reference: [ROBOSIM.md](ROBOSIM.md). 3 tools, listed as 3: `robosim`, `sam3`, `sysid`.
 
@@ -1790,7 +1790,7 @@ RoboSimStudio real-to-sim in its own Python, no Isaac bridge needed. start a sce
 
 ### `sam3`
 
-SAM 3 masks for prompted things through a video or a recorded RGB-D clip, in its own environment on the GPU; no simulator bridge. track is a job (follow with jobs, then report) writing per-frame id masks, object rows and overlay.mp4. With depth and intrinsics an object gets a 3-D point, and a box of known size a pose; fuse merges the box poses of several views. Reads files only: no camera, no ROS topic.
+SAM 3.1 masks for prompted things through a video or a recorded RGB-D clip, in its own environment on the GPU; no simulator bridge. track is a job (follow with jobs, then report) writing per-frame id masks, object rows and overlay.mp4. With depth and intrinsics an object gets a 3-D point, and a box of known size a pose; fuse merges the box poses of several views. Reads files only: no camera, no ROS topic.
 
 - `action` (Literal['status', 'track', 'report', 'fuse'], required): status: environment, recent runs. track: start a job. report: read a run. fuse: merge views' box poses.
 - `source` (str | None, default `None`): track: absolute video file, or clip folder with rgb/ (depth/ and camera.json for 3-D).

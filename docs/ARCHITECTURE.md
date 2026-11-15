@@ -37,7 +37,7 @@ default. A tool is one of three kinds:
 | Isaac Lab jobs | `mcp/twinsmith/isaaclab/` | Train, evaluate, play and record in separate processes the host starts. |
 | RoboSimStudio bridge | `mcp/twinsmith/robosim/` | Runs RoboSimStudio in its own Python environment from one grouped tool. |
 | System identification | `mcp/twinsmith/sysid.py`, `sysid_driver.py` | Fits model parameters with `mujoco.sysid` in its own environment; the driver is the only file that imports MuJoCo. |
-| SAM 3 video masks | `mcp/twinsmith/sam3.py`, `sam3_driver.py` | Masks, and box poses from depth, for a video or a recorded RGB-D clip, in the SAM 3 bundle's own environment; the driver is the only file that imports torch and SAM 3. |
+| SAM 3.1 video masks | `mcp/twinsmith/sam3.py`, `sam3_driver.py` | Masks, and box poses from depth, for a video or a recorded RGB-D clip, with SAM 3.1 in its own environment; the driver is the only file that imports torch and SAM 3. |
 | Hardware | `mcp/twinsmith/hardware.py` | Runs `kicad-cli`, KiKit, `solidcraft-cli` and Blender beside twinsmith. |
 | Planning and evaluation | `mcp/twinsmith/gap.py`, `mcp/twinsmith/vabar.py` | Run Graph-as-Policy and VABAR from their own pinned checkouts. |
 | Tools beside twinsmith | `mcp/twinsmith/sibling.py` | What `hardware`, `robosim`, `sam3`, `gap` and `vabar` share: a scrubbed environment, bounded runs, jobs, and a pinned checkout's commit. |
@@ -190,8 +190,8 @@ See [Asset packs](ASSET-PACKS.md) and [importing](ASSET-IMPORT.md).
 RoboSimStudio commands with RoboSimStudio's own Python environment, so the host never imports it, and keeps each run's files
 under `<workspace>/runs/robosim/`. See [ROBOSIM.md](ROBOSIM.md). The same toolset registers `sysid`, which runs MuJoCo's
 system identification in its own environment as a job and writes under `<workspace>/runs/sysid/`. See [SYSID.md](SYSID.md).
-It also registers `sam3`, which runs SAM 3's video predictor as a GPU job with the interpreter of the SAM 3 bundle in the
-`open-robot-skills` checkout and writes under `<workspace>/runs/sam3/`. See [SAM3.md](SAM3.md).
+It also registers `sam3`, which runs SAM 3.1's video predictor as a GPU job in its own environment
+(`<workspace>/tools/sam3`) and writes under `<workspace>/runs/sam3/`. See [SAM3.md](SAM3.md).
 
 ## Hardware
 
@@ -257,7 +257,7 @@ A group is a toolset: one switch, one row in the README. Every group is off by d
 | `sim` | off | Everything for Isaac Sim and Isaac Lab: the stage, prims, physics, joints, sensors, code in Kit, Kit's log and UI, simulator-side ROS 2, the UR5e Jenga work cell (`workcell__*`), Isaac Lab jobs (`isaaclab__*`, `run_script`), and the tools a project's own Kit extension registers | Native |
 | `assets` | off | Import, packs, mesh preparation, validation | Native |
 | `cad` | off (on in the owner's configuration) | `hardware`: checks, fabrication files, SolidCraft parts and renders around the CAD servers beside twinsmith | Wrapped |
-| `real2sim` | off | `robosim` (RoboSimStudio runs), `sysid` (system identification) and `sam3` (SAM 3 video masks) | Wrapped |
+| `real2sim` | off | `robosim` (RoboSimStudio runs), `sysid` (system identification) and `sam3` (SAM 3.1 video masks) | Wrapped |
 | `planning` | off | `gap` (Graph-as-Policy) | Wrapped |
 | `eval` | off | `vabar` (VABAR) | Wrapped |
 
@@ -352,7 +352,7 @@ flowchart TB
     host -- subprocess --> gap[Graph-as-Policy<br/>own venv]
     host -- subprocess --> vabar[VABAR<br/>own venv]
     host -- subprocess --> sysid[sysid<br/>own venv, MuJoCo]
-    host -- subprocess --> sam3[sam3<br/>SAM 3 bundle's venv]
+    host -- subprocess --> sam3[sam3<br/>own venv, SAM 3.1]
     host -- "HTTP, loopback" --> pose[Pose service<br/>own environment, own licence]
 ```
 
@@ -384,6 +384,7 @@ twinsmith only reports them.
 | Graph-as-Policy and its skill library | The commits VABAR 1.0 names: `06dd619` and `b15859a`. Both forks have newer commits (`964bb8a`, `752dfbd` on 2026-11-13) that VABAR does not use | `mcp/twinsmith/gap.py` |
 | VABAR | `64b594e`, the 1.0 release. Upstream's one later commit (`cc9e2d3`) changes only its README | `mcp/twinsmith/vabar.py` |
 | MuJoCo for `sysid` | 4.0.1, in its own environment | `mcp/twinsmith/sysid.py` |
+| SAM 3.1 for `sam3` | `facebookresearch/sam3` at `f1647e8` with the `facebook/sam3.1` checkpoint, in its own environment. The `sam3` bundle of the skill library keeps its own SAM 3 | `mcp/twinsmith/sam3.py` |
 
 Three Newton versions are in play and that is intended. `status` reports them side by side; nothing unifies them.
 
