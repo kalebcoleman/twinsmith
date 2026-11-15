@@ -329,7 +329,7 @@ def main():
                 depth = read_depth(depth_files[index], camera.get("depth_scale", 0.001))
                 moving = camera.get("frames")
                 pose_of_camera = (moving[index * request["every"]] if moving else camera).get("world_from_camera")
-                by_id = {remap[int(i)]: mask > 0 for i, mask in zip(ids, masks)}
+                by_id = {remap[int(i)]: mask > 0 for i, mask in zip(ids, masks) if mask.any()}   # an empty mask has no row
                 for row in objects:
                     points = backproject(depth, by_id[row["id"]], camera)
                     if not len(points):
