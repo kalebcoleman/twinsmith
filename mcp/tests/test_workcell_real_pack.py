@@ -757,7 +757,7 @@ def test_carried_centres_of_gravity_follow_the_bracket_model(cell):
     centre = sum(piece["volume_cm3"] * np.array(piece["centre_of_volume_mm"]) for piece in report["pieces"]) / volume
     print_only = np.array([-centre[1], centre[0], centre[2]]) / 1000.0
     assert np.linalg.norm(np.array(config["wrist_camera"]["bracket_cog_in_rg2_m"]) - print_only) < 0.006      # the bolts pull it toward the body
-    assert volume == pytest.approx(112.6, abs=1.0)
+    assert volume == pytest.approx(99.1, abs=1.0)
 
 
 def test_the_robot_stands_on_the_rails_carriage_and_the_bench_is_what_the_photos_show(cell):

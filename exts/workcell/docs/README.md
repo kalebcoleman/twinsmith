@@ -14,7 +14,7 @@ workcell integration provides four grouped tools and eight actions:
 | `workcell__perception` | `status` |
 | `workcell__jenga` | `build`, `status` |
 
-`quick_start` resolves the external `ur5e-jenga-workcell/v2` pack and builds a stopped
+`quick_start` resolves the external `ur5e-workcell/v3` pack and builds a stopped
 scene on the session's engine, PhysX or Newton. `physics` mode uses gravity; `mirror_real` uses zero gravity (PhysX only)
 but does not synchronize with hardware. An unsaved stage is replaced only with explicit consent.
 `shutdown` releases workcell state without clearing the stage. Robot, perception and
@@ -38,6 +38,11 @@ mass and principal inertia on named bodies (the UR5e links from Universal Robots
 datasheet's 0.78 kg), so neither engine computes them from collider shapes; the Quick Changer's mass, the Bota's and
 what the RG2 body carries (the camera bracket and the D415) come from their own sections.
 
+The robot stands on the bench's linear axis, a seventh joint (`rail_joint`, metres from the built pose, first in every
+joint list). `workcell__robot(action="rail")` reads it, or with `position_mm` sets its target, in the real axis's
+millimetres from home; arm IK and FK are unchanged (six joints from the UR base, wherever the rail has put it) and
+coordinated seven-axis IK is not provided ([what changes for callers](../workcell/README.md#what-changes-for-callers)).
+
 There is no legacy extension ROS graph setup or custom `rclpy` build prerequisite for
 this API. Generic `sim__*` tools are separate from the workcell interface.
 
@@ -57,6 +62,6 @@ restoring realized initial poses without resetting velocities or solver state.
 - Asset policy: [asset packs](../../../docs/ASSET-PACKS.md)
 
 The repository ships no pack binaries. Set `TWINSMITH_ASSET_ROOT` to override the asset
-root; the loader appends `ur5e-jenga-workcell/v2` (the version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
+root; the loader appends `ur5e-workcell/v3` (the pack and version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
 not file paths or a legacy-store fallback. Preserve the manifest, provenance, hashes and
 dependency checks described in the workcell README when creating a private pack.

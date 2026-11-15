@@ -71,8 +71,9 @@ Every registered tool is in the generated [TOOLS-ARGUMENTS.md](docs/TOOLS-ARGUME
 [ROBOSIM](docs/ROBOSIM.md) and the [work cell](exts/workcell/workcell/README.md) describe behaviour. `workcell__cell(action="quick_start")`
 builds a stopped scene; joint tools take the articulation root, not the robot's parent Xform (`sim__ros2_tf` reports it).
 The work cell's robot stands on a moving rail: `rail_joint` is the articulation's first joint (metres from the built
-pose), `sim__arm(action="ik")` solves it too unless `base_link` is the robot report's `arm_base_link`, and
-`workcell__robot(action="rail")` reads or sets it in the real axis's millimetres. See
+pose, so every arm joint's index is one higher: address joints by name). `sim__arm` is unchanged: six arm joints from
+the UR base wherever the rail has put it; move the rail first with `workcell__robot(action="rail")` (the real axis's
+millimetres), then solve the arm. Coordinated seven-axis IK is not provided. See
 the [scene workflow](docs/TOOLS-SCENE.md#a-typical-session).
 
 After reopening a scene, its sensors and prims are not pack-owned: pass `adopt=true` to `sim__lidar(action="read")` or

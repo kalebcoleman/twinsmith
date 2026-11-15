@@ -13,15 +13,20 @@
 
 ![Real bracket and simulated bracket from the same viewpoint](../../../docs/media/workcell-bracket-real-vs-sim.jpg)
 
-What still differs: the simulated arm is posed with the tool horizontal, not as in the photo; the printed blocks and the
-truss are a reconstruction, squarer and heavier than the real ones; the bolt ends, the hot glue at the foot of the
-arm, the cable and the AprilTag are not modelled; the simulated RG2 is OnRobot's CAD with its bare standard fingertips
-(the tape on the real ones is a friction value, not geometry).
+**The camera's place is provisional** (Kaleb, 2026-11-14, on two earlier versions of this image: the camera is in line
+with the gripper, and further from it and higher up than first modelled). What still differs: the real camera looks
+larger and sits higher against the wrist than the simulated one, which the model's arm shape cannot yet follow
+([the numbers](#sourced-dimensions)); the simulated arm is posed with the tool horizontal, not as in the photo; the
+printed blocks and the truss are a reconstruction, squarer than the real ones; the bolt ends, the hot glue at the foot
+of the arm, the cable and the AprilTag are not modelled; the simulated RG2 is OnRobot's CAD with its bare standard
+fingertips (the tape on the real ones is a friction value, not geometry). Better photos, or the bracket's own CAD file,
+are to replace the estimate.
 
 ![What the simulated wrist camera sees](../../../docs/media/workcell-wrist-view-sim.jpg)
 
-The fingertips are along the top edge of the image (image down is away from the gripper). The camera is 68 mm to one
-side, so with the gripper fully open the finger on the far side is just outside the image; partly open, both show.
+The fingertips are in the upper part of the image (image down is away from the gripper): fully open, both are at the
+top edge; nearly closed, both are well inside. The gripper is right of the image's centre because the colour sensor is
+at one end of the camera body, 35 mm from the body's centre.
 
 ## What the bracket is
 
@@ -36,10 +41,13 @@ that it is a clamp on the gripper, moderate on its sizes and on the camera's til
   bolt ends are visible on one side of the body. The piece on the front face (the face with the AprilTag) is the
   larger block and reaches down the front face to the tag; the piece on the back face carries the arm.
 - A triangulated arm with an open window runs from the back piece to a thin flat plate. The D415 is screwed to the
-  plate, off the face opposite the AprilTag and displaced to one side.
-- The camera's long axis is along the finger-opening axis, and it is tilted about that axis, about 25 degrees, so it
-  looks at the fingertips rather than straight ahead. The colour sensor end is nearer the gripper's centre and the
-  USB-C end is outboard. The side with the unbroken row of vent slots (the top of a D415) faces the gripper, so the
+  plate, off the face opposite the AprilTag. In the photo it looks displaced to one side; that is the photo's
+  perspective. Kaleb, 2026-11-14, on the comparison images: the camera is **in line with the gripper**, and it is
+  **further from the gripper and higher up than first modelled, on a longer arm**. The model follows both: the
+  camera's body is centred on the gripper's centre plane, 127 mm behind the tool axis (it was 66 mm).
+- The camera's long axis is along the finger-opening axis, and it is tilted about that axis (39 degrees in the model,
+  see below), so it
+  looks at the fingertips rather than straight ahead. The side with the unbroken row of vent slots (the top of a D415) faces the gripper, so the
   gripper is toward the top of the image.
 
 The model reproduces that arrangement and the camera pose. It is not a copy of the lab's own CAD file (which has not
@@ -83,10 +91,10 @@ in the CAD frame of `rg2_camera_bracket.py`: +Z toward the fingertips, +X the fi
 
 | Parameter | Value | How it was scaled | Uncertainty |
 |---|---|---|---|
-| Camera body centre behind the tool axis (`cam_y`) | 66 mm (48 mm from the RG2's back face) | The two ends of the 99 mm body back-projected from the solved viewpoint | 15 mm |
-| Camera body centre along the finger-opening axis (`cam_x`, body centre) | 68 mm to one side of the tool axis (the side of the visible bolts) | Same | 15 mm |
-| Camera body centre along the approach axis (`cam_z`) | 31 mm above the lower end of the RG2 body (glass centre 22 mm above it) | Same; mostly along the line of sight, so the weakest of the three | 15 to 20 mm |
-| Camera tilt toward the tool axis (`tilt_deg`) | 25 degrees, so the plate is 65 degrees to the RG2's back face | Two cues at the solved viewpoint, see below | 8 degrees |
+| Camera body centre behind the tool axis (`cam_y`) | 127 mm (109 mm from the RG2's back face) | **Kaleb, 2026-11-14** (further from the gripper, a longer arm) and the photo with the sideways position fixed at zero: the body's two ends, fitted once at the solved viewpoint (128 mm) and once with the viewpoint refitted too (126 mm). It was 66 mm when the sideways position was left free | 20 mm |
+| Camera body centre along the finger-opening axis (`cam_x` is the colour sensor, 35 mm from the body centre) | 0 mm: on the gripper's centre plane | **Kaleb, 2026-11-14**, not the photo: the back-projection gave 68 mm to one side, which he says is the photo's perspective. Whether the body or the lens is the centred point is not measured | 35 mm if it is the lens that is centred |
+| Camera body centre along the approach axis (`cam_z`) | 46 mm above the lower end of the RG2 body (glass centre 38 mm above it); 102 mm from the frame's origin | **Known to be too low.** The same two fits put the centre 57 mm and 20 mm from the origin, level with the collar or above it, which is the "higher up" Kaleb sees. This arm shape (a truss rising from the collar to a plate below it) cannot hold a plate there; 102 mm is as high as it goes. It was 117 mm | 40 to 80 mm, one-sided |
+| Camera tilt toward the tool axis (`tilt_deg`) | 39 degrees, so the plate is 51 degrees to the RG2's back face | **Derived, not read from the photo.** The photo's own reading is 25 degrees (below). At the new distance and this height a camera tilted 25 degrees would look past the fingertips, so the tilt keeps the old aim: the optical axis crosses the tool axis 40 mm beyond the fingertips. If the camera is really 45 mm or more higher, 25 degrees gives the same aim | 14 degrees |
 | Camera roll (long axis along the finger-opening axis) | 0 degrees | The back-projected ends differ from that axis by 10 mm over 99 mm | 6 degrees |
 | Camera turned 180 degrees about its optical axis (gripper toward the top of the image) | yes | Lens order on the glass, USB-C end, vent slots | A yes or no, moderate confidence |
 | Collar position on the body (`clamp_z0`, `clamp_z1`) | 56 to 82 mm below the mounting plane | Between the end of the mounting bracket's arm and where the body widens; the photo shows the collar touching both | 5 mm |
@@ -115,7 +123,9 @@ compared with the photo (the working montage is in the run folder, not in this r
 
 The side width alone says 16 to 20 degrees; the plate edge alone says 30 (24 to 35 if that edge is read 3 degrees
 off). 25 degrees is between them, with residuals of 10 to 27 px on the side width and 2.6 degrees on the plate edge.
-Zero is excluded by both. At 25 degrees the optical axis crosses the tool axis about 140 mm ahead of the camera, 40 mm
+Zero is excluded by both. This fit was made with the camera at its first position (66 mm behind the tool axis, 68 mm to
+one side); the model now uses 39 degrees for the reason in the table above, and the photo's 25 degrees stands as the
+reading to check. At 25 degrees and the first position the optical axis crossed the tool axis about 140 mm ahead of the camera, 40 mm
 beyond the fingertips. The tilt is about the camera's long axis through mid depth of the body, so the body centre
 does not move and the optical origin moves by 0.2 mm.
 
@@ -123,13 +133,13 @@ does not move and the optical origin moves by 0.2 mm.
 
 1. Open the wrist camera's colour image with the gripper open and compare it with the simulated one above: where are
    the fingertips? This checks the tilt and the sideways offset together.
-2. Angle between the plate and the RG2's back face (model: 65 degrees, that is the camera tilted 25 degrees toward the
+2. Angle between the plate and the RG2's back face (model: 51 degrees, that is the camera tilted 39 degrees toward the
    tool axis; uncertainty 8 degrees).
-3. Camera centreline to the RG2's back face, perpendicular to the face, at mid depth of the camera (model: 48 mm).
-4. Camera body's end nearest the gripper to the RG2 body's side face, along the finger-opening axis, and which side
-   the camera is on when you look at the AprilTag face (model: the body spans 18.5 to 117.5 mm from the tool axis).
+3. Camera centreline to the RG2's back face, perpendicular to the face, at mid depth of the camera (model: 109 mm).
+4. Each end of the camera body to the RG2 body's side face on that side, along the finger-opening axis (model: the
+   body is centred, 49.5 mm either side of the tool axis; if the lens is the centred point instead, it is 35 mm off).
 5. Centre of the camera glass to the lower end of the RG2 body (the end the fingers come out of), along the approach
-   axis (model: 22 mm above that end).
+   axis (model: 38 mm above that end; the photo fit says 80 to 120 mm).
 6. The collar: its length along the body, the wall thicknesses, the bolt size and whether the far side also has two.
 7. The plate: length, width, thickness, and where the camera's two M3 holes are on it.
 
@@ -139,8 +149,8 @@ The bracket is on the RG2, so which side of tool0 the camera is on depends on ho
 axis. From the photos of the wrist before the bracket was fitted, the RG2's front face (logo, AprilTag) is on the side
 of wrist 3's M8 tool connector, which is tool0 -Y (Universal Robots: "Y is away from the Tool connector"). The config
 mounts the RG2 that way (`asset_layout.rg2.mount_pose`, status unconfirmed, from photos, confirm on the robot), so the
-camera, on the back face, is on the tool0 +Y side: optical origin at (0.033, 0.066, 0.1145) m in tool0 with the shipped
-stack (no Bota; 0.1625 m along the tool axis with `bota.mounted`), optical axis (0, -0.423, 0.906).
+camera, on the back face, is on the tool0 +Y side: optical origin (the colour sensor) at (-0.035, 0.127, 0.0995) m in tool0, the body's centre at (0.000, 0.127, 0.099) m, with the shipped
+stack (no Bota; 0.1475 m along the tool axis with `bota.mounted`), optical axis (0, -0.629, 0.777).
 
 ## Collision
 
@@ -172,9 +182,9 @@ links' own collision hulls (`mcp/tests/test_workcell_real_pack.py` repeats it):
 |---|---|---|
 | `front_bar_extension` | 11.1 mm | 66.6 mm |
 | `collar` | 12.4 mm | 68.1 mm |
-| `truss` | 21.0 mm | 70.4 mm |
-| `camera_plate` | 44.2 mm | 77.3 mm |
-| `plate_support` | 49.0 mm | 80.7 mm |
+| `truss` | 34.5 mm | 86.8 mm |
+| `camera_plate` | 110.4 mm | 135.0 mm |
+| `plate_support` | 113.4 mm | 142.5 mm |
 
 Any shape to the Quick Changer: 55.8 mm; to wrist 3: 69.4 mm (the stack is 34 mm shorter than it was with the Bota and
 the old Quick Changer height in it).
@@ -187,10 +197,12 @@ includes the plates the robot stands on, and every other body of the robot, and 
 |---|---|---|---|
 | `collar` | 114.2 mm | 299.7 mm | 252.3 mm |
 | `front_bar_extension` | 115.0 mm | 296.4 mm | 249.5 mm |
-| `truss` | 168.7 mm | 297.0 mm | 249.0 mm |
-| `camera_plate` | 197.0 mm | 262.1 mm | 218.2 mm |
-| `plate_support` | 198.7 mm | 287.7 mm | 239.7 mm |
-| D415 body (no collider) | 193.3 mm | 251.1 mm | 208.5 mm |
+| `truss` | 169.7 mm | 317.1 mm | 269.7 mm |
+| `camera_plate` | 261.9 mm | 290.3 mm | 242.5 mm |
+| `plate_support` | 264.3 mm | 307.5 mm | 261.0 mm |
+| D415 body (no collider) | 253.9 mm | 279.6 mm | 232.0 mm |
+
+With the carriage at either end of the rail's travel the smallest of these is 111.2 mm (as built, +0.635 m).
 
 With `bota.mounted` the as-built distances are the same within 0.3 mm.
 
@@ -214,7 +226,7 @@ from `config/lab_hardware.json` (any tilt from 0 to 45 degrees).
 | Piece | Volume | Size | Prints |
 |---|---|---|---|
 | `clamp_front` | 41.7 cm3 | 82.6 x 27.4 x 44.0 mm | On its front face (nut pockets down), no supports |
-| `camera_arm` | 70.9 cm3 | 167.2 x 87.3 x 43.2 mm | On the collar's upper face (the Quick Changer side down), with supports under the tilted plate where it overhangs the truss |
+| `camera_arm` | 57.4 cm3 | 100.0 x 148.9 x 33.1 mm | On the collar's upper face (the Quick Changer side down), with supports under the tilted plate where it overhangs the truss |
 
 Hardware: four M4 socket head screws about 55 mm long with four M4 hex nuts (pressed into the pockets of the front
 piece), two M3 x 6 screws for the camera (the plate is 3.5 mm and the D415 takes at most 3 mm of thread). Slide the
@@ -223,4 +235,4 @@ tighten the four bolts evenly; the 0.6 mm gap between the pieces must stay open.
 Changer's latch and of the tool connector (both more than 50 mm away, at the other end of the mounting
 bracket) and of the finger linkage at any opening (the linkage stays between 16.7 mm behind the gripper's mid-plane
 and 13.9 mm in front of it, and below the collar; the printed bracket is at least 3.7 mm outside that slab, and the
-camera 32 mm from the RG2 body).
+camera 92 mm from the RG2 body).

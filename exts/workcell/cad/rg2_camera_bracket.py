@@ -72,10 +72,10 @@ P = {
     "d415_m3_pitch": 45.0,          # D400 datasheet rev 017, figure 10-8
     "d415_m3_max_insertion": 3.0,
     # --- camera pose: estimated from the photo (config wrist_camera.offset_in_rg2_m, here in the CAD frame) -------
-    "cam_x": env("CAM_X_MM", -33.0),
-    "cam_y": env("CAM_Y_MM", -66.0),
-    "cam_z": env("CAM_Z_MM", 117.0),
-    "tilt_deg": env("TILT_DEG", 25.0),          # about the camera's long axis, optical axis toward the tool axis
+    "cam_x": env("CAM_X_MM", 35.0),             # Kaleb: the camera is in line with the gripper, so its body is centred on X = 0
+    "cam_y": env("CAM_Y_MM", -127.0),           # Kaleb: further from the gripper than first modelled; photo fit with X fixed
+    "cam_z": env("CAM_Z_MM", 102.0),            # as far toward the wrist as this arm shape allows; the fit says higher still
+    "tilt_deg": env("TILT_DEG", 39.0),          # about the camera's long axis, optical axis toward the tool axis
     "d415_back": env("BACK_MM", -10.2),         # vendor mesh: back face along the optical axis
     "d415_body_cx": env("BODY_CX_MM", 34.95),   # vendor mesh: body centre along optical x
     # --- clamp: estimated from the photo -------------------------------------------------------------------------

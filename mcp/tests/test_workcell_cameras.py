@@ -384,7 +384,7 @@ def test_shipped_config_has_the_wrist_camera_only_on_the_rg2_bracket():
     assert "offset_in_tool0_m" not in wrist and "rotation_in_tool0_deg" not in wrist     # derived, never typed
     x, y, z = wrist["offset_in_rg2_m"]
     # Off the RG2's back face (+X; the body is 36 mm thick), clear of the plane the fingers move in, level with the body.
-    assert 0.018 + 0.0115 + 0.005 <= x <= 0.12
+    assert 0.018 + 0.0115 + 0.005 <= x <= 0.14                 # 127 mm since 2026-11-14: further out than first modelled
     assert abs(y) <= 0.1 and 0.07 <= z <= 0.148
     rotation = cameras._euler_xyz_deg_to_quat(wrist["rotation_in_rg2_deg"])
     forward = cameras._rotate_vector(rotation, [0.0, 0.0, 1.0])

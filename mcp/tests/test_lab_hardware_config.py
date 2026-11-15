@@ -81,7 +81,7 @@ def test_the_stack_is_the_real_arm_by_default_and_one_switch_mounts_the_bota(tmp
     payload = tool["payload"]
     assert [item["mass_kg"] for item in payload["items"]] == [0.06, 0.78, 0.1, 0.064]
     assert payload["mass_kg"] == pytest.approx(1.004)
-    assert payload["cog_in_tool0_m"] == pytest.approx([0.0056, 0.0056, 0.0771], abs=5e-5)
+    assert payload["cog_in_tool0_m"] == pytest.approx([0.0002, 0.0101, 0.0759], abs=5e-5)     # the camera is on the gripper's centreline
     assert payload["not_included"] == ["cables"]
     assert not any("adapter plate" in line for line in tool["unmeasured"])
     assert off["flange_ft_sensor"]["frame_id"] == "tool0" and off["flange_ft_sensor"]["measurement"] == "incoming_joint_wrench"
@@ -97,7 +97,7 @@ def test_the_stack_is_the_real_arm_by_default_and_one_switch_mounts_the_bota(tmp
     assert mounted["rg2_body_in_tool0"]["quaternion_wxyz"] == pytest.approx(tool["rg2_body_in_tool0"]["quaternion_wxyz"])
     assert mounted["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161 + added])
     assert mounted["payload"]["mass_kg"] == pytest.approx(1.004 + 0.067 + 0.113 + 0.067)
-    assert mounted["payload"]["cog_in_tool0_m"] == pytest.approx([0.0045, 0.0045, 0.1051], abs=5e-5)
+    assert mounted["payload"]["cog_in_tool0_m"] == pytest.approx([0.0001, 0.0081, 0.1042], abs=5e-5)
     assert sum("adapter plate" in line for line in mounted["unmeasured"]) == 2     # the build says what is not measured
     for record in ("robot_side_plate", "tool_side_plate"):
         assert raw["bota"][record]["status"] == "unconfirmed" and raw["bota"][record]["source"].startswith("PLACEHOLDER, measure it")

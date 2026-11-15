@@ -299,12 +299,12 @@ centre of the flange plane, +Z along the tool axis; fingers at joint zero):
 |---|--:|---|---|---|
 | Quick Changer, robot side | 0.060 kg | (2.4, 0.6, 4.3) | OnRobot Quick Changer datasheet v2.0; centre of volume of the official CAD | datasheet; not weighed |
 | RG2 with the Quick Changer's tool side | 0.780 kg | (-0.2, 0.0, 78.5) | OnRobot RG2 datasheet v1.8; centre from the link masses in `inertials` | datasheet; taken to include the tool side (it is part of OnRobot's RG2 CAD): weigh it |
-| Camera bracket with its four M4 bolts | 0.100 kg | (13.2, 13.6, 85.9) | CAD volume 112.6 cm3 (140 g solid PLA), about 80 g as printed, plus 20 g of bolts | estimate: weigh it |
-| D415 | 0.064 kg | (68.0, 66.1, 114.3) | Intel D400 datasheet rev 017, table 3-51 | datasheet, within 10 percent |
-| **Total** | **1.004 kg** | **(5.6, 5.6, 77.1)** | | cables not included |
+| Camera bracket with its four M4 bolts | 0.100 kg | (1.8, 19.4, 84.1) | CAD volume 99.1 cm3 (123 g solid PLA), about 80 g as printed, plus 20 g of bolts | estimate: weigh it |
+| D415 | 0.064 kg | (0.0, 127.1, 99.3) | Intel D400 datasheet rev 017, table 3-51 | datasheet, within 10 percent |
+| **Total** | **1.004 kg** | **(0.2, 10.1, 75.9)** | | cables not included |
 
 With the Bota mounted the two plates (0.067 kg each, placeholders) and the sensor (0.113 kg, datasheet) are added:
-1.251 kg at (4.5, 4.5, 105.1) mm.
+1.251 kg at (0.1, 8.1, 104.2) mm.
 
 The simulation carries the same mass. The bracket and the D415 have no rigid body of their own (their prims hang from
 tool0 and their collider is on the RG2 body), so their masses are added to the RG2 body's mass properties as point
@@ -337,18 +337,19 @@ Measured (2026-11-14, Isaac Sim 6.2.0, one run each; arm joints in degrees):
 | State, engine | Pose | Reading | Force | Expected (mass below) |
 |---|---|---|--:|--:|
 | off, Newton | as built (all zero) | flange | 9.8492 N | 9.8492 N (1.003999 kg) |
-| off, Newton | tool down (0, -80, 100, -110, -90, 0) | flange | 9.8492 N, (-0.0001, 0.0210, -9.8492) | 9.8492 N |
+| off, Newton | tool down (0, -80, 100, -110, -90, 0) | flange | 9.8492 N, (0.0000, 0.0209, -9.8492) | 9.8492 N |
 | off, Newton | tool horizontal (0, -80, 100, -10, -90, 0) | flange | 9.8492 N | 9.8492 N |
-| off, PhysX | as built / tool down / tool horizontal | flange | 9.8496 / 9.8545 / 9.8485 N | 9.8492 N |
-| on, Newton | tool down | Bota | 10.5065 N, (-10.5065, -0.0001, 0.0236) | 10.5065 N (1.070999 kg) |
+| off, PhysX | as built / tool down / tool horizontal | flange | 9.8496 / 9.8527 / 9.8498 N | 9.8492 N |
+| on, Newton | tool down | Bota | 10.5065 N, (-10.5065, 0.0000, 0.0235) | 10.5065 N (1.070999 kg) |
 | on, Newton | tool down | flange | 12.2723 N | 12.2723 N (1.250999 kg) |
-| on, PhysX | as built / tool down / tool horizontal | Bota | 10.5073 / 10.5163 / 10.5066 N | 10.5065 N |
-| on, PhysX | as built / tool down / tool horizontal | flange | 12.2732 / 12.2829 / 12.2724 N | 12.2723 N |
+| on, PhysX | as built / tool down / tool horizontal | Bota | 10.5072 / 10.5147 / 10.5064 N | 10.5065 N |
+| on, PhysX | as built / tool down / tool horizontal | flange | 12.2732 / 12.2813 / 12.2723 N | 12.2723 N |
 
-At tool down without the Bota the torque is (-0.0564, 0.0544, 0.0001) N m: the weight acting at the payload's centre
-of gravity, 5.6 mm off the axis on both sides. `scripts/workcell_static_wrench.py` repeats the check (both readings
-when the Bota is mounted) and passed on Newton in both states. In every run the RG2 body had 0 contact pairs at the
-built pose and with the tool down, with and without `task="jenga_tower"` on Newton.
+At tool down without the Bota the torque is (-0.1004, 0.0005, 0.0000) N m: the weight acting at the payload's centre
+of gravity, 10.1 mm off the axis on the camera's side. `scripts/workcell_static_wrench.py` repeats the check (both
+readings when the Bota is mounted) and passed on both engines in both states. In every run the RG2 body had 0 contact
+pairs at the built pose and with the tool down, with and without `task="jenga_tower"` on Newton. All of these are from
+the pack as rebuilt with the camera at its present place (2026-11-14).
 
 ### Where the robot stands
 
@@ -443,11 +444,17 @@ height of the robot's base above the table top; the moving mass.
 
 - The pack's bench is split (`scripts/workcell_rail_assets.py`): `bench` is the static bench with the rail, and
   `rail_carriage` is what moves, the carriage group and the robot plate, referenced from the same vendor meshes.
-- One articulation, as before, with one more joint. A geometry-free **rail link** is fixed to the world by the arm's
-  root joint, which keeps its path (`<assembly>/robot/root_joint`); a prismatic **`rail_joint`** carries the carriage;
-  a fixed joint holds the robot's base on the carriage. The rail must be in the arm's articulation for the carriage's
-  motion to act on the arm, and both engines want it this way round: Newton keeps the base fixed when the root joint
-  itself is made prismatic, and refuses a joint written child first.
+- One articulation, as before, with one more joint. The arm's root joint keeps its path (`<assembly>/robot/root_joint`)
+  and now fixes a geometry-free **rail link** to the world; a prismatic **`rail_joint`** carries the carriage; a fixed
+  joint holds the robot's base on the carriage. The rail must be in the arm's articulation for the carriage's motion to
+  act on the arm, and both engines want it this way round: Newton keeps the base fixed when the root joint itself is
+  made prismatic, and refuses a joint written child first.
+- **The arm's kinematic chain still starts at the UR base.** A disabled marker joint (`<assembly>/robot/arm_base`) names
+  `base_link` as the body the arm hangs from, so the arm tools' default chain is the six arm joints from `base_link` at
+  its current pose, exactly as with a fixed base, and nobody passes an argument to get that. The rail is moved by its
+  own command, then the arm is solved from wherever the base now stands, as the lab does on the real cell
+  (`RISL_vention_ros`: an absolute position in millimetres, a separate move). Coordinated seven-axis inverse kinematics
+  is not provided.
 - The joint is in **metres, zero at the built pose, positive along world +X**, limits -0.635 to 0.635. Its position
   drive is per engine (`rail.drive`): 200,000 N/m and 6,000 N s/m on both, with a 5 kg armature on Newton
   (`dt^2 k / armature` = 0.16 against a limit of 4), limited to 1240 N.
@@ -455,16 +462,26 @@ height of the robot's base above the table top; the moving mass.
   beside it keep theirs.
 - `rail.moving: false` builds the base fixed at the built pose, with the carriage as scenery.
 
-### What changes for a caller
+### What changes for callers
 
-| | Before | Now |
+"Before" is `main` (pack `v2`: fixed base, Bota in the stack, two driven gripper joints). "Now" is the default build
+of this branch. Checked on Newton and PhysX unless a row says otherwise.
+
+| What | Before | Now |
 |---|---|---|
-| Joint names from the joint tools | six arm joints, then the gripper's | `rail_joint` first, then the same names. **Every index moves up by one**; names do not change |
-| `sim__joints` (state, command, move, teleport) | arm in radians | the same, plus `rail_joint` in metres from the built pose; a target outside -0.635 to 0.635 is refused |
-| `sim__arm(action="ik")` and `fk` without `base_link` | the six arm joints | **a seven-joint chain from the rail link: the answer holds a `rail_joint` target, and it is usually not zero** (0.50 m for a point 0.2 m from the robot in the check below). Pass `base_link=<robot report's arm_base_link>` to solve for the six arm joints at the rail's current position |
-| Articulation root path | `<assembly>/robot/root_joint` | unchanged |
-| A step command to the rail | | PhysX limits the joint's speed to `rail.speed_m_s` (0.26 m/s measured). **Newton applies no joint velocity limit**: a 0.3 m step peaked at 3.3 m/s. Send intermediate targets for a move at the configured speed, as for the arm |
-| Real units | | `workcell__robot(action="rail")` reads the position, and with `position_mm` sets the target, in the real axis's millimetres from home (650.0 is joint 0.015 m with the assumed mapping). It steps nothing |
+| Joint names and count | 12: the six arm joints, two driven gripper joints (`finger_joint`, `right_outer_knuckle_joint`) and four followers | 13: `rail_joint`, the same six arm joints, `finger_joint` and five followers (`left_inner_finger_joint`, `left_finger_knuckle_joint`, `right_outer_knuckle_joint`, `right_inner_finger_joint`, `RevoluteJoint`). No arm joint was renamed |
+| Order in array results (`names`, `positions`, `velocities` of `sim__joints(action="state")`) | arm joints at indices 0 to 5 | `rail_joint` is index 0. **Every arm joint moved up by one**: `shoulder_pan_joint` 1, `shoulder_lift_joint` 2, `elbow_joint` 3, `wrist_1_joint` 4, `wrist_2_joint` 5, `wrist_3_joint` 6; `finger_joint` is 7. Every result carries `names`: address joints by name. Code that indexes by position reads the wrong joint and gets no error |
+| Calls that take `rail_joint` | none | `sim__joints` by name, in **metres from the built pose, positive along world +X**, limits -0.635 to 0.635 (`state`, `command`, `teleport` exercised; `move`, `drive`, `gains` and `inspect` address joints the same way and were not exercised). `workcell__robot(action="rail")` in the real axis's unit: **millimetres, absolute from the axis's home**, 0 to 1270, 635 at the built pose (the mapping is assumed, see the specification). Without `position_mm` it reads; with it, it sets the position target and returns. It does not step and does not wait, where the real node blocks until the axis has arrived: step the simulation and read it back |
+| Arm IK and FK (`sim__arm`) | six arm joints, from the UR base | **Unchanged: same arguments, same six joints in `joint_targets`, base `base_link`** (`chain.base` in the reply). The base is taken where the rail has put it, so a `frame="world"` target is solved from wherever the carriage now stands and a `frame="base"` target moves with the carriage. `rail_joint` is never in an IK answer and never moves in an IK move. Coordinated seven-axis inverse kinematics is not provided |
+| Cartesian moves (`sim__arm(action="ik", move=true)`, with or without `speed`) | six arm joints | Unchanged; the rail holds its position while the arm moves |
+| A reach beyond the arm | not reachable | Move the rail first with its own command, then call the arm as before: the same call that answers `reached: false` from the default base answers `reached: true` from the new one ([acceptance run](#acceptance-run-rail-move-arm-from-the-new-base-grasp)) |
+| Default rail position and world poses | base fixed with the robot's axis at the cell's origin, 5 mm above the table top on a proxy plate | Joint zero is the built pose: the robot's axis at the cell's origin in x and y, as before. **The base is 80 mm above the table top** (on the bench's own carriage and robot plates), so with the same arm joint values every world z of the arm is 75 mm higher than on `main`; x and y are unchanged while the rail is at zero. `rail.moving: false` builds the base fixed at that pose |
+| Tasks (`task="push_block"`, `task="jenga_tower"`) | objects placed in the cell's frame, in reach of the fixed base | Task files unchanged. They place objects in the cell's (world) frame and assume the rail at its default position; they neither read nor move the rail, and objects do not move with the carriage. Both build with 0 unexpected contact pairs; the `push_block` grasp passes at the default position |
+| Gripper | two driven joints: command `finger_joint` and `right_outer_knuckle_joint` together | **One driven joint: command `finger_joint` only** (-44.0 degrees closed to 26.1 degrees fully open; 0 is 75.3 mm between the pads). `right_outer_knuckle_joint` still exists, as a follower: a command to it is accepted (`status: ok`) and has no effect of its own (in the 2 s after it, all six gripper joints moved together by 0.004 degrees on Newton and 0.07 degrees on PhysX); it follows `finger_joint` |
+| Wrist force/torque read (`workcell__robot(action="wrench")`) | the simulated Bota's reading, in the sensor frame | Default source is the UR5e's own flange sensor (`source: "ur5e_tool_flange_sensor"`, frame `tool0`), carrying everything below the flange (1.004 kg). With `bota.mounted: true` the reply is the Bota's (`source: "bota_rokubi"`) with the flange reading under `flange`. Read `source` before using the numbers |
+| Tool length | flange to tool centre point with the Bota and the old Quick Changer height in the stack | 216.1 mm (`robot.tool.tcp_in_tool0_m`), 34 mm shorter; the build report carries it, do not hard-code it |
+| Calls that now refuse | | A `rail_joint` target outside its limits: `JOINT_LIMIT`, as for any joint (`clamp=true` uses the limit). `workcell__robot(action="rail", position_mm=...)` outside 0 to 1270: "outside the simulated travel". The same action with `rail.moving: false`: "This cell's robot base is fixed", and before the cell is built: "Build the workcell before using its rail". Nothing that worked on `main` was found to refuse now, apart from what the rows above change |
+| Not provided | | Coordinated seven-axis IK; a blocking rail move; a ROS subscriber on `/vention/axis1_position_cmd` (the config's `interfaces.rail_position_command` records the real interface, nothing listens on it) |
 
 ### Measured (2026-11-14, Isaac Sim 6.2.0, one run each)
 
@@ -473,20 +490,82 @@ The arm held tool down (0, -80, 100, -110, -90, 0 degrees) while the rail was se
 
 | Engine | Move | Reached, error | Arm's worst joint error during the move | Drift over 2 s after | RG2 body, carriage and base link contact pairs | Flange force (9.8492 N expected) |
 |---|---|---|--:|--:|--:|--:|
-| Newton | 0 to +0.635 m (3.0 s) | 0.6349998 m, 0.0002 mm | 0.062 degrees | 0 | 0 | 9.8492 N |
-| Newton | +0.635 to -0.635 m (5.6 s) | -0.6349998 m, 0.0002 mm | 0.054 degrees | 0 | 0 | 9.8492 N |
-| Newton | back to 0 | 0.0000000 m | 0.062 degrees | 0 | 0 | 9.8492 N |
-| PhysX | 0 to +0.635 m | 0.6349946 m, 0.005 mm | 0.008 degrees | 0 | 0 | 9.7989 N, 2 s after stopping |
-| PhysX | +0.635 to -0.635 m | -0.6349723 m, 0.028 mm | 0.008 degrees | 0 | 0 | 9.8535 N |
-| PhysX | back to 0 | 0.0000153 m, 0.015 mm | 0.008 degrees | 0 | 0 | 9.8529 N |
+| Newton | 0 to +0.635 m (3.04 s) | 0.6349998 m, 0.0002 mm | 0.062 degrees | 0.0000 mm | 0 | 9.8492 N |
+| Newton | +0.635 to -0.635 m (5.58 s) | -0.6349998 m, 0.0002 mm | 0.054 degrees | 0.0000 mm | 0 | 9.8492 N |
+| Newton | back to 0 (3.04 s) | -0.0000000 m, 0.0000 mm | 0.062 degrees | 0.0000 mm | 0 | 9.8492 N |
+| PhysX | 0 to +0.635 m (3.04 s) | 0.6349950 m, 0.0050 mm | 0.008 degrees | 0.0000 mm | 0 | 9.7953 N |
+| PhysX | +0.635 to -0.635 m (5.58 s) | -0.6349726 m, 0.0274 mm | 0.008 degrees | 0.0000 mm | 0 | 9.8535 N |
+| PhysX | back to 0 (3.04 s) | 0.0000153 m, 0.0153 mm | 0.008 degrees | 0.0000 mm | 0 | 9.8531 N |
 
-On Newton the carriage lagged its moving target by at most 4.8 mm. At the built pose (every joint at zero, rail at 0):
-0 contact pairs on both engines. Limits: the joint tools refuse a target beyond the limit on both engines, and the work
-cell's tool refuses 1300 mm ("outside the simulated travel [0, 1270] mm"). At the default rail position the static
-wrench check passes on both engines (Newton 9.8492 N in three poses, with and without the tower; PhysX 9.8495, 9.8533
-and 9.8492 N), and the `push_block` grasp passes on Newton with the arm's IK given `base_link` (flange force +0.14716 N
-for a 0.14715 N block, 0.14 mm of slip in the lift and 0.11 mm over 3 s). Host tests repeat the guard distances with
-the carriage at both ends of the travel.
+On Newton the carriage lagged its moving target by at most 4.8 mm. On PhysX the flange force read 9.7953 N two seconds
+after the move to +0.635 m, 0.5 percent under the static weight, and was within 0.05 percent again after the next two
+moves; this was not investigated. At the built pose (every joint at zero, rail at 0):
+0 contact pairs on both engines. Limits: the joint tools refuse a target beyond the limit on both engines
+(`JOINT_LIMIT`), and the work cell's tool refuses 1300 mm ("outside the simulated travel [0, 1270] mm");
+650.0 mm put the joint at 0.015000 m. **A step command is not a move at the configured speed on Newton**, which
+applies no joint velocity limit: a 0.3 m step peaked at 3.3 m/s (PhysX capped it at 0.24 m/s). Send intermediate
+targets, as the acceptance script does.
+
+With the rail at 935 mm (joint 0.3 m) on Newton, `sim__arm(action="ik", move=true)` answered with six arm joints from
+`base_link`, put the link within 1.0 mm of a target 112 mm away, and the rail stayed at 0.3000000 m (PhysX: within
+0.1 mm, rail at 0.3000055 m). The straight-line form (`speed=0.05`, Newton only) ended 1.2 mm from its target 100 mm
+away with the rail at 935.0000 mm (from 934.9999 mm). At the default rail position the static wrench check passes on
+both engines ([force/torque read](#forcetorque-read)), and the `push_block` grasp passes on Newton with the arm's IK
+called as before the rail existed (flange force +0.14715 N for a 0.14715 N block, 0.14 mm of slip in the lift and
+0.14 mm over 3 s). Host tests repeat the guard distances with the carriage at both ends of the travel.
+
+### Acceptance run: rail move, arm from the new base, grasp
+
+One continuous scenario on Newton, run by [`scripts/workcell_rail_acceptance.py`](../../../scripts/workcell_rail_acceptance.py)
+against a disposable simulator (`--port <port> --mutate-stage --discard-changes --end plus|minus|both`), once toward each
+end of the rail (2026-11-14, Isaac Sim 6.2.0, one run each, a fresh simulator for each end). The cell is built with one
+Jenga block lying flat that the arm cannot reach from the rail's default position: it is 0.948 m from the robot's base
+in the table plane, beyond the UR5e's 0.85 m reach, and the arm call of step 2 answers `reached: false` from there.
+The rail is then sent 0.60 m toward the block, which leaves the block 0.49 m from the base, and the same arm call is
+made again. Each number below is what the script recorded; nothing was adjusted between the two ends.
+
+| | +X end | -X end |
+|---|---|---|
+| **Setup** |  |  |
+| Rail default: joint, real axis | 0.000 m, 635.0 mm | 0.000 m, 635.0 mm |
+| Block (72 x 24 x 14 mm, 15 g), world | (0.850, -0.420, 0.007) m | (-0.850, -0.420, 0.007) m |
+| Block from the default base, in the table plane | 0.948 m; UR5e reach 0.85 m | 0.948 m; UR5e reach 0.85 m |
+| The step 2 call from the default base | `reached: false`, 40.6 mm short | `reached: false`, 40.8 mm short |
+| **1. Rail move** | pass | pass |
+| Commanded (`workcell__robot(action="rail")`) | 1235.0 mm (joint +0.60 m) | 35.0 mm (joint -0.60 m) |
+| Reached; error | 1234.9998 mm; 0.0002 mm | 35.0002 mm; 0.0002 mm |
+| Time: move at 0.25 m/s and 0.5 m/s2, then settling | 2.9 s, 1.0 s | 2.9 s, 1.0 s |
+| Drift over the next 2 s | 0.0000 mm | 0.0000 mm |
+| Arm's worst joint error from its commanded pose while the rail moved (static droop included) | 0.054 degrees | 0.055 degrees |
+| Flange force before, after (static weight) | 9.8492 N, 9.8492 N (9.8492 N) | 9.8492 N, 9.8492 N (9.8492 N) |
+| **2. Arm from the new base** | pass | pass |
+| Joints in the IK answer; chain base | 6 arm joints, no `rail_joint`; `base_link` | 6 arm joints, no `rail_joint`; `base_link` |
+| Target tool centre point, world | (0.850, -0.420, 0.017) m, tool down, fingers across the 24 mm side | (-0.850, -0.420, 0.017) m, tool down, fingers across the 24 mm side |
+| Reached tool centre point, world | (0.8497, -0.4190, 0.0168) m | (-0.8493, -0.4193, 0.0168) m |
+| Position error (IK's own figure) | 1.04 mm (0.43 mm) | 1.04 mm (0.43 mm) |
+| Orientation error: tool axis off vertical, finger axis off the block's narrow side (IK's own figure) | 0.23 degrees, 0.00 degrees (0.005 degrees) | 0.21 degrees, 0.00 degrees (0.005 degrees) |
+| `rail_joint` during the arm moves | moved 0.0005 mm | moved 0.0005 mm |
+| **3. Grasp, lift 0.10 m, hold 3 s** | pass | pass |
+| Closed with | `finger_joint` alone, stalled at -32.28 degrees | `finger_joint` alone, stalled at -32.08 degrees |
+| Pad gap on the 24 mm block; penetration per side | 22.27 mm; 0.87 mm | 22.63 mm; 0.69 mm |
+| Fingertip normal forces before the lift | 8.80 and 8.80 N | 5.98 and 5.82 N |
+| Fingertip normal forces holding | 9.38 and 9.38 N | 9.42 and 9.42 N |
+| Block lifted | 0.0992 m | 0.0992 m |
+| Slip in the gripper during the lift; over the 3 s hold | 0.09 mm; 0.06 mm | 0.14 mm; 0.06 mm |
+| Flange force free, holding; rise (block weight) | 9.8492 N, 9.9964 N; +0.1471 N (0.1472 N) | 9.8492 N, 9.9964 N; +0.1471 N (0.1472 N) |
+| **Release** | pass | pass |
+| Fingertip contacts with the block after letting go; block from its start | 0; 0.37 mm | 0; 0.92 mm |
+
+The arm call in step 2 is `sim__arm(action="ik", path=<articulation root>, link="wrist_3_link", position, orientation,
+offset, frame="world")`: no base link, no rail argument, as a caller would have written it before the rail existed. The
+rail is moved with `workcell__robot(action="rail", position_mm=...)` along a trapezoid, a new target every 20 ms (a
+single step command would not be a move at the configured speed on Newton). Limits of this run: one block, one grasp
+pose (tool down, across the block's 24 mm side), Newton only, block friction and mass as the `push_block` task has them
+(unmeasured), and the grasp's pre-shape (pads 40 mm apart) and tool height chosen for this block.
+
+![+X end: start, after the rail move, pre-grasp, holding](../../../docs/media/workcell-rail-acceptance-plus.jpg)
+
+![-X end: start, after the rail move, pre-grasp, holding](../../../docs/media/workcell-rail-acceptance-minus.jpg)
 
 ## Physical fidelity
 
@@ -509,20 +588,26 @@ The current candidate contains:
   camera-only release, not a load-bearing gantry base. Printed mounts and shelf remain proxies.
 - The wrist D415 is on a printed bracket clamped to the RG2 body (not to the wrist and not between flange faces, so the
   tool stack is unchanged and the camera turns with the gripper). It sits off the RG2's back face, the face opposite
-  the lab's AprilTag: body centred 66 mm behind the tool axis and 68 mm to one side, long axis along the
-  finger-opening axis, tilted 25 degrees about that axis so it looks at the fingertips, with the gripper toward the
-  top of the image. The pose is configured in the RG2 body frame (`wrist_camera.offset_in_rg2_m`,
+  the lab's AprilTag: body centred 127 mm behind the tool axis and **in line with the gripper** (the body's middle on
+  the gripper's centre plane, so the colour sensor is 35 mm along the finger-opening axis), long axis along the
+  finger-opening axis, tilted 39 degrees about that axis so it looks at the fingertips, with the gripper toward the
+  top of the image. **This pose is provisional.** The first model had the camera 68 mm to one side and 66 mm behind
+  the tool axis, read from one photo; on 2026-11-14 Kaleb corrected both from the comparison images: the camera is in
+  line with the gripper, and it is further from the gripper and higher up, on a longer arm. With the sideways position
+  fixed, the photo gives 127 mm behind the tool axis and a height 45 to 80 mm above where the model has it; the model's
+  arm shape cannot go higher than it now is, and the tilt is set so the camera still looks at the fingertips from
+  there ([what was fitted and what is derived](../cad/README.md#sourced-dimensions)). Better photos, or the bracket's
+  own CAD file, are to replace all of it. The pose is configured in the RG2 body frame (`wrist_camera.offset_in_rg2_m`,
   `rotation_in_rg2_deg`) and the builder derives the tool0 pose from the stack, so the camera follows the RG2 when the
-  stack changes. It is an estimate from one photo (about 15 mm and 8 degrees), not a measurement. In the simulated
-  image the fingertips are along the top edge; with the gripper fully open the finger on the far side leaves the
-  image ([capture](../../../docs/media/workcell-wrist-view-sim.jpg)). Tests build the real pack and check that the
+  stack changes. In the simulated image the fingertips are in the upper part
+  ([capture](../../../docs/media/workcell-wrist-view-sim.jpg)). Tests build the real pack and check that the
   collar is around the RG2's 54 x 36 mm waist, that the camera's back is on the plate, that bracket and camera stay
   out of the slab the finger linkage moves in, and that the image shows the fingertips and not the arm or the bracket.
   The RG2 is mounted with its front face (logo, AprilTag) on the side of wrist 3's tool connector, tool0 -Y, as the
   photos of the real wrist show (`asset_layout.rg2.mount_pose`: from photos, confirm on the robot), so the camera is on
   the tool0 +Y side. Known limits: the cell is built with every joint at zero, the arm stretched out along the bench
   with the tool axis about 141 mm above the table top (`robot.initial_joint_deg` is read by nothing); the camera is on
-  the upper side there, 193 mm clear of the bench. A test checks every bracket shape and the camera body against the
+  the upper side there, 254 mm clear of the bench. A test checks every bracket shape and the camera body against the
   bench (with the plates the robot stands on) and the rest of the robot at that pose and with the tool down, with and
   without the Bota in the stack.
   The bracket has a collider; the D415 body has none. The pack's bracket asset carries five convex hulls (`collar`,
@@ -567,8 +652,8 @@ configuration or a design envelope and are not vendor drawings.
 | Fingertip | block 9.9 x 20.5 x 29.9 mm with a 1.5 mm rubber pad (OnRobot's CAD) | `confirmed`; the real fingertips are wrapped in tape |
 | Fingertip friction | 0.7 static, 0.6 dynamic | `unconfirmed` estimate for the tape, no source found: measure with a tilt test |
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
-| Wrist camera offset | 0.066, -0.033, 0.117 m in the RG2 body frame (off the back face; 0.033, 0.066, 0.1145 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, estimated from photo |
-| Wrist camera rotation | 25, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 25 degrees toward the tool axis | `unconfirmed`, estimated from photo |
+| Wrist camera offset | 0.127, 0.035, 0.102 m in the RG2 body frame (off the back face, body centred on the gripper; -0.035, 0.127, 0.0995 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, provisional: Kaleb's corrections and one photo. Measure the camera's distance from the RG2's back face, its height along the gripper, and whether it is centred |
+| Wrist camera rotation | 39, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 39 degrees toward the tool axis | `unconfirmed`, provisional: the photo reads 25 degrees; 39 keeps the fingertips in view from the modelled position |
 | Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |
@@ -669,8 +754,8 @@ the bridge; one run each).**
 - Grasp: fingertips 39.7 mm apart over the 24 mm side of a block lying flat, tool down, RG2 body origin 232.9 mm above
   the table top, closed with `finger_joint` at its lower limit. The drive stalled at -32.28 degrees with the pads
   22.25 mm apart: each pad sank 0.87 mm into the block (MuJoCo's soft contact), so a width read from the joint is about
-  1.7 mm small. Each fingertip pressed with 8.9 N before the lift and 9.4 to 9.5 N after it, and held 0.07 to 0.08 N of
-  friction each. The block was lifted 0.0998 m with 0.13 mm of slip and held for 3 s with 0.09 mm more and no rotation;
+  1.7 mm small. Each fingertip pressed with 8.9 N before the lift and 9.4 N after it, and held 0.07 to 0.08 N of
+  friction each. The block was lifted 0.0999 m with 0.14 mm of slip and held for 3 s with 0.14 mm more and no rotation;
   the arm stayed within 0.05 degrees. The flange force rose from 9.8492 N to 9.9964 N, by 0.14715 N for a 0.14715 N
   block.
 - Arm: a ramped joint move (3 s) and Cartesian moves through `sim__arm(action="ik")` end within 1 mrad and about 1 mm. A
