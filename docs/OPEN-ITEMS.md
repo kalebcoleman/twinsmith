@@ -38,7 +38,7 @@ version.
 
 ### Work cell on Newton
 
-The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side (the cell now uses `ur5e-workcell/v2`, the same robot, gripper and bench without the Jenga block, which is the task pack `jenga/v1`):
+The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side (the cell now uses `ur5e-workcell/v3`: the RG2, Quick Changer and Bota from the vendors' own CAD, the real wrist camera bracket, and the bench split into the static bench and the rail's carriage; the Jenga block is the task pack `jenga/v1`):
 - a box collision layer for the bench;
 - the RG2 in the arm's articulation, with mimic fingers and no zero-force drives.
 
@@ -58,17 +58,19 @@ Done:
 Still open:
 
 - [x] The flange force and torque read on Newton: `newton_cell.prepare` enables Newton's `link_incoming_joint_force` output
-  before initialization, and `workcell__robot(action="wrench")` reads it (the static check passes on both engines).
+  before initialization, and `workcell__robot(action="wrench")` reads it (the static check passes on both engines). The
+  default source is the UR5e's own flange sensor (`ur5e_tool_flange_sensor`); the Bota's reading only with `bota.mounted`.
 - [ ] The finger contact reads on Newton: they need Newton's contact snapshot instead of the PhysX contact view, and are
   refused there until then rather than inventing values.
 - [ ] `mirror_real` (robot-only gravity off) on Newton. It is refused today. Newton's PhysX resolver may read
   `physxRigidBody:disableGravity`, which needs a live check.
 - [ ] Per-engine friction profiles in `lab_hardware.json` (unconfirmed; they start equal to the PhysX values).
-- [ ] Measured finger width at open, mid and closed on both engines. The RG2 knuckle drives (1 N m) are slow. Of a -20 degree
-  target, they reached -17.7 degrees on PhysX after 360 steps, and -15.2 and -15.5 degrees on Newton after 0.72 s.
+- [x] Measured finger width on Newton. The RG2 has one driven joint (`finger_joint`) since pack `v3`: 100.68 mm open after
+  1.44 s and 0.38 mm closed after 1.68 s ([work cell README](../exts/workcell/workcell/README.md)).
+- [ ] The same stroke on PhysX, and a grasp on PhysX: not measured with pack `v3`.
 - [x] The static check at rest (flange wrench equals the weight below the sensor) on both engines: `scripts/workcell_static_wrench.py`
-  passes on PhysX and Newton in two poses (2026-11-13, pack v2: 15.009 N against 15.009 N; torques agree across engines). It
-  checks the modelled masses, not the real ones: those still need weighing.
+  passes on PhysX and Newton (2026-11-14, pack v3: 9.8492 N for the 1.004 kg below the flange; with `bota.mounted`, 10.5065 N
+  at the Bota and 12.2723 N at the flange). It checks the modelled masses, not the real ones: those still need weighing.
 - [ ] Renders (cell, wrist) on Newton, kept in the repository. The overhead camera is not built (`overhead_camera.enabled`).
 
 ### Work cell realism
@@ -76,15 +78,44 @@ Still open:
 Datasheet values are in `lab_hardware.json` with their sources (`inertials`, `bota`, `quick_changer`, `rg2`); these need the
 real cell:
 
-- [ ] Weigh the Bota with its adapter plates, the Quick Changer (both sides), the RG2, the D415 with its printed mount, and a
-  few Jenga blocks. The Bota's adapter plates are custom (both Rokubi faces have M3 patterns, not ISO-50) and are not modelled.
-- [ ] Settle whether the RG2's datasheet 0.78 kg includes the Quick Changer tool side (0.14 kg); the cell counts both.
-- [ ] Move the wrist D415 and its mount onto the RG2 body (below the F/T sensor), with mass and convex colliders, from the
-  measured pose on the printed mount or its CAD. Today they sit above the sensor and weigh nothing.
-- [ ] Replace the Bota and D415 placeholder boxes with vendor meshes (STEP needs converting to STL first; CAD is not importable).
-- [ ] Tilt-test friction for block on block, block on the HDPE top and pad on block, and enter them with their spread.
-- [ ] The UR5e base mass (4.0 kg) is UR's own "might be incorrect" figure; it does not affect dynamics while the base is fixed.
+- [ ] Weigh the Quick Changer (both sides), the RG2, the D415, the printed camera bracket with its bolts, and a few Jenga
+  blocks. The Bota is not mounted (`bota.mounted` is false). With the switch on, its two adapter plates are labelled
+  placeholders (63 mm across, 8 mm thick, 67 g each): measure and weigh the real ones when the sensor goes on.
+- [ ] Settle whether the RG2's datasheet 0.78 kg includes the Quick Changer tool side (0.14 kg); the cell takes it
+  to be included and adds only the robot side (0.06 kg).
+- [x] The wrist D415 and its printed bracket are on the RG2 body, with mass (0.064 kg and 0.100 kg) and convex colliders.
+- [ ] The wrist camera's pose is provisional: one photo and two corrections by eye. The model is still 45 to 80 mm too low and
+  its 39 degree tilt is derived, not measured. Replace it from better photos or the bracket's CAD file.
+- [x] Vendor meshes in place of the placeholder boxes: the RG2, Quick Changer and Bota from the vendors' STEP files, the D415
+  from RealSense's mesh.
+- [ ] Measure the gap between the RG2's fingertips fully open (the model gives 100.8 mm, the datasheet 110 mm) and the robot
+  base's height above the table top (80 mm is the bench CAD's).
+- [ ] Tilt-test friction for block on block, block on the HDPE top and fingertip tape on block, and enter them with their spread.
+- [ ] The UR5e base mass (4.0 kg) is UR's own "might be incorrect" figure; the base now rides the rail, so it is
+  part of what `rail_joint`'s drive carries.
 - [ ] Fit the arm's joint damping and armature to real joint logs with `sysid`; datasheets do not give the drive behaviour.
+
+### Work cell rail
+
+The Vention rail under the robot is a seventh axis (`rail_joint`) since pack `v3`; the arm's inverse kinematics stays
+six-joint from the UR base. See the [work cell README](../exts/workcell/workcell/README.md#what-changes-for-callers).
+
+- [ ] Read the real axis from the MachineMotion controller or the cell: travel between the sensors, soft limits, which end
+  is home, which way positive runs, speed, acceleration and where the carriage rests. The simulated values (1270 mm, home at
+  the -X end, 0.25 m/s, 0.5 m/s2) are Vention's figures and assumptions.
+- [ ] `workcell__robot(action="rail")` sets a target and returns, and Newton applies no joint velocity limit: a single large
+  step moves the carriage far faster than the real axis. A move at the configured speed that waits for arrival is not provided.
+- [ ] Coordinated seven-axis inverse kinematics is not provided: move the rail first, then the arm.
+- [ ] Validate the `rail`, `fingertips` and `looks` sections before the stage is replaced; today a bad `rail` section fails
+  inside the build, after the old stage is gone.
+- [ ] Host tests for the rail tool action (its three refusals, read against command, the velocity's sign).
+- [ ] `sim__arm` falls back to the authored base pose, with only a note, when the engine cannot report the base. With the
+  rail away from zero that would solve from the wrong base: refuse instead when the base is not fixed to the world.
+- [ ] `scripts/workcell_rail_acceptance.py` records the flange force, the chain's base and the slip during the lift without
+  asserting them, counts any bridge error on the first reach as "not reachable", and assumes a 500 Hz step. Its console lines are cut
+  mid-record, so the figures are only readable with `--out`: print the short table at the end.
+- [ ] Not run: the acceptance scenario and a grasp on PhysX; `rail.moving` false with the split bench in the simulator;
+  `sim__joints` `move`, `drive`, `gains` and `inspect` with `rail_joint`; `mirror_real` with the rail.
 
 ## Real-to-sim with RoboSimStudio
 

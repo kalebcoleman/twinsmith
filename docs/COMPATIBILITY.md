@@ -9,7 +9,7 @@ The primary tested pairings are **Isaac Sim 5.1 with Isaac Lab 2.3.2** and **Isa
 
 **Newton is the default engine for the scenes these tools build. PhysX is opt-in: choose it with `[sim] physics_backend = "physx"`,
 `TWINSMITH_PHYSICS_BACKEND=physx` or `--physics-backend physx` (`run.sh`). The UR5e work cell builds on either engine (pack
-`ur5e-jenga-workcell/v2`); its force/torque read (`workcell__robot(action="wrench")`) passes the static gravity check on
+`ur5e-workcell/v3`); its force/torque read (`workcell__robot(action="wrench")`) passes the static gravity check on
 both. On Newton its cameras and `mirror_real` are not qualified yet, and `mirror_real` is refused there
 ([open item](OPEN-ITEMS.md#work-cell-on-newton)).**
 
@@ -46,7 +46,7 @@ this repository, so they are **not yet verified live here**.
 | A Franka joint move (`sim__joints(action="move")`) | **Does not yet settle within the PhysX tolerance.** |
 | Raycast (`sim__physics(action="raycast")`) | **Not available**: refused with `RAYCAST_UNSUPPORTED`. |
 | Occupancy-map start checks | Skipped (they are PhysX overlap queries); the result lists them in `checks_skipped`. |
-| Work cell (`workcell__*` tools, `sim` toolset) | **PhysX and Newton.** On Newton it authors the config's per-engine arm drives (stiffness, damping, armature) and the tower's solver settings; live-checked on Isaac Sim 6.2 / Newton 1.6.1 for hold, steps, fingers and tower. The force/torque read passes the static gravity check on both engines (`scripts/workcell_static_wrench.py`); cameras and `mirror_real` are not qualified on Newton. See its [README](../exts/workcell/workcell/README.md#newton) and the [open item](OPEN-ITEMS.md#work-cell-on-newton). |
+| Work cell (`workcell__*` tools, `sim` toolset) | **PhysX and Newton.** On Newton it authors the config's per-engine arm drives (stiffness, damping, armature) and the tower's solver settings; live-checked on Isaac Sim 6.2 / Newton 1.6.1 for hold, steps, fingers and tower. The rail under the robot is a seventh axis on both engines; only PhysX applies its speed as a joint velocity limit. The force/torque read passes the static gravity check on both engines (`scripts/workcell_static_wrench.py`); cameras and `mirror_real` are not qualified on Newton. See its [README](../exts/workcell/workcell/README.md#newton) and the [open item](OPEN-ITEMS.md#work-cell-on-newton). |
 
 Earlier records, kept as they were observed. Narrow 6.2 Newton experiments used MuJoCo Warp on CPU; earlier tests also produced
 native crashes, invalid state, rendering and contact failures. On 2026-11-06 a 6.2 headless Newton session reported the MuJoCo

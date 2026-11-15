@@ -36,17 +36,79 @@ def test_default_cell_has_provenance_and_no_task_objects():
     assert tower["jenga"]["block_size_m"] == [0.072, 0.024, 0.014]
     assert tower["jenga"]["tower_layers_built"] == 18
     assert cfg["gravity"]["mode"] == "physics"
-    assert raw["wrist_camera"]["offset_in_tool0_m"]["status"] == "unconfirmed"
+    assert raw["wrist_camera"]["offset_in_rg2_m"]["status"] == "unconfirmed"
+    for key in ("offset_in_rg2_m", "rotation_in_rg2_deg"):          # read from a photo: never to be taken as measured
+        assert raw["wrist_camera"][key]["source"].startswith("Unconfirmed, estimated from photo")
+    assert raw["pack"]["version"]["value"] == "v3"
+    assert "order" not in raw["stack"] and raw["bota"]["mounted"]["value"] is False   # one switch; the arm has no Bota
 
 
-@pytest.mark.parametrize("order", [["bota", "rg2", "quick_changer"], ["bota", "bota", "rg2"]])
-def test_invalid_stack_rejected_before_scene_changes(tmp_path, order):
+def _edited(tmp_path, mutate):
     _, raw = hardware.load_config()
-    raw["stack"]["order"]["value"] = order
-    path = tmp_path / "bad.json"
+    mutate(raw)
+    path = tmp_path / "edited.json"
     path.write_text(json.dumps(raw))
-    with pytest.raises(ValueError, match="stack.order"):
-        hardware.load_config(path)
+    return path
+
+
+@pytest.mark.parametrize("fault", ["leftover_order", "switch_not_a_boolean", "mounted_without_a_plate", "bad_standoff"])
+def test_invalid_stack_rejected_before_scene_changes(tmp_path, fault):
+    def mutate(raw):
+        if fault == "leftover_order":
+            raw["stack"]["order"] = {"value": ["bota", "quick_changer", "rg2"], "status": "unconfirmed", "source": "old file"}
+        elif fault == "switch_not_a_boolean":
+            raw["bota"]["mounted"]["value"] = 1
+        elif fault == "mounted_without_a_plate":
+            raw["bota"]["mounted"]["value"] = True
+            del raw["bota"]["robot_side_plate"]
+        else:
+            raw["quick_changer"]["standoff_m"]["value"] = 0
+    with pytest.raises(ValueError, match="stack.order|bota.mounted|robot_side_plate|standoff_m"):
+        hardware.load_config(_edited(tmp_path, mutate))
+
+
+def test_the_stack_is_the_real_arm_by_default_and_one_switch_mounts_the_bota(tmp_path):
+    """Default: flange, Quick Changer, RG2, and the wrist force/torque reading is the UR5e's own flange sensor. With
+    bota.mounted true and nothing else edited, the order, lengths, tool offset, payload and camera pose all follow."""
+    off, raw = hardware.load_config()
+    stack = hardware.stack
+    assert stack.order(off) == ["quick_changer", "rg2"]
+    assert stack.lengths(off) == {"quick_changer": 0.0136, "rg2": 0.0}
+    tool = stack.tool(off)
+    assert tool["flange_to_rg2_inlet_m"] == pytest.approx(0.0136)
+    assert tool["rg2_body_in_tool0"]["translation_m"] == pytest.approx([0, 0, -0.0025])
+    assert tool["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161])
+    payload = tool["payload"]
+    assert [item["mass_kg"] for item in payload["items"]] == [0.06, 0.78, 0.1, 0.064]
+    assert payload["mass_kg"] == pytest.approx(1.004)
+    assert payload["cog_in_tool0_m"] == pytest.approx([0.0002, 0.0101, 0.0759], abs=5e-5)     # the camera is on the gripper's centreline
+    assert payload["not_included"] == ["cables"]
+    assert not any("adapter plate" in line for line in tool["unmeasured"])
+    assert off["flange_ft_sensor"]["frame_id"] == "tool0" and off["flange_ft_sensor"]["measurement"] == "incoming_joint_wrench"
+    assert off["flange_ft_sensor"]["wrench_topic"] == "/force_torque_sensor_broadcaster/wrench"
+    assert [off["flange_ft_sensor"][key] for key in ("force_range_n", "force_accuracy_n", "torque_range_nm", "torque_accuracy_nm")] == [50.0, 4.0, 10.0, 0.3]
+
+    on, _ = hardware.load_config(_edited(tmp_path, lambda raw: raw["bota"]["mounted"].update(value=True)))
+    assert stack.order(on) == ["bota_robot_plate", "bota", "bota_tool_plate", "quick_changer", "rg2"]
+    added = 0.008 + 0.032 + 0.008                                  # plate, sensor, plate
+    mounted = stack.tool(on)
+    assert mounted["flange_to_rg2_inlet_m"] == pytest.approx(0.0136 + added)
+    assert mounted["rg2_body_in_tool0"]["translation_m"] == pytest.approx([0, 0, -0.0025 + added])
+    assert mounted["rg2_body_in_tool0"]["quaternion_wxyz"] == pytest.approx(tool["rg2_body_in_tool0"]["quaternion_wxyz"])
+    assert mounted["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161 + added])
+    assert mounted["payload"]["mass_kg"] == pytest.approx(1.004 + 0.067 + 0.113 + 0.067)
+    assert mounted["payload"]["cog_in_tool0_m"] == pytest.approx([0.0001, 0.0081, 0.1042], abs=5e-5)
+    assert sum("adapter plate" in line for line in mounted["unmeasured"]) == 2     # the build says what is not measured
+    for record in ("robot_side_plate", "tool_side_plate"):
+        assert raw["bota"][record]["status"] == "unconfirmed" and raw["bota"][record]["source"].startswith("PLACEHOLDER, measure it")
+
+
+def test_the_quick_changer_height_is_onrobots():
+    values, raw = hardware.load_config()
+    assert values["quick_changer"]["standoff_m"] == 0.0136 and values["quick_changer"]["mass_kg"] == 0.06
+    assert "datasheet" in raw["quick_changer"]["standoff_m"]["source"] and "onrobot.com/storage/quick-changer-robot-side" in raw["quick_changer"]["standoff_m"]["source"]
+    # OnRobot's RG2 STEP places the robot side on the gripper: the flange plane is 2.5 mm into the RG2 body frame.
+    assert values["asset_layout"]["rg2"]["mount_pose"]["position_m"] == [0, 0, 0.0161]
 
 
 def test_camera_intrinsics_match_configured_fov():
@@ -94,15 +156,21 @@ def test_bom_path_is_relative_to_configuration_directory():
     assert raw["documentation"]["bom_csv"]["source"]
 
 
-def test_finger_pads_sit_on_the_fingertip_gripping_face():
-    """The pack's RG2 inner finger: the tip block spans z 0.020..0.053 m and its inner face is the plane y = 0.0189 m.
-    A pad nearer the finger joint, or inside that face, is buried in the finger's collision shape and never touches a part."""
-    cfg, _ = hardware.load_config()
-    thickness, length = cfg["finger_pads"]["size_m"][1], cfg["finger_pads"]["size_m"][2]
-    mounts = cfg["finger_pads"]["mounts"]
-    assert [mount["parent"] for mount in mounts] == ["left_inner_finger", "right_inner_finger"]
-    for mount in mounts:
-        x, y, z = mount["position_m"]
-        assert x == 0 and mount["orientation_wxyz"] == [1, 0, 0, 0]
-        assert y - thickness / 2 >= 0.0189 - 1e-9                    # the whole pad stands proud of the finger face
-        assert 0.020 <= z - length / 2 and z + length / 2 <= 0.053   # on the tip block, not at the joint
+def test_grip_is_on_the_real_fingertips_and_there_are_no_add_on_pads():
+    """The real RG2 has its standard fingertips, wrapped in tape, and nothing added to them. The config has no pad
+    bodies; the fingertip block and its rubber pad are OnRobot's CAD dimensions, and the friction on the fingertip
+    collision shapes is an estimate for tape, marked as one."""
+    cfg, raw = hardware.load_config()
+    assert "finger_pads" not in cfg and "finger_pad" not in cfg["assets"] and "finger_pad" not in cfg["asset_layout"]
+    tips = cfg["fingertips"]
+    assert tips["block_size_m"] == [0.0099, 0.0205, 0.0299] and tips["pad_size_m"] == [0.0015, 0.0205, 0.0299]
+    assert 0 < tips["dynamic_friction"] <= tips["static_friction"] <= 1.2
+    for key in ("static_friction", "dynamic_friction"):
+        assert raw["fingertips"][key]["status"] == "unconfirmed" and raw["fingertips"][key]["source"].startswith("Estimate")
+    for key in ("block_size_m", "pad_size_m"):
+        assert "onrobot.com/storage/303_rg2_tool.step" in raw["fingertips"][key]["source"]
+    # One motor, one driven joint; the pads cannot open to the datasheet's 110 mm.
+    assert cfg["rg2"]["driven_joint"] == "finger_joint"
+    low, high = cfg["rg2"]["joint_limits_deg"]
+    assert -46 < low < -43 and 25 < high < 27
+    assert cfg["rg2"]["pad_gap_range_m"][0] == 0.0 and 0.100 < cfg["rg2"]["pad_gap_range_m"][1] < 0.102

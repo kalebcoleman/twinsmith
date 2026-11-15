@@ -363,7 +363,7 @@ Tile 2-6 windows over a monitor's work area. E.g. Isaac Sim left and RViz 2 righ
 
 ## `sim`: Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs
 
-Toolset `sim` is off until you select it with `+sim`. Reference: [TOOLS-SCENE.md](TOOLS-SCENE.md). 85 tools, listed as 31: `files` (put, get, stat), `isaaclab__checkpoint_register`, `isaaclab__inspect` (install, envs, preflight, checkpoints), `isaaclab__launch` (train, eval, play, record, env_check), `isaaclab__metrics` (summary, curve), `reload_tools`, `run_python`, `run_script`, `sim__arm` (ik, fk), `sim__camera` (list, create, capture), `sim__controller` (create, update), `sim__graph` (node_types, build, inspect, show), `sim__joints` (inspect, state, command, move, drive, gains, teleport), `sim__lidar` (create, read), `sim__light` (create, modify), `sim__logs` (tail, mark, summary), `sim__material` (create, apply), `sim__occupancy_map`, `sim__physics` (inspect, body_state, contacts, raycast, configure, apply), `sim__prim` (get, find, bounds, measure, create, create_many, set_transform, set_attribute, clone, delete, revert), `sim__quick_start`, `sim__ros2_tf`, `sim__simulation` (step, run, replay), `sim__stage` (info, tree, open, save, clear_owned), `sim__timeline`, `sim__ui` (find, act), `sim__viewport`, `workcell__cell` (quick_start, status, shutdown), `workcell__jenga` (build, status), `workcell__perception` (status), `workcell__robot` (status, wrench).
+Toolset `sim` is off until you select it with `+sim`. Reference: [TOOLS-SCENE.md](TOOLS-SCENE.md). 86 tools, listed as 31: `files` (put, get, stat), `isaaclab__checkpoint_register`, `isaaclab__inspect` (install, envs, preflight, checkpoints), `isaaclab__launch` (train, eval, play, record, env_check), `isaaclab__metrics` (summary, curve), `reload_tools`, `run_python`, `run_script`, `sim__arm` (ik, fk), `sim__camera` (list, create, capture), `sim__controller` (create, update), `sim__graph` (node_types, build, inspect, show), `sim__joints` (inspect, state, command, move, drive, gains, teleport), `sim__lidar` (create, read), `sim__light` (create, modify), `sim__logs` (tail, mark, summary), `sim__material` (create, apply), `sim__occupancy_map`, `sim__physics` (inspect, body_state, contacts, raycast, configure, apply), `sim__prim` (get, find, bounds, measure, create, create_many, set_transform, set_attribute, clone, delete, revert), `sim__quick_start`, `sim__ros2_tf`, `sim__simulation` (step, run, replay), `sim__stage` (info, tree, open, save, clear_owned), `sim__timeline`, `sim__ui` (find, act), `sim__viewport`, `workcell__cell` (quick_start, status, shutdown), `workcell__jenga` (build, status), `workcell__perception` (status), `workcell__robot` (status, wrench, rail).
 
 ### `get_file`
 
@@ -1454,6 +1454,14 @@ Read camera build details; this does not capture sensor data.
 
 No arguments.
 
+### `workcell__robot_rail`
+
+Listed as `workcell__robot(action="rail")`.
+
+The linear axis under the robot's base (the cell's seventh axis), in the real axis's units. Without arguments: read its position. With position_mm: set its position target; nothing is stepped. Millimetres, absolute from the axis's home position, as the real cell's /vention/axis1_position_cmd; the reply also gives the joint value in metres and the limits in both units. Where home is on the real rail is an assumption in the cell's config. Needs an initialized simulation and rail.moving true. The same joint is rail_joint in the joint tools, in metres.
+
+- `position_mm` (number, optional): Optional absolute target in millimetres from the axis's home position; refused outside the travel limits. Omitted: read only.
+
 ### `workcell__robot_status`
 
 Listed as `workcell__robot(action="status")`.
@@ -1466,7 +1474,7 @@ No arguments.
 
 Listed as `workcell__robot(action="wrench")`.
 
-Read the simulated Bota F/T sensor (its mount joint's reaction, sensor frame, N and N m) on PhysX or Newton, with the engine's mass of everything below the sensor and its weight. Needs an initialized, paused or playing simulation; not gravity-compensated or hardware-calibrated.
+Read the simulated wrist force/torque sensor on PhysX or Newton: by default the UR5e's own tool flange sensor (the reaction at the flange, at the flange centre in tool0's axes, N and N m), with the engine's mass of everything below the flange and its weight. `source` in the reply names the sensor: with `bota.mounted` true in the cell's config it is the Bota's reading in its own frame, and the flange reading comes with it under `flange`. Needs an initialized, paused or playing simulation. Raw: not payload-compensated or hardware-calibrated, and no noise is modelled.
 
 No arguments.
 

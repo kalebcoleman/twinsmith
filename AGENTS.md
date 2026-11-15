@@ -14,7 +14,7 @@ Start here if you are an AI agent working in or with this repository. It is a ma
   upgrade their Isaac Sim or Isaac Lab environment. If `find` shows nothing, stop and ask where Isaac Sim is installed
   (`ISAACSIM_PATH` or `TWINSMITH_SIM_PYTHON`) instead of installing one.
 - **The physics engine.** Newton is the default; PhysX is opt-in. The statement (500 Hz step rate, raised contact buffers), how to choose an engine and the known limits are in
-  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#target-engine). **The UR5e work cell builds on both engines: PhysX keeps the pack's drives, Newton uses the per-engine drives and solver settings in its config; its cameras are not qualified on Newton, and `mirror_real` is refused there; the Bota force/torque read (`workcell__robot(action="wrench")`) passes the static gravity check on both** ([work cell on Newton](docs/OPEN-ITEMS.md#work-cell-on-newton)). Cautions that stay: verify the selected
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md#target-engine). **The UR5e work cell builds on both engines: PhysX keeps the pack's drives, Newton uses the per-engine drives and solver settings in its config; its cameras are not qualified on Newton, and `mirror_real` is refused there; the wrist force/torque read (`workcell__robot(action="wrench")`: the UR5e's own flange sensor by default; the lab's Bota Rokubi is not mounted, and `bota.mounted` in the cell's config builds it with two unmeasured adapter plates) passes the static gravity check on both** ([work cell on Newton](docs/OPEN-ITEMS.md#work-cell-on-newton)). Cautions that stay: verify the selected
   engine (`status` reports it); never switch an open scene's engine; never fall back silently in either direction (a request for
   Newton must not become PhysX, and a request for PhysX must not become Newton); a CPU device does not identify the solver; Lab
   results do not qualify the work cell. Isaac Sim 5.1 and Isaac Lab 2.x are PhysX only. Do not claim a Newton result without a recorded
@@ -69,7 +69,11 @@ ROS 2, the work cell and Isaac Lab. `core` is always on. `computer` (screen, des
 Every registered tool is in the generated [TOOLS-ARGUMENTS.md](docs/TOOLS-ARGUMENTS.md), grouped by toolset, and the pages
 [TOOLS-HOST](docs/TOOLS-HOST.md), [TOOLS-SCENE](docs/TOOLS-SCENE.md), [TOOLS-ISAACLAB](docs/TOOLS-ISAACLAB.md),
 [ROBOSIM](docs/ROBOSIM.md) and the [work cell](exts/workcell/workcell/README.md) describe behaviour. `workcell__cell(action="quick_start")`
-builds a stopped scene; joint tools take the articulation root, not the robot's parent Xform (`sim__ros2_tf` reports it). See
+builds a stopped scene; joint tools take the articulation root, not the robot's parent Xform (`sim__ros2_tf` reports it).
+The work cell's robot stands on a moving rail: `rail_joint` is the articulation's first joint (metres from the built
+pose, so every arm joint's index is one higher: address joints by name). `sim__arm` is unchanged: six arm joints from
+the UR base wherever the rail has put it; move the rail first with `workcell__robot(action="rail")` (the real axis's
+millimetres), then solve the arm. Coordinated seven-axis IK is not provided. See
 the [scene workflow](docs/TOOLS-SCENE.md#a-typical-session).
 
 After reopening a scene, its sensors and prims are not pack-owned: pass `adopt=true` to `sim__lidar(action="read")` or

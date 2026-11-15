@@ -57,7 +57,7 @@ def test_twin_and_another_owner_share_one_socket_and_detach_independently(bridge
     # Re-register against the existing listener without opening a second socket.
     assert attach(bridge, workcell_registry(), Cell(), ToolDefinition, requested_port=port) == port
     assert "sim.inspect" in bridge.get_registered_tools()
-    assert len([name for name in bridge.get_registered_tools() if name.startswith("workcell.")]) == 8
+    assert len([name for name in bridge.get_registered_tools() if name.startswith("workcell.")]) == 9
 
 
 def test_registration_failure_rolls_back_only_the_twin(bridge):

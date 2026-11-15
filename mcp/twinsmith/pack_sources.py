@@ -11,10 +11,10 @@ The repository ships no assets. The owner lists where their packs live in their 
     token_file = "~/.config/agent-secrets/hf_token"              # read token (default; absent: anonymous)
     write_token_file = "~/.config/agent-secrets/hf_write_token"  # push only (default)
 
-    [packs."ur5e-workcell/v2"]
+    [packs."ur5e-workcell/v3"]
     repo = "<owner>/<repo>"                  # default: hub.repo
     revision = "<40-hex commit>"             # pinned: never a branch
-    path = "ur5e-workcell/v2"                # folder in the repository; default "<id>/<version>"
+    path = "ur5e-workcell/v3"                # folder in the repository; default "<id>/<version>"
 
     [packs."d415-cad/v1"]                    # a vendor entry: never downloaded, only reported
     vendor = "https://..."

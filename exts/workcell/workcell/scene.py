@@ -4,14 +4,16 @@ import copy
 import math
 from pathlib import Path
 
-ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2", "finger_pad",
+ROLES = ("robot", "bench", "rail_carriage", "base_plate", "bota", "quick_changer", "rg2",
          "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf", "materials")
+# Every role's asset must exist in the pack, mounted or not, so one switch in the config is all a variant needs:
+# the Bota (bota.mounted) and the overhead camera (overhead_camera.enabled) are built only when switched on.
 
 
 # What a Newton build has not shown yet. PhysX is the work cell's qualified engine; see the README's Newton section.
 NEWTON_LIMITATIONS = [
     "Newton: the arm's drives are the config's newton.drives (per engine), not the pack's PhysX gains; tracking differs.",
-    "Newton: the cameras are not qualified on this engine; the Bota force/torque read passes the static gravity check.",
+    "Newton: the cameras are not qualified on this engine; the wrist force/torque read passes the static gravity check.",
 ]
 
 
@@ -34,7 +36,7 @@ def _engine(config, mode):
             raise RuntimeError("mirror_real (gravity off on the robot) is not qualified on Newton; use physics mode or PhysX.")
         if config.get("asset_layout", {}).get("rg2", {}).get("articulation_root"):
             raise RuntimeError("A separate RG2 articulation does not load on Newton (its importer mis-lists the bodies); "
-                               "use a pack whose RG2 joins the arm, such as ur5e-jenga-workcell/v2.")
+                               "use a pack whose RG2 joins the arm, such as ur5e-workcell/v3.")
     return engine
 
 
@@ -197,7 +199,7 @@ def bench_colliders(stage, path="/World/Bench", engine="physx") -> str:
         raise ValueError("Bench pack asset has no editable mesh colliders")
     if engine == "newton":
         raise ValueError("The bench has no collision layer of its own, and its triangle meshes overflow Newton's contact "
-                         "buffer; use a pack with the split bench, such as ur5e-jenga-workcell/v2.")
+                         "buffer; use a pack with the split bench, such as ur5e-workcell/v3.")
     for prim in meshes:
         UsdPhysics.CollisionAPI.Apply(prim)
         UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr().Set("none")
@@ -206,12 +208,17 @@ def bench_colliders(stage, path="/World/Bench", engine="physx") -> str:
 
 def scene_rows(config, rows):
     """The BOM rows the scene must hold. With the overhead camera off, its mount rows and its D415 unit
-    (the second one) are left out; the BOM itself still lists them."""
+    (the second one) are left out, and so are the Bota while it is not mounted and the separate base plate while it
+    is switched off; the BOM itself still lists them."""
+    from . import stack
     from .cameras import OVERHEAD_ASSET_ROLES, overhead_enabled
 
+    absent = set() if stack.bota_mounted(config) else {config["assets"].get("bota")}  # owned, not on the arm
+    if (config.get("base_plate") or {}).get("present", True) is False:                  # the bench holds the real plates
+        absent.add(config["assets"].get("base_plate"))
     if overhead_enabled(config):
-        return rows
-    absent = {config["assets"][role] for role in OVERHEAD_ASSET_ROLES}
+        return [row for row in rows if row["asset_id"] not in absent]
+    absent |= {config["assets"][role] for role in OVERHEAD_ASSET_ROLES}
     d415 = config["assets"]["d415"]
     return [{**row, "quantity": row["quantity"] - (row["asset_id"] == d415)}
             for row in rows if row["asset_id"] not in absent]
@@ -223,25 +230,74 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
 
     materials = UsdGeom.Scope.Define(stage, "/World/Materials")
     materials.GetPrim().GetReferences().AddReference(str(assets["materials"]))
-    for role, name, section in (("finger_pad", "BlackPad", "finger_pads"),):
-        material = UsdShade.Material.Get(stage, f"/World/Materials/{name}")
-        if not material:
-            raise ValueError(f"Pack materials must define {name}")
-        physics = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
-        physics.CreateStaticFrictionAttr().Set(config[section]["static_friction"])
-        physics.CreateDynamicFrictionAttr().Set(config[section]["dynamic_friction"])
-        for part in parts:
-            if part["asset_id"] != config["assets"][role]:
-                continue
-            for prim in Usd.PrimRange(stage.GetPrimAtPath(part["prim_path"])):
-                if prim.IsA(UsdGeom.Gprim) or str(prim.GetPath()) == part["prim_path"]:
-                    binding = UsdShade.MaterialBindingAPI.Apply(prim)
-                    binding.Bind(material)
-                    binding.Bind(material, materialPurpose="physics")
+    robot_looks(stage, config)
+    fingertip_friction(stage, config, parts)
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
     from .environment import ROOT
-    return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT,))
+    # Labelled placeholders (the Bota's unmeasured adapter plates) are not BOM hardware: they are reported, not audited.
+    proxies = tuple(str(prim.GetPath()) for prim in Usd.PrimRange(stage.GetPseudoRoot()) if prim.GetCustomDataByKey("workcell:proxy"))
+    return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT, *proxies))
+
+
+def robot_looks(stage, config, root="/World/RobotAssembly/robot"):
+    """Give the robot's own materials the look the config names (``looks.robot_materials``: material name to
+    UsdPreviewSurface inputs), on the stage and never in the pack. Looks only: nothing here reaches the physics.
+    Returns the materials changed; a configured name the robot does not have is an error."""
+    from pxr import Gf, Sdf, Usd, UsdShade
+
+    wanted = (config.get("looks") or {}).get("robot_materials") or {}
+    prim = stage.GetPrimAtPath(root)
+    if not wanted or not prim:
+        return []
+    found = {item.GetName(): item for item in Usd.PrimRange(prim) if item.IsA(UsdShade.Material)}
+    missing = sorted(set(wanted) - set(found))
+    if missing:
+        raise ValueError(f"looks.robot_materials names {missing}, which the robot asset does not have (it has {sorted(found)})")
+    for name, inputs in wanted.items():
+        shaders = [UsdShade.Shader(item) for item in Usd.PrimRange(found[name]) if item.IsA(UsdShade.Shader)]
+        if len(shaders) != 1 or set(inputs) - {"diffuseColor", "metallic", "roughness"}:
+            raise ValueError(f"looks.robot_materials.{name}: one shader with diffuseColor, metallic and roughness is supported")
+        for key, value in inputs.items():
+            if key == "diffuseColor":
+                shaders[0].CreateInput(key, Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*map(float, value)))
+            else:
+                shaders[0].CreateInput(key, Sdf.ValueTypeNames.Float).Set(float(value))
+    return sorted(wanted)
+
+
+def fingertip_friction(stage, config, parts):
+    """Set ``fingertips`` friction on the physics material the RG2's two fingertip colliders are bound to.
+
+    The grip is on the gripper's own fingertips (the pack's RG2 has a ``fingertip`` collision shape on each finger,
+    bound to one physics material); there are no add-on pads. Returns the material's path and the colliders."""
+    from pxr import Usd, UsdPhysics, UsdShade
+
+    section = config.get("fingertips")
+    if not section:
+        return None
+    static, dynamic = float(section["static_friction"]), float(section["dynamic_friction"])
+    if not (math.isfinite(static) and math.isfinite(dynamic) and 0 <= dynamic <= static):
+        raise ValueError("fingertips friction must be finite, with 0 <= dynamic_friction <= static_friction")
+    colliders, materials = [], set()
+    for part in parts:
+        if part["asset_id"] != config["assets"]["rg2"]:
+            continue
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(part["prim_path"])):
+            if prim.GetName() != "fingertip" or not prim.HasAPI(UsdPhysics.CollisionAPI):
+                continue
+            material, _ = UsdShade.MaterialBindingAPI(prim).ComputeBoundMaterial(materialPurpose="physics")
+            if not material or not material.GetPrim().HasAPI(UsdPhysics.MaterialAPI):
+                raise ValueError(f"{prim.GetPath()} has no physics material; the RG2 asset must bind one to its fingertips")
+            api = UsdPhysics.MaterialAPI(material.GetPrim())
+            api.CreateStaticFrictionAttr().Set(static)
+            api.CreateDynamicFrictionAttr().Set(dynamic)
+            api.CreateRestitutionAttr().Set(0.0)
+            colliders.append(str(prim.GetPath()))
+            materials.add(str(material.GetPath()))
+    if len(colliders) != 2 or len(materials) != 1:
+        raise ValueError("The RG2 asset needs one fingertip collision shape on each finger, bound to one physics material")
+    return {"material": materials.pop(), "colliders": colliders, "static_friction": static, "dynamic_friction": dynamic}
 
 
 def bench_top(stage, top, bench="/World/Bench"):
@@ -461,8 +517,9 @@ class Workcell:
         return copy.deepcopy(report)
 
     def read_wrench(self):
-        """The Bota reading now, plus the engine's mass of every body below the sensor (bota and everything its
-        mount chain carries), so a caller can compare the static force with that weight."""
+        """The wrist force/torque reading now, plus the engine's mass of every body the measured joint carries, so a
+        caller can compare the static force with that weight. Without a Bota (the default) this is the UR5e's tool
+        flange sensor; with ``bota.mounted`` it is the Bota's reading, and the flange reading comes with it."""
         if self._runtime is None or self._report.get("state") != "ready":
             raise RuntimeError("Build the workcell before reading its sensor")
         import omni.usd
@@ -476,20 +533,76 @@ class Workcell:
         robot = self._report["robot"]
         engine = selected_engine()
         view = physics.view_for(robot["articulation_root"], articulation=True)
-        reading = sensors.read_bota_wrench(stage, view, robot, config,
-                                           physics_time_s=physics.manager().get_simulation_time(), backend=engine)
-        below = bodies_below(stage, robot["bota_body_path"])
-        names = view.shared_metatype.link_indices
-        masses = sensors._numpy(view.get_masses()).reshape(-1)
-        links = {name: float(masses[names[name]]) for name in below if name in names}
-        total = sum(links.values())
         gravity = 0.0 if self._report.get("robot_gravity_disabled") else abs(self._report.get("gravity_m_s2", -9.81))
-        reading["load_below_sensor"] = {"links_kg": links, "missing": sorted(set(below) - set(links)),
-                                        "mass_kg": total, "gravity_m_s2": gravity, "weight_n": total * gravity,
-                                        "note": "Engine masses. At rest the force magnitude should equal weight_n; "
-                                                "it includes the whole modelled Bota body, which a real Rokubi "
-                                                "measures only partly and tares."}
+
+        def read(source):
+            reading = sensors.read_wrench(stage, view, robot, config, source=source,
+                                          physics_time_s=physics.manager().get_simulation_time(), backend=engine)
+            if reading.get("status") != "measured":
+                return reading
+            below = bodies_below(stage, reading["load_body_path"])
+            names = view.shared_metatype.link_indices
+            masses = sensors._numpy(view.get_masses()).reshape(-1)
+            links = {name: float(masses[names[name]]) for name in below if name in names}
+            total = sum(links.values())
+            reading["load_below_sensor"] = {"links_kg": links, "missing": sorted(set(below) - set(links)),
+                                            "mass_kg": total, "gravity_m_s2": gravity, "weight_n": total * gravity,
+                                            "note": "Engine masses of what the measured joint carries. At rest the "
+                                                    "force magnitude should equal weight_n. Raw reaction: the real "
+                                                    "controller subtracts the payload set on the pendant."}
+            return reading
+
+        flange = read(sensors.FLANGE_SOURCE)
+        if not robot.get("bota"):
+            return flange
+        reading = read(sensors.BOTA_SOURCE)
+        reading["flange"] = flange
         return reading
+
+    def rail(self, position_mm=None):
+        """The robot's linear axis in the real axis's units: read its position, or set its position target.
+
+        ``position_mm`` is the real interface's unit: millimetres, absolute from the axis's home position
+        (``interfaces.rail_position_command``); the simulated joint is in metres from the built pose, and the config's
+        ``rail`` section holds the (unconfirmed) relation between the two. Setting a target steps nothing: the
+        position drive moves the carriage as physics is stepped. Only PhysX limits the joint's speed; on Newton send
+        the target in small increments for a move at the configured speed."""
+        if self._runtime is None or self._report.get("state") != "ready":
+            raise RuntimeError("Build the workcell before using its rail")
+        import omni.usd
+        from sim_tools import physics
+        from . import rail as rail_axis
+
+        stage, config, _, _ = self._runtime
+        if omni.usd.get_context().get_stage() != stage:
+            raise RuntimeError("Workcell stage changed; quick_start is required")
+        robot = self._report["robot"]
+        if not robot.get("rail"):
+            raise ValueError("This cell's robot base is fixed: rail.moving is false in its configuration")
+        record = rail_axis.check(config)
+        target = rail_axis.from_real_mm(record, position_mm) if position_mm is not None else None
+        view = physics.view_for(robot["articulation_root"], articulation=True)
+        names = list(view.shared_metatype.dof_names)
+        if record["joint_name"] not in names:
+            raise RuntimeError(f"The simulation has no degree of freedom named {record['joint_name']}")
+        index = names.index(record["joint_name"])
+        if target is not None:
+            physics.dof_set(view, "get_dof_position_targets", "set_dof_position_targets", {index: target})
+        position = float(physics.array(view.get_dof_positions()).reshape(-1)[index])
+        velocity = float(physics.array(view.get_dof_velocities()).reshape(-1)[index])
+        now = float(physics.array(view.get_dof_position_targets()).reshape(-1)[index])
+        lower, upper = record["limits_m"]
+        return {"status": "commanded" if target is not None else "measured", "joint": record["joint_name"],
+                "position_mm": rail_axis.to_real_mm(record, position), "target_mm": rail_axis.to_real_mm(record, now),
+                "velocity_mm_s": velocity * 1000.0 * record["real_positive_direction"],
+                "limits_mm": sorted((rail_axis.to_real_mm(record, lower), rail_axis.to_real_mm(record, upper))),
+                "joint_position_m": position, "joint_target_m": now, "joint_limits_m": [lower, upper],
+                "units": "position_mm: millimetres, absolute from the axis's home position, as the real axis is commanded; "
+                         "joint_*_m: metres from the cell's built pose",
+                "mapping": "unconfirmed: where the real axis's home is on the rail and which way positive runs are assumed",
+                "speed_m_s": record["speed_m_s"],
+                "note": "A target is a step for the position drive; only PhysX limits the joint's speed. For a move at "
+                        "the configured speed on Newton, send intermediate targets."}
 
     def shutdown(self):
         self._runtime = None

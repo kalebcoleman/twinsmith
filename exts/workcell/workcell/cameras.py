@@ -17,9 +17,17 @@ Xform prim at the local origin, no joints):
   +X right, +Y down, +Z forward. It is not a D455/rsd455 substitute. The render
   camera sits at this origin and applies Rx(180 deg) because a USD camera looks
   down -Z with +Y up.
-* ``wrist_mount``: centred proxy box 0.030 x 0.060 x 0.012 m, local axes equal
-  to the optical frame. It is centred between tool0 and the camera optical
-  origin; the manifest may refine that with ``asset_layout.wrist_mount.mount_pose``.
+* ``wrist_mount``: the printed bracket that clamps the RG2 body
+  (``exts/workcell/cad/rg2_camera_bracket.py``), in the RG2 body frame, which is
+  the pack's ``onrobot_rg2_base_link``: origin on the tool axis at the top of the
+  RG2's Quick Changer tool side, +Z toward the fingertips, +Y the finger-opening
+  axis, +X out of the back face (the front face, with the two M3 holes, is -X).
+
+The wrist camera's pose is configured in that RG2 body frame
+(``wrist_camera.offset_in_rg2_m`` and ``rotation_in_rg2_deg``), because the
+bracket is fixed to the gripper. Its pose in tool0 is derived from the
+configured stack (``stack.py``: ``bota.mounted``, the parts' lengths,
+``asset_layout.rg2.mount_pose``), so it follows the RG2 when the stack changes.
 * ``overhead_mount``: open three-member frame with a unit envelope, centred at
   the origin, axes equal to the world. Member proportions are provisional.
   It is scaled to the gantry envelope: extrusion thickness x post span x height,
@@ -42,9 +50,17 @@ try:  # package import inside Kit
     from .hardware_config import camera_intrinsics
 except ImportError:  # loaded by file path in host tests
     from hardware_config import camera_intrinsics
+try:  # package import inside Kit
+    from . import stack as tool_stack
+except ImportError:  # loaded by file path in host tests
+    import importlib.util as _importlib_util
+    _spec = _importlib_util.spec_from_file_location("workcell_stack", Path(__file__).with_name("stack.py"))
+    tool_stack = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(tool_stack)
 
 
 SCHEMA = 1
+TOOL0_IN_FLANGE = (0.5, 0.5, 0.5, 0.5)  # wxyz: UR's flange (+X out of the flange) to tool0 (+Z out of the flange)
 OVERHEAD_ASSET_ROLES = ("overhead_mount", "overhead_release", "overhead_shelf")
 REQUIRED_ASSET_ROLES = ("d415", "wrist_mount", *OVERHEAD_ASSET_ROLES)
 D415_BODY_SIZE_M = (0.099, 0.020, 0.023)
@@ -56,7 +72,7 @@ REQUIRED_ROBOT_FRAMES = ("flange_path", "tool0_path", "gripper_path", "articulat
 REQUIRED_CONFIG_PATHS = (
     "pack.id", "pack.version",
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
-    "wrist_camera.offset_in_tool0_m", "wrist_camera.rotation_in_tool0_deg",
+    "wrist_camera.offset_in_rg2_m", "wrist_camera.rotation_in_rg2_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
     "wrist_camera.body_size_m",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
@@ -113,10 +129,11 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         "Capture needs a running Isaac RTX renderer and a rendered frame; no pixels are synthesized.",
         "The capture helper targets Isaac Sim 6.x isaacsim.sensors.experimental.rtx; older releases "
         "only have the deprecated camera API and must not silently substitute another source.",
-        "Camera bodies and mounts are visual-only: RigidBodyAPI and CollisionAPI are removed from "
-        "referenced parts, so nothing becomes a nested rigid body under tool0.",
+        "Camera bodies and mounts under tool0 are visual-only: RigidBodyAPI and CollisionAPI are removed from "
+        "referenced parts, so nothing becomes a nested rigid body under tool0. The wrist bracket's collision "
+        "approximation is attached separately, to the RG2 body it clamps; the D415 body has no collider.",
     ]
-    wrist, wrist_parts, wrist_root = _plan_wrist(config, robot, assets, assets_cfg, limitations)
+    wrist, wrist_parts, wrist_root, wrist_collider = _plan_wrist(config, robot, assets, assets_cfg, limitations)
     overhead, overhead_parts, overhead_root = _plan_overhead(config, assets, assets_cfg, limitations)
     parts = wrist_parts + overhead_parts
     roots = [root for root in (wrist_root, overhead_root) if root]
@@ -136,6 +153,7 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         "cameras": {"wrist": wrist, "overhead": overhead},
         "parts": parts,
         "roots": roots,
+        "colliders": [wrist_collider] if wrist_collider else [],
         "limitations": _dedupe(limitations),
         "provenance": {
             "config": {"path": str(config_path) if config_path else None,
@@ -146,7 +164,12 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
             "conventions": {"optical": "+X right, +Y down, +Z forward",
                             "usd_camera": "-Z forward, +Y up",
                             "conversion": "Rx(180 deg) about the camera +X axis",
-                            "rotation_in_tool0_deg_order": "extrinsic XYZ"},
+                            "rotation_in_rg2_deg_order": "extrinsic XYZ",
+                            "rg2_frame": "the pack's RG2 body frame (asset_layout.rg2.mount_frame): origin on the "
+                                         "tool axis at the top of the Quick Changer tool side, +Z toward the "
+                                         "fingertips, +Y the finger-opening axis, +X out of the back face",
+                            "tool0_pose": "derived from the RG2 pose in tool0: stack length along the tool "
+                                          "axis and asset_layout.rg2.mount_pose"},
         },
         "required_config": {path: _value(config, path) for path in REQUIRED_CONFIG_PATHS},
         "asset_conventions": _asset_conventions(config),
@@ -196,6 +219,9 @@ def author_report(stage, report, usd=None):
         physics_removed += _strip_physics(Usd, UsdPhysics, prim)
         parts_authored.append(part["prim_path"])
 
+    colliders_authored = [_author_collider(stage, Usd, UsdPhysics, collider, report["limitations"])
+                          for collider in report.get("colliders", [])]
+
     cameras_authored = []
     for key in ("wrist", "overhead"):
         camera = report["cameras"][key]
@@ -223,7 +249,39 @@ def author_report(stage, report, usd=None):
             + "; verify the pack assets.")
     return {"roots": [root["prim_path"] for root in report["roots"]],
             "parts": parts_authored, "cameras": cameras_authored,
-            "physics_removed": physics_removed, "rigid_bodies_remaining": remaining}
+            "physics_removed": physics_removed, "rigid_bodies_remaining": remaining,
+            "colliders": colliders_authored}
+
+
+def _author_collider(stage, Usd, UsdPhysics, collider, limitations):
+    """Reference the pack asset's collision scope under its rigid body; report the shapes that result."""
+    asset = Usd.Stage.Open(collider["_path"])          # kept alive while its prims are read
+    default = asset.GetDefaultPrim() if asset else None
+    source = default.GetChild(collider["source_prim"]) if default else None
+    result = {"name": collider["name"], "prim_path": collider["prim_path"], "body_path": collider["body_path"]}
+    if not source or not any(prim.HasAPI(UsdPhysics.CollisionAPI) for prim in Usd.PrimRange(source)):
+        limitations.append(f"The pack's {collider['role']} asset has no collision approximation; the bracket has no collider.")
+        return dict(result, status="absent", shapes=[])
+    body = stage.GetPrimAtPath(collider["body_path"])
+    if not body or not body.IsValid() or not body.HasAPI(UsdPhysics.RigidBodyAPI):
+        raise ValueError(f"the bracket collider's body {collider['body_path']} is not a rigid body on the stage")
+    prim = stage.DefinePrim(collider["prim_path"])
+    if not prim.HasAuthoredReferences():
+        if not prim.GetReferences().AddReference(collider["_path"], source.GetPath()):
+            raise ValueError(f"could not reference the collision approximation at {collider['prim_path']}")
+    prim.SetCustomDataByKey("workcell:asset_id", collider["asset_id"])
+    prim.SetCustomDataByKey("workcell:bom_id", collider["bom_id"])
+    shapes = []
+    for item in Usd.PrimRange(prim):
+        if item.HasAPI(UsdPhysics.RigidBodyAPI) or item.IsA(UsdPhysics.Joint):
+            raise ValueError(f"the collision approximation must hold shapes only: {item.GetPath()}")
+        if item.HasAPI(UsdPhysics.CollisionAPI):
+            approximation = item.GetAttribute("physics:approximation")
+            shapes.append({"prim_path": str(item.GetPath()), "type": str(item.GetTypeName()),
+                           "approximation": approximation.Get() if approximation else None})
+    if not shapes or any(shape["approximation"] != "convexHull" for shape in shapes):
+        raise ValueError(f"every shape under {collider['prim_path']} must be a mesh with an explicit convexHull approximation")
+    return dict(result, status="attached", shapes=shapes)
 
 
 def make_camera_sensor(camera_prim, resolution, annotators=("rgb", "distance_to_image_plane")):
@@ -252,35 +310,47 @@ def read_frame(sensor, annotator="rgb"):
 
 # --------------------------------------------------------------------------- plan
 
+def rg2_in_tool0(config):
+    """The RG2 body frame in tool0 as ``(translation_m, quaternion_wxyz, stack_length_m)``, from the stack the
+    configuration describes (``stack.rg2_in_tool0``): it follows ``bota.mounted``."""
+    return tool_stack.rg2_in_tool0(config)
+
+
 def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     section = config.get("wrist_camera") or {}
-    offset = _vector(section.get("offset_in_tool0_m"), 3, "wrist_camera.offset_in_tool0_m")
-    rotation = _vector(section.get("rotation_in_tool0_deg"), 3, "wrist_camera.rotation_in_tool0_deg")
+    in_rg2 = _vector(section.get("offset_in_rg2_m"), 3, "wrist_camera.offset_in_rg2_m")
+    rotation = _vector(section.get("rotation_in_rg2_deg"), 3, "wrist_camera.rotation_in_rg2_deg")
     if rotation is None:
         rotation = [0.0, 0.0, 0.0]
-        limitations.append("wrist_camera.rotation_in_tool0_deg is missing; identity rotation assumed.")
-    if offset is None:
-        return _unavailable("wrist", "wrist_camera.offset_in_tool0_m is missing; the wrist camera cannot be placed."), [], None
+        limitations.append("wrist_camera.rotation_in_rg2_deg is missing; identity rotation assumed.")
+    if in_rg2 is None:
+        return _unavailable("wrist", "wrist_camera.offset_in_rg2_m is missing; the wrist camera cannot be placed."), [], None, None
+    try:
+        rg2_t, rg2_q, stack_length = rg2_in_tool0(config)
+    except ValueError as exc:
+        return _unavailable("wrist", f"{exc}; the wrist camera cannot be placed."), [], None, None
+    in_rg2_q = _euler_xyz_deg_to_quat(rotation)
+    offset = [rg2_t[index] + value for index, value in enumerate(_rotate_vector(rg2_q, in_rg2))]
     resolution, _, intrinsics = _camera_optics(section, "wrist_camera", limitations)
     if resolution is None:
-        return _unavailable("wrist", "wrist_camera resolution or FOV is missing/invalid; the wrist camera cannot be built."), [], None
+        return _unavailable("wrist", "wrist_camera resolution or FOV is missing/invalid; the wrist camera cannot be built."), [], None, None
 
     tool0 = robot["tool0_path"]
     root = f"{tool0}/wrist_d415"
     cam_path = f"{root}/D415_color"
-    optical_q = _euler_xyz_deg_to_quat(rotation)
+    optical_q = _quat_mul(rg2_q, in_rg2_q)
     optical = _pose_block(offset, optical_q)
     # The wrist root prim already carries the optical pose; the camera prim under it only
     # needs the optical-to-USD conversion (applying optical_q again would double the tilt).
     usd = _usd_block(cam_path, root, [0.0, 0.0, 0.0], list(USD_CAMERA_ROTATION))
 
     body_size = _vector(section.get("body_size_m"), 3, "wrist_camera.body_size_m") or list(D415_BODY_SIZE_M)
-    # The bracket asset is modelled in tool0 coordinates, so it is placed on tool0: in the wrist root frame, which
-    # carries the optical pose, that is the inverse of that pose.
-    inverse = _quat_conjugate(optical_q)
+    # The bracket asset is modelled in the RG2 body frame, so it is placed on that frame: in the wrist root frame,
+    # which carries the optical pose, that is the inverse of the camera's pose in the RG2 frame, whatever the stack.
+    inverse = _quat_conjugate(in_rg2_q)
     parts = []
     bracket = _part(config, assets, assets_cfg, "wrist_mount", f"{root}/bracket", root,
-                    _rotate_vector(inverse, [-value for value in offset]), inverse, "wrist camera bracket", limitations)
+                    _rotate_vector(inverse, [-value for value in in_rg2]), inverse, "wrist camera bracket", limitations)
     if bracket:
         parts.append(bracket)
     body = _part(config, assets, assets_cfg, "d415", f"{root}/body", root,
@@ -301,8 +371,13 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "mount": {"placement": section.get("mount_position"),
                   "asset_id": _value(config, "assets.wrist_mount"),
                   "bom_id": _bom_id(config, "wrist_mount"),
+                  "frame": "rg2",
+                  "offset_in_rg2_m": list(in_rg2),
+                  "rotation_in_rg2_deg": list(rotation),
+                  "stack_length_m": stack_length,
+                  "rg2_in_tool0": {"translation_m": list(rg2_t), "quaternion_wxyz": list(rg2_q)},
                   "offset_in_tool0_m": list(offset),
-                  "rotation_in_tool0_deg": list(rotation)},
+                  "quaternion_in_tool0_wxyz": list(optical_q)},
         "asset_id": _value(config, "assets.d415"),
         "bom_id": _bom_id(config, "d415"),
         "geometry_status": geometry,
@@ -318,11 +393,51 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "physics": _physics_block(tool0),
     }
     limitations.append(
-        "The D415 body asset is in the colour optical frame and the bracket asset in tool0; a bracket fits "
-        "only the camera pose it was modelled for (scripts/workcell_camera_assets.py).")
+        "The D415 body asset is in the colour optical frame and the bracket asset in the RG2 body frame; a bracket "
+        "fits only the camera pose it was modelled for (scripts/workcell_bracket_assets.py). The pose is an "
+        "estimate from one photo of the real bracket, not a measurement.")
+    limitations.append(
+        "The wrist camera's tool0 pose is derived from the configured stack and UR's flange-to-tool0 convention; "
+        "the camera and bracket prims hang from tool0 (wrist_3_link) and carry no mass themselves: their masses "
+        "are added to the RG2 body (the robot report's carried_on_rg2), so their weight is in the force/torque "
+        "reading.")
+    collider = _plan_bracket_collider(config, robot, bracket, limitations)
+    if collider:
+        camera["physics"]["bracket_collider"] = {key: value for key, value in collider.items() if not key.startswith("_")}
     root_entry = {"name": "wrist_mount", "prim_path": root, "parent": tool0,
                   "translation_m": list(offset), "quaternion_wxyz": list(optical_q)}
-    return camera, parts, root_entry
+    return camera, parts, root_entry, collider
+
+
+COLLISION_SCOPE = "Collision"       # child of the bracket asset's default prim (scripts/workcell_bracket_assets.py)
+
+
+def _plan_bracket_collider(config, robot, bracket, limitations):
+    """Where the wrist bracket's collision approximation goes: under the RG2 body, which the bracket clamps.
+
+    Shapes of one rigid body never collide with each other, so the collar cannot press on the gripper body it wraps,
+    and a push on the bracket reaches the arm through the stack's joints, as on the real arm. The collider adds no
+    mass by itself: the RG2 body's mass, centre of mass and inertia are authored explicitly (``inertials``), with the
+    bracket's and the camera's masses added by ``robot.build_robot``.
+    """
+    if not bracket:
+        return None
+    layout = _layout(config, "rg2")
+    body, frame = layout.get("body"), layout.get("mount_frame")
+    if not isinstance(body, str) or not body or body != frame:
+        limitations.append("The wrist bracket collider is not attached: it is modelled in asset_layout.rg2.mount_frame, "
+                           "which must also be the RG2 rigid body (asset_layout.rg2.body).")
+        return None
+    body_path = robot["gripper_path"] if body == "." else f"{robot['gripper_path']}/{body}"
+    limitations.append(
+        "The wrist bracket's collider (a few convex hulls from the pack) belongs to the RG2 body; the bracket's mass "
+        "is on that body from the config, not from these shapes; "
+        "it stops short of the printed part near the finger linkage, and the D415 body has no collider.")
+    return {"name": "wrist_mount_collision", "prim_path": f"{body_path}/wrist_mount_collision", "body_path": body_path,
+            "role": "wrist_mount", "asset_id": bracket["asset_id"], "bom_id": bracket["bom_id"],
+            "source_prim": COLLISION_SCOPE, "frame": "RG2 body frame, identity transform",
+            "mass": "on the RG2 body, from wrist_camera.bracket_mass_kg",
+            "filtered_pairs": [], "_path": bracket["_path"]}
 
 
 def overhead_enabled(config):
@@ -636,7 +751,8 @@ def _frames(namespace):
 def _physics_block(tool0):
     return {"attachment": tool0,
             "rigid_body": "none; referenced RigidBodyAPI and CollisionAPI are removed at author time",
-            "note": "Visual-only pack geometry follows the parent transform; no nested rigid body is created."}
+            "note": "Visual-only pack geometry follows the parent transform; no nested rigid body is created. "
+                    "The wrist bracket's collider, when the pack has one, is under bracket_collider."}
 
 
 def _asset_conventions(config):
@@ -649,8 +765,8 @@ def _asset_conventions(config):
                  "axes": "D415 colour optical frame: +X right, +Y down, +Z forward",
                  "origin": "the colour sensor; the render camera applies Rx(180 deg) for USD",
                  "forbidden_substitute": "D455/rsd455"},
-        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_camera_assets.py)",
-                        "axes": "tool0", "placement": "on tool0, unscaled"},
+        "wrist_mount": {"kind": "bracket modelled for one camera pose (scripts/workcell_bracket_assets.py)",
+                        "axes": "RG2 body frame", "placement": "on the RG2 body frame, unscaled"},
         "overhead_mount": {"kind": "unconfirmed open gantry proxy", "dimensions_m": [1.0, 1.0, 1.0],
                            "scale": "extrusion thickness x post span x height, centred at the post midpoint",
                            "axes": "world / Z-up"},
@@ -748,6 +864,14 @@ def _quat_mul(left, right):
             lw * rx + lx * rw + ly * rz - lz * ry,
             lw * ry - lx * rz + ly * rw + lz * rx,
             lw * rz + lx * ry - ly * rx + lz * rw)
+
+
+def _normalized_quat(value, label):
+    quaternion = _vector(value, 4, label)
+    norm = math.sqrt(sum(item * item for item in quaternion)) if quaternion else 0.0
+    if not norm:
+        raise ValueError(f"{label} must be a non-zero quaternion")
+    return tuple(item / norm for item in quaternion)
 
 
 def _quat_conjugate(quaternion):
@@ -895,6 +1019,8 @@ def _public_report(report):
     public = dict(report)
     public["parts"] = [{key: value for key, value in part.items() if not key.startswith("_")}
                        for part in report["parts"]]
+    public["colliders"] = [{key: value for key, value in collider.items() if not key.startswith("_")}
+                           for collider in report.get("colliders", [])]
     return public
 
 

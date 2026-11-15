@@ -5,16 +5,16 @@ this project is robot-agnostic; use `sim__quick_start` for a generic scene.
 
 The extension integrates the pack-backed Workcell API with the shared
 `twinsmith.bridge`; it has no socket server or UI panel of its own. The
-workcell integration provides four grouped tools and seven actions:
+workcell integration provides four grouped tools and nine actions:
 
 | Group | Actions |
 | --- | --- |
 | `workcell__cell` | `quick_start`, `status`, `shutdown` |
-| `workcell__robot` | `status`, `wrench` |
+| `workcell__robot` | `status`, `wrench`, `rail` |
 | `workcell__perception` | `status` |
 | `workcell__jenga` | `build`, `status` |
 
-`quick_start` resolves the external `ur5e-jenga-workcell/v2` pack and builds a stopped
+`quick_start` resolves the external `ur5e-workcell/v3` pack and builds a stopped
 scene on the session's engine, PhysX or Newton. `physics` mode uses gravity; `mirror_real` uses zero gravity (PhysX only)
 but does not synchronize with hardware. An unsaved stage is replaced only with explicit consent.
 `shutdown` releases workcell state without clearing the stage. Robot, perception and
@@ -29,12 +29,19 @@ the ground plane is off. The config's `bench_top` section colours the top panel 
 engines (black HDPE; the friction values are placeholders until a tilt test measures them). The `contact` section makes
 contact the same on both engines: every collider without a material gets a default one (PhysX's 0.5; Newton would give
 it 1.0), every material combines friction by max (MuJoCo's rule) and does not bounce, and on Newton, which reads one
-coefficient, each material's static value is used. The finger pads carry convex colliders, so the pad material is what
-touches a block. `workcell__robot(action="wrench")` reads the Bota F/T sensor on both engines with the weight it carries;
+coefficient, each material's static value is used. The RG2's fingertips carry their own convex colliders with a friction
+material (`fingertips` in the config), so that is what touches a block. `workcell__robot(action="wrench")` reads the wrist
+force/torque sensor on both engines with the weight it carries: the UR5e's own flange sensor by default, the Bota when
+`bota.mounted` is `true`;
 `scripts/workcell_static_wrench.py` checks the two agree at rest. The `inertials` section sets explicit mass, centre of
 mass and principal inertia on named bodies (the UR5e links from Universal Robots' ROS 2 description, the RG2 links at the
-datasheet's 0.78 kg), so neither engine computes them from collider shapes; the Bota and Quick Changer masses come from their
-own sections.
+datasheet's 0.78 kg), so neither engine computes them from collider shapes; the Quick Changer's mass, the Bota's and
+what the RG2 body carries (the camera bracket and the D415) come from their own sections.
+
+The robot stands on the bench's linear axis, a seventh joint (`rail_joint`, metres from the built pose, first in every
+joint list). `workcell__robot(action="rail")` reads it, or with `position_mm` sets its target, in the real axis's
+millimetres from home; arm IK and FK are unchanged (six joints from the UR base, wherever the rail has put it) and
+coordinated seven-axis IK is not provided ([what changes for callers](../workcell/README.md#what-changes-for-callers)).
 
 There is no legacy extension ROS graph setup or custom `rclpy` build prerequisite for
 this API. Generic `sim__*` tools are separate from the workcell interface.
@@ -55,6 +62,6 @@ restoring realized initial poses without resetting velocities or solver state.
 - Asset policy: [asset packs](../../../docs/ASSET-PACKS.md)
 
 The repository ships no pack binaries. Set `TWINSMITH_ASSET_ROOT` to override the asset
-root; the loader appends `ur5e-jenga-workcell/v2` (the version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
+root; the loader appends `ur5e-workcell/v3` (the pack and version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
 not file paths or a legacy-store fallback. Preserve the manifest, provenance, hashes and
 dependency checks described in the workcell README when creating a private pack.

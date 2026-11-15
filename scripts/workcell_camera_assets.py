@@ -5,8 +5,9 @@
   SHA-256 (Apache-2.0; nothing is kept in this repository). It is converted to USD in the colour camera's optical
   frame (origin at the colour sensor, +x right, +y down, +z forward) from the offsets in the same package's
   ``_d415.urdf.xacro``, with an aluminium housing and a black glass front.
-* ``wrist_mount``: ``exts/workcell/cad/wrist_bracket.py`` run by ``freecadcmd`` for the camera pose in
-  ``exts/workcell/config/lab_hardware.json``; the STEP file is kept in the pack beside the USD. Modelled in tool0.
+* ``wrist_mount``: ``exts/workcell/cad/wrist_bracket.py`` run by ``freecadcmd`` for the placeholder camera pose
+  pinned below; the STEP file is kept in the pack beside the USD. Modelled in tool0. Superseded by pack v3
+  (``scripts/workcell_bracket_assets.py``: the real bracket on the RG2).
 
 v1 is only read; an existing v2 is left alone. Needs ``freecadcmd`` on PATH. Run from ``mcp/``:
 
@@ -44,6 +45,9 @@ COLOR_Y = 0.015
 ALUMINIUM = dict(diffuseColor=(0.74, 0.75, 0.77), metallic=1.0, roughness=0.38)
 GLASS = dict(diffuseColor=(0.01, 0.01, 0.012), metallic=0.0, roughness=0.06, clearcoat=1.0, clearcoatRoughness=0.03)
 BRACKET = dict(diffuseColor=(0.03, 0.03, 0.035), metallic=0.0, roughness=0.55)
+# The placeholder camera pose v2 was built for. The config now holds the real bracket's pose, in the RG2 frame, and
+# pack v3 (scripts/workcell_bracket_assets.py) replaces this bracket; these keep v2 rebuildable as it was.
+V2_OFFSET_IN_TOOL0_M, V2_ROTATION_IN_TOOL0_DEG = (0.0, 0.11, -0.005), (-12.0, 0.0, 180.0)
 
 
 def fetch(cache: Path) -> Path:
@@ -130,8 +134,7 @@ def build_d415(work: Path, cache: Path):
 
 
 def build_bracket(work: Path, d415):
-    config = json.loads((REPO / "exts/workcell/config/lab_hardware.json").read_text())["wrist_camera"]
-    offset, rotation = config["offset_in_tool0_m"]["value"], config["rotation_in_tool0_deg"]["value"]
+    offset, rotation = list(V2_OFFSET_IN_TOOL0_M), list(V2_ROTATION_IN_TOOL0_DEG)
     if abs(offset[0]) > 1e-9 or rotation[1] != 0.0 or rotation[2] != 180.0 or rotation[0] > 0:
         raise SystemExit("the bracket model covers a camera on tool0 +y, turned 180 degrees about the tool axis and tilted toward it")
     (work / "wrist_mount").mkdir()
@@ -172,7 +175,7 @@ def main() -> int:
             asset_id="d415", source=f"{MESH_URL} (sha256 {MESH_SHA256})", license="Apache-2.0 (realsenseai/realsense-ros)",
             redistributable=True, fidelity="Vendor mesh; optical frame from the vendor URDF offsets; materials are look only",
             changes="Converted by scripts/workcell_camera_assets.py: welded, moved to the colour optical frame, two materials.")
-        common = dict(source="exts/workcell/cad/wrist_bracket.py (FreeCAD), for the camera pose in config/lab_hardware.json",
+        common = dict(source="exts/workcell/cad/wrist_bracket.py (FreeCAD), for the v2 placeholder camera pose",
                       license="Locally authored lab geometry; private pack", redistributable=False,
                       fidelity="Placeholder design modelled as one solid; wrist diameter and fit on the real arm not measured")
         files["wrist_mount/wrist_mount.usdc"] = work / "wrist_mount" / "wrist_mount.usdc"

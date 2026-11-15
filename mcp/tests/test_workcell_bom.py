@@ -12,7 +12,7 @@ _LOADER = importlib.util.spec_from_file_location("workcell_asset_pack", WORKCELL
 asset_pack = importlib.util.module_from_spec(_LOADER)
 _LOADER.loader.exec_module(asset_pack)
 ASSET_ROOT = asset_pack.default_root()    # the work cell's own order: the variable, then <workspace>/assets
-PRIVATE_PACK = ASSET_ROOT / "ur5e-workcell/v1"
+PRIVATE_PACK = ASSET_ROOT / "ur5e-workcell/v3"      # the version config/lab_hardware.json pins
 TASK_PACK = ASSET_ROOT / "jenga/v1"
 TASKS = ROOT / "exts/workcell/tasks"
 SPEC = importlib.util.spec_from_file_location(
@@ -21,7 +21,7 @@ bom = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bom)
 
 EXPECTED_IDS = {
-    "bench", "robot", "base_plate", "bota", "quick_changer", "rg2", "finger_pad",
+    "bench", "rail_carriage", "robot", "base_plate", "bota", "quick_changer", "rg2",
     "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf",
     "jenga_block",
 }
@@ -87,12 +87,9 @@ def part(path, asset_id, bom_id):
 
 
 def camera_and_robot_parts():
-    parts = [part("/World/Bench", "bench", "bench")]
+    parts = [part("/World/Bench", "bench", "bench"), part("/World/RobotAssembly/rail", "rail_carriage", "rail_carriage")]
     for role in ("robot", "base_plate", "bota", "quick_changer", "rg2"):
         parts.append(part(f"/World/RobotAssembly/{role}", role, role))
-    for index in range(2):
-        parts.append(part(f"/World/RobotAssembly/rg2/left_finger/black_pad_{index}",
-                          "finger_pad", "finger_pad"))
     for name in ("wrist_camera", "overhead_camera"):
         parts.append(part(f"/World/Cameras/{name}", "d415", "d415"))
     for mount in ("wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf"):
@@ -127,9 +124,9 @@ def test_bom_contract_and_price_policy():
     quantities = {row["bom_id"]: row["quantity"] for row in rows}
     assert quantities["jenga_block"] == 54
     assert quantities["d415"] == 2
-    assert quantities["finger_pad"] == 2
+    assert "finger_pad" not in quantities          # the grip is on the RG2's own fingertips: no add-on pads
     assert all(row["quantity"] == 1 for row in rows
-               if row["bom_id"] not in {"jenga_block", "d415", "finger_pad"})
+               if row["bom_id"] not in {"jenga_block", "d415"})
     for row in rows:
         if row["price_status"] == "verified_web_list":
             assert row["unit_price"] is not None and row["price_source"].startswith("http")
@@ -153,10 +150,9 @@ def test_audit_accepts_every_report_part_and_stage_prim():
     parts, stage = cell()
     report = bom.audit_parts(parts, rows, stage)
     assert report["ok"] and report["errors"] == []
-    assert report["parts"] == 68 and report["physical_prims"] == 68
+    assert report["parts"] == 67 and report["physical_prims"] == 67
     assert report["bom_ids"]["jenga_block"] == 54
     assert report["bom_ids"]["d415"] == 2
-    assert report["bom_ids"]["finger_pad"] == 2
 
 
 def test_audit_accepts_a_mesh_under_any_mapped_ancestor():
@@ -188,7 +184,7 @@ def test_audit_leaves_out_the_room_around_the_cell():
     stage.add("/World/Environment/simple_room/GroundPlane/CollisionPlane", kind="Plane", apis=("PhysicsCollisionAPI",))
     assert not bom.audit_parts(parts, rows, stage)["ok"]
     report = bom.audit_parts(parts, rows, stage, ignore=("/World/Environment",))
-    assert report["ok"] and report["physical_prims"] == 68
+    assert report["ok"] and report["physical_prims"] == 67
 
 
 def test_audit_catches_unknown_bom_id_and_asset_mismatch():
@@ -274,9 +270,9 @@ def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
 def test_installed_private_pack_matches_bom_and_hashes():
     report = bom.verify_manifest(PRIVATE_PACK / "pack.yaml", rows=bom.load_bom(),
                                  root=PRIVATE_PACK, expected_id="ur5e-workcell",
-                                 expected_version="v1")
-    assert report["hashes_verified"] and report["files"] == 15
-    assert "materials" in report["asset_ids"] and "jenga_block" not in report["asset_ids"]
+                                 expected_version="v3")
+    assert report["hashes_verified"] and report["files"] == 26
+    assert "materials" in report["asset_ids"] and not {"jenga_block", "finger_pad"} & set(report["asset_ids"])
     task = bom.verify_manifest(TASK_PACK / "pack.yaml", rows=bom.load_bom(TASKS / "jenga_tower.bom.csv"),
                                root=TASK_PACK, expected_id="jenga", expected_version="v1")
     assert task["hashes_verified"] and task["asset_ids"] == ["jenga_block"]

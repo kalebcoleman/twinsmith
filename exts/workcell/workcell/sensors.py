@@ -46,19 +46,39 @@ def _view_ready(view, backend, engines=ENGINES):
     return None
 
 
-def read_bota_wrench(stage, view, report, config, *, physics_time_s, backend):
-    """Read Bota's own incoming fixed-joint reaction, in the configured sensor frame.
+FLANGE_SOURCE, BOTA_SOURCE = "ur5e_tool_flange_sensor", "bota_rokubi"
 
-    view is a native tensor ArticulationView for report.articulation_root (any frontend),
-    not the Isaac Core wrapper. On Newton the solver must compute link incoming joint
-    forces (newton_cell.prepare turns that on before Play). Explicitly set bota.measurement='incoming_joint_wrench'.
-    The sensor must remain in the articulation (no fixed-link merge). Values are
-    [Fx,Fy,Fz,Tx,Ty,Tz], N and N m, exerted on the Bota child by its parent.
-    This measures a simulated joint reaction including gravity/inertial effects,
-    not a calibrated hardware Rokubi output or a force-only contact estimate.
+
+def read_wrench(stage, view, report, config, *, physics_time_s, backend, source=None):
+    """The force/torque reading of the cell's wrist sensor: a fixed joint's reaction, in the sensor's frame.
+
+    ``source`` picks the sensor. ``ur5e_tool_flange_sensor`` (the default when no Bota is mounted) is the UR5e's own
+    sensor in its tool flange: the reaction at the joint between wrist 3 and the first part bolted to the flange, at
+    the centre of the flange plane, in tool0's axes (frame ``flange_ft_sensor.frame_id``). It carries everything
+    below the flange. ``bota_rokubi`` (the default when ``bota.mounted`` is true) is the reaction at the Bota's
+    tool-side face, in the Bota's sensor frame (``bota.frame_id``); it carries everything below the sensor.
+
+    view is a native tensor ArticulationView for report.articulation_root (any frontend), not the Isaac Core
+    wrapper. On Newton the solver must compute link incoming joint forces (newton_cell.prepare turns that on before
+    Play). The measured joint must remain in the articulation (no fixed-link merge). Values are
+    [Fx,Fy,Fz,Tx,Ty,Tz], N and N m, exerted on the carried side by the robot side, torque about the frame's origin.
+    This is a rigid-body joint reaction with gravity and inertial effects in it: raw, not payload-compensated, with no
+    noise, drift or accuracy limit modelled, and not a calibrated hardware output.
     """
-    if config.get("bota", {}).get("measurement") != "incoming_joint_wrench":
-        return _unavailable("Bota incoming_joint_wrench measurement is not configured", "unsupported")
+    bota = report.get("bota")
+    if source is None:
+        source = BOTA_SOURCE if bota else FLANGE_SOURCE
+    if source == FLANGE_SOURCE:
+        section, joint_path, frame_path = config.get("flange_ft_sensor", {}), report.get("flange_joint_path"), report.get("tool0_path")
+        label = "UR5e tool flange sensor"
+    elif source == BOTA_SOURCE:
+        if not bota:
+            return _unavailable("No Bota sensor is mounted (bota.mounted is false); read the tool flange sensor", "unsupported")
+        section, joint_path, frame_path, label = config.get("bota", {}), bota["joint_path"], bota["sensor_path"], "Bota"
+    else:
+        return _unavailable(f"Unknown wrench source {source!r}", "unsupported")
+    if section.get("measurement") != "incoming_joint_wrench":
+        return _unavailable(f"{label} incoming_joint_wrench measurement is not configured", "unsupported")
     invalid = _view_ready(view, backend)
     if invalid:
         return invalid
@@ -66,24 +86,22 @@ def read_bota_wrench(stage, view, report, config, *, physics_time_s, backend):
     try:
         if view.count != 1 or list(view.prim_paths) != [report["articulation_root"]]:
             return _unavailable("Tensor view must target exactly the reported arm articulation")
-        body = stage.GetPrimAtPath(report["bota_body_path"])
-        sensor = stage.GetPrimAtPath(report["bota_sensor_path"])
-        joint = UsdPhysics.FixedJoint(stage.GetPrimAtPath(report["bota_joint_path"]))
-        if (not body or not sensor or not joint or joint.GetExcludeFromArticulationAttr().Get()
-                or joint.GetBody1Rel().GetTargets() != [body.GetPath()]
-                or not sensor.GetPath().HasPrefix(body.GetPath())):
-            return _unavailable("Bota joint/body/sensor topology is missing or changed")
+        frame = stage.GetPrimAtPath(frame_path) if frame_path else None
+        joint = UsdPhysics.FixedJoint(stage.GetPrimAtPath(joint_path)) if joint_path else None
+        targets = joint.GetBody1Rel().GetTargets() if joint else []
+        body = stage.GetPrimAtPath(targets[0]) if len(targets) == 1 else None
+        if not body or not frame or joint.GetExcludeFromArticulationAttr().Get():
+            return _unavailable(f"{label} joint/body/frame topology is missing or changed")
         bodies = [prim for prim in Usd.PrimRange(stage.GetPrimAtPath(report["assembly_path"]))
                   if prim.HasAPI(UsdPhysics.RigidBodyAPI) and prim.GetName() == body.GetName()]
         names = view.shared_metatype.link_indices
         if len(bodies) != 1 or body.GetName() not in names:
-            return _unavailable("Bota link is merged, absent or ambiguous in the runtime articulation")
-        sensor_in_body, reset = UsdGeom.XformCache().ComputeRelativeTransform(sensor, body)
-        if reset:
-            return _unavailable("Sensor frame cannot reset its transform stack")
+            return _unavailable(f"The link below the {label} is merged, absent or ambiguous in the runtime articulation")
+        cache = UsdGeom.XformCache()                         # the frame and the body are fixed to each other
+        frame_in_body = cache.GetLocalToWorldTransform(frame) * cache.GetLocalToWorldTransform(body).GetInverse()
         joint_in_body = Gf.Matrix4d().SetRotate(Gf.Quatd(joint.GetLocalRot1Attr().Get()))
         joint_in_body.SetTranslateOnly(Gf.Vec3d(joint.GetLocalPos1Attr().Get()))
-        to_sensor = joint_in_body * sensor_in_body.GetInverse()
+        to_sensor = joint_in_body * frame_in_body.GetInverse()
         values = _numpy(view.get_link_incoming_joint_force())
         if values.size == view.max_links * 6:
             values = values.reshape(1, view.max_links, 6)
@@ -96,14 +114,16 @@ def read_bota_wrench(stage, view, report, config, *, physics_time_s, backend):
         measurement = [float(value) for value in (*force, *torque)]
         if not all(math.isfinite(value) for value in measurement):
             return _unavailable("PHYSICS_STATE_INVALID: nonfinite transformed wrench")
-        return {"status": "measured", "measurement": measurement,
+        return {"status": "measured", "source": source, "measurement": measurement,
                 "force_n": measurement[:3], "torque_nm": measurement[3:],
                 "physics_time_s": timestamp, "backend": backend,
-                "frame_id": config["bota"]["frame_id"], "frame_path": str(sensor.GetPath()),
-                "source_joint": str(joint.GetPath()), "quantity": "parent_on_child_joint_reaction",
-                "gravity_compensated": False, "hardware_calibrated": False}
+                "frame_id": section["frame_id"], "frame_path": str(frame.GetPath()),
+                "source_joint": str(joint.GetPath()), "load_body_path": str(body.GetPath()),
+                "quantity": "parent_on_child_joint_reaction",
+                "gravity_compensated": False, "payload_compensated": False, "noise_modelled": False,
+                "hardware_calibrated": False}
     except Exception as exc:
-        return _unavailable(f"Bota tensor sampling unavailable: {exc}")
+        return _unavailable(f"{label} tensor sampling unavailable: {exc}")
 
 
 def read_finger_contacts(view, config, *, physics_time_s, physics_dt_s, backend):

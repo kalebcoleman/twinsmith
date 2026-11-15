@@ -62,8 +62,8 @@ GROUPS: Dict[str, tuple] = {
     "workcell__cell": ("Build and inspect the pack-backed workcell.", {
         "quick_start": "workcell__workcell_quick_start", "status": "workcell__workcell_status",
         "shutdown": "workcell__workcell_shutdown"}),
-    "workcell__robot": ("Inspect the workcell robot and read its wrist force/torque sensor.", {
-        "status": "workcell__robot_status", "wrench": "workcell__robot_wrench"}),
+    "workcell__robot": ("Inspect the workcell robot, read its wrist force/torque sensor, and read or command its rail.", {
+        "status": "workcell__robot_status", "wrench": "workcell__robot_wrench", "rail": "workcell__robot_rail"}),
     "workcell__perception": ("Inspect workcell cameras.", {"status": "workcell__perception_status"}),
     "workcell__jenga": ("Build and inspect the workcell Jenga tower.", {
         "build": "workcell__jenga_build", "status": "workcell__jenga_status"}),

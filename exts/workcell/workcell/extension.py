@@ -23,7 +23,13 @@ MCP_TOOL_REGISTRY = {
     "workcell_status": {"description": "Read the current workcell build report.", "parameters": {}},
     "workcell_shutdown": {"description": "Release workcell state without clearing the stage.", "parameters": {}},
     "robot_status": {"description": "Read robot build details from the workcell report.", "parameters": {}},
-    "robot_wrench": {"description": "Read the simulated Bota F/T sensor (its mount joint's reaction, sensor frame, N and N m) on PhysX or Newton, with the engine's mass of everything below the sensor and its weight. Needs an initialized, paused or playing simulation; not gravity-compensated or hardware-calibrated.", "parameters": {}},
+    "robot_wrench": {"description": "Read the simulated wrist force/torque sensor on PhysX or Newton: by default the UR5e's own tool flange sensor (the reaction at the flange, at the flange centre in tool0's axes, N and N m), with the engine's mass of everything below the flange and its weight. `source` in the reply names the sensor: with `bota.mounted` true in the cell's config it is the Bota's reading in its own frame, and the flange reading comes with it under `flange`. Needs an initialized, paused or playing simulation. Raw: not payload-compensated or hardware-calibrated, and no noise is modelled.", "parameters": {}},
+    "robot_rail": {
+        "description": "The linear axis under the robot's base (the cell's seventh axis), in the real axis's units. Without arguments: read its position. With position_mm: set its position target; nothing is stepped. Millimetres, absolute from the axis's home position, as the real cell's /vention/axis1_position_cmd; the reply also gives the joint value in metres and the limits in both units. Where home is on the real rail is an assumption in the cell's config. Needs an initialized simulation and rail.moving true. The same joint is rail_joint in the joint tools, in metres.",
+        "parameters": {
+            "position_mm": {"type": "number", "description": "Optional absolute target in millimetres from the axis's home position; refused outside the travel limits. Omitted: read only."},
+        },
+    },
     "perception_status": {"description": "Read camera build details; this does not capture sensor data.", "parameters": {}},
     "jenga_status": {"description": "Read Jenga build details from the workcell report.", "parameters": {}},
     "jenga_build": {

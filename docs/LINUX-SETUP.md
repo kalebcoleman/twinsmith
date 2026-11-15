@@ -194,19 +194,20 @@ viewport and URDF follow-ups have superseded some early pending checks, while th
 The host connection and `sim__stage(action="info")` do not require a robot or workstation, and NVIDIA's public robots
 (`ur5e`, `franka`, `unitree_g1`, ...) load by name from the running simulator's own asset root. The UR5e Jenga work cell uses
 [a private asset pack](../exts/workcell/workcell/README.md#private-asset-pack) that you supply: the base cell is
-`ur5e-workcell/v2` and its task objects are `jenga/v1`, both built from the source pack `ur5e-jenga-workcell/v2` by
-`scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py` ([the whole sequence](REBUILD.md)). The
+`ur5e-workcell/v3` and its task objects are `jenga/v1`, both built from the source pack `ur5e-jenga-workcell/v2` (the
+cell pack also from the vendors' STEP files of the gripper stack) by `scripts/workcell_split_packs.py`,
+`scripts/workcell_camera_assets.py` and `scripts/workcell_bracket_assets.py` ([the whole sequence](REBUILD.md)). The
 repository ships **no assets** and `install.sh` installs packages, not assets. Nothing is downloaded for you unless you
 list your own packs to [pull](ASSET-PACKS.md#pulling-and-pushing-packs).
 
 Every pack lives in one **asset root**: `TWINSMITH_ASSET_ROOT`, else `<workspace>/assets`. See [asset packs](ASSET-PACKS.md) for the format and the tools.
-Pull it from your own repository (`twinsmith assets pull ur5e-workcell/v2`) or copy the pack folder onto the machine, then
+Pull it from your own repository (`twinsmith assets pull ur5e-workcell/v3`) or copy the pack folder onto the machine, then
 check it:
 
 ```bash
 export TWINSMITH_ASSET_ROOT=<asset-root>        # outside Git; set it for the MCP server and for any Kit you start yourself
 python3 scripts/assets.py list              # every <id>/<version> and whether it verifies
-python3 scripts/assets.py doctor ur5e-workcell/v2
+python3 scripts/assets.py doctor ur5e-workcell/v3
 ```
 
 `doctor` checks the USD dependencies only when it has a USD parser: run it from `mcp/` with

@@ -63,7 +63,7 @@ def cell(tmp_path):
         source.SetDefaultPrim(root)
         UsdGeom.Xformable(root).AddTranslateOp().Set(Gf.Vec3d(0.23, -0.17, 0.08))
         layout = {"model": model, "bom_id": f"BOM-{role}", "fidelity": "placeholder"}
-        if role in ("finger_pad", "base_plate"):
+        if role in ("finger_pad", "base_plate", "rail_carriage"):
             cube = UsdGeom.Cube.Define(source, root_path + "/pad")
             cube.CreateSizeAttr().Set(0.01)
             UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
@@ -99,10 +99,13 @@ def cell(tmp_path):
         "assets": {role: f"pack/{role}" for role in layouts}, "asset_layout": layouts,
         "robot": {"placement": {"position_m": [1, 2, 3], "orientation_wxyz": [1, 0, 0, 0]}},
         "base_plate": {"placement": {"position_m": [0, 0, -0.01], "orientation_wxyz": [1, 0, 0, 0]}},
-        "stack": {"order": ["bota", "quick_changer", "rg2"]},
-        "bota": {"length_m": 0.032, "mass_kg": 0.12, "sensor_origin_along_axis_m": 0.016,
-                 "frame_id": "bota_ft_sensor"},
-        "quick_changer": {"standoff_m": 0.01592, "mass_kg": 0.41},
+        "stack": {},
+        "bota": {"mounted": False, "length_m": 0.032, "mass_kg": 0.12, "sensor_origin_along_axis_m": 0.016,
+                 "frame_id": "bota_ft_sensor",
+                 "robot_side_plate": {"thickness_m": 0.008, "diameter_m": 0.063, "mass_kg": 0.067},
+                 "tool_side_plate": {"thickness_m": 0.006, "diameter_m": 0.063, "mass_kg": 0.05}},
+        "flange_ft_sensor": {"frame_id": "tool0"},
+        "quick_changer": {"standoff_m": 0.0136, "mass_kg": 0.06},
         "rg2": {"max_opening_m": 0.110},
         "finger_pads": {"present": True, "static_friction": 0.8, "dynamic_friction": 0.7,
                         "mounts": [{"parent": side + "_inner_finger", "position_m": [0, 0, 0.005],
@@ -119,25 +122,33 @@ def world(stage, path):
     return UsdGeom.XformCache().GetLocalToWorldTransform(stage.GetPrimAtPath(path))
 
 
-@pytest.mark.parametrize("order", [["bota", "quick_changer", "rg2"], ["quick_changer", "bota", "rg2"]])
-def test_stack_frames_order_mapping_and_sources_unchanged(cell, order):
+LENGTHS = {"bota_robot_plate": 0.008, "bota": 0.032, "bota_tool_plate": 0.006, "quick_changer": 0.0136, "rg2": 0}
+PLATES = ("bota_robot_plate", "bota_tool_plate")
+
+
+@pytest.mark.parametrize("mounted", [False, True])
+def test_stack_follows_the_one_switch_and_sources_are_unchanged(cell, mounted):
+    """bota.mounted is the only thing edited: off, the stack is flange, Quick Changer, RG2 and no Bota prim exists;
+    on, an adapter plate, the Bota and a second plate come first and every later part moves down the tool axis."""
     stage, pack, config = cell
-    config["stack"]["order"] = order
+    config["bota"]["mounted"] = mounted
+    order = (["bota_robot_plate", "bota", "bota_tool_plate"] if mounted else []) + ["quick_changer", "rg2"]
     originals = {key: path.read_bytes() for key, path in pack.paths.items()}
     root_before = stage.GetRootLayer().ExportToString()
     report = robot.build_robot(stage, pack, config)
     json.dumps(report, allow_nan=False)
     assert stage.GetRootLayer().ExportToString() == root_before
     assert stage.GetSessionLayer().subLayerPaths == [report["layer_id"]]
-    assert report["stack_order"] == order
+    assert report["stack_order"] == order == report["tool"]["order"]
+    assert report["tool"]["bota_mounted"] is mounted
     assert report["gripper_articulation_root"] == report["gripper_path"]
     assert report["max_opening_m"] == 0.110
     flange = world(stage, report["flange_path"])
     offset = 0.0
     for role in order:
         path = report["assembly_path"] + "/" + role
-        layout = config["asset_layout"][role]
-        mount = stage.GetPrimAtPath(path + "/" + layout["mount_frame"])
+        layout = config["asset_layout"].get(role, {})
+        mount = stage.GetPrimAtPath(path + "/" + layout["mount_frame"]) if layout else stage.GetPrimAtPath(path)
         actual = robot._mount_world(mount, layout) * flange.GetInverse()
         assert np.array(actual) == pytest.approx(np.array(Gf.Matrix4d().SetTranslate(Gf.Vec3d(offset, 0, 0))))
         joint = UsdPhysics.FixedJoint.Get(stage, report["assembly_path"] + f"/joints/{role}_mount")
@@ -149,20 +160,171 @@ def test_stack_frames_order_mapping_and_sources_unchanged(cell, order):
             frames.append(local * world(stage, target))
         assert np.array(frames[0]) == pytest.approx(np.array(frames[1]), abs=1e-6)
         assert joint.GetExcludeFromArticulationAttr().Get() == (role == "rg2")
-        offset += {"bota": 0.032, "quick_changer": 0.01592, "rg2": 0}[role]
+        offset += LENGTHS[role]
+    assert report["tool"]["flange_to_rg2_inlet_m"] == pytest.approx(0.0596 if mounted else 0.0136)
+    assert report["flange_joint_path"] == report["assembly_path"] + f"/joints/{order[0]}_mount"
+    assert report["flange_load_body_path"].startswith(report["assembly_path"] + "/" + order[0])
     native_rg2 = world(stage, report["gripper_path"] + "/onrobot_rg2_base_link") * flange.GetInverse()
     assert list(native_rg2.TransformDir(Gf.Vec3d(0, 0, 1))) == pytest.approx([1, 0, 0])
     tool0 = world(stage, report["tool0_path"]) * flange.GetInverse()
     assert list(tool0.TransformDir(Gf.Vec3d(0, 0, 1))) == pytest.approx([1, 0, 0])
-    assert len(report["parts"]) == 7
-    assert pack.calls == [f"pack/{role}" for role in ["robot", "base_plate", *order, "finger_pad"]]
+    assert len(report["parts"]) == (7 if mounted else 6)
+    assert pack.calls == [f"pack/{role}" for role in ["robot", "base_plate", *(r for r in order if r not in PLATES), "finger_pad"]]
     for part in report["parts"]:
         prim = stage.GetPrimAtPath(part["prim_path"])
         assert prim.GetCustomDataByKey("workcell:asset_id") == part["asset_id"]
         assert prim.GetCustomDataByKey("workcell:bom_id") == part["bom_id"]
+    bota_prims = [str(prim.GetPath()) for prim in stage.Traverse() if prim.GetName().lower().startswith("bota")]
+    if mounted:
+        assert report["bota"]["joint_path"] == report["assembly_path"] + "/joints/bota_tool_plate_mount"
+        assert report["bota"]["load_body_path"] == report["assembly_path"] + "/bota_tool_plate"
+        assert stage.GetPrimAtPath(report["bota"]["sensor_path"])
+        assert [proxy["prim_path"] for proxy in report["proxies"]] == [report["assembly_path"] + "/" + role for role in PLATES]
+        for role, record in (("bota_robot_plate", "robot_side_plate"), ("bota_tool_plate", "tool_side_plate")):
+            plate = stage.GetPrimAtPath(report["assembly_path"] + "/" + role)
+            assert plate.HasAPI(UsdPhysics.RigidBodyAPI) and plate.GetCustomDataByKey("workcell:fidelity") == "placeholder"
+            assert UsdPhysics.MassAPI(plate).GetMassAttr().Get() == pytest.approx(config["bota"][record]["mass_kg"])
+            assert UsdGeom.Cylinder(plate.GetChild("disc")).GetHeightAttr().Get() == pytest.approx(config["bota"][record]["thickness_m"])
+        assert any("measure the real adapter plate" in line for line in report["limitations"])
+        assert any("adapter plate" in line for line in report["tool"]["unmeasured"])
+    else:
+        assert report["bota"] is None and report["proxies"] == [] and bota_prims == []    # nothing of the sensor is built
+        assert not any("adapter plate" in line for line in report["tool"]["unmeasured"])
     assert any("placeholder" in limitation for limitation in report["limitations"])
     assert not any("marker" in str(prim.GetPath()).lower() for prim in stage.Traverse())
     assert {key: path.read_bytes() for key, path in pack.paths.items()} == originals
+
+
+RAIL = {"moving": True, "joint_name": "rail_joint", "axis_in_world": [1, 0, 0], "travel_m": 1.27, "limits_m": [-0.635, 0.635],
+        "default_position_m": 0.0, "real_zero_at_joint_m": -0.635, "real_positive_direction": 1, "speed_m_s": 0.25,
+        "acceleration_m_s2": 0.5, "max_force_n": 1240.0, "carriage_mass_kg": 4.6, "rail_mass_kg": 22.7,
+        "drive": {"physx": {"stiffness_n_per_m": 2e5, "damping_ns_per_m": 6e3},
+                  "newton": {"stiffness_n_per_m": 2e5, "damping_ns_per_m": 6e3, "armature_kg": 5.0}}}
+
+
+def _rail_cell(cell, tmp_path, moving=True):
+    """The fixture's robot with a base link of its own and a carriage asset that has a part on the rail and one above."""
+    stage, pack, config = cell
+    source = Usd.Stage.Open(str(pack.paths["pack/robot"]))
+    base = body(source, "/Asset/base_link", (0.0, 0.0, 0.0))
+    UsdPhysics.Joint.Get(source, "/Asset/root_joint").GetBody1Rel().SetTargets([base.GetPath()])
+    source.GetRootLayer().Save()
+    config["asset_layout"]["robot"]["mount_frame"] = "base_link"
+    carriage = Usd.Stage.Open(str(pack.paths["pack/rail_carriage"]))
+    for name, z in (("gantry", -0.03), ("plate", -0.005)):
+        cube = UsdGeom.Cube.Define(carriage, f"/Asset/{name}")
+        cube.CreateSizeAttr().Set(0.01)
+        cube.AddTranslateOp().Set(Gf.Vec3d(0, 0, z))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    carriage.RemovePrim("/Asset/pad")
+    UsdGeom.Xformable(carriage.GetDefaultPrim()).ClearXformOpOrder()
+    carriage.GetRootLayer().Save()
+    config["rail"] = {**RAIL, "moving": moving, "drive": {key: dict(value) for key, value in RAIL["drive"].items()}}
+    return stage, pack, config
+
+
+def test_rail_makes_the_base_a_seventh_axis_without_moving_the_arm(cell, tmp_path):
+    """rail.moving: the arm's root joint keeps its path and fixes a rail link to the world, a driven prismatic joint
+    carries the carriage, and the carriage carries the base. The arm is where it was."""
+    stage, pack, config = _rail_cell(cell, tmp_path)
+    report = robot.build_robot(stage, pack, config)
+    json.dumps(report, allow_nan=False)
+    rail = report["rail"]
+    root_joint = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
+    assert report["articulation_root"] == report["robot_path"] + "/root_joint"
+    assert [str(p) for p in root_joint.GetBody0Rel().GetTargets()] == [rail["rail_anchor_path"]]      # a static frame: the world
+    assert not stage.GetPrimAtPath(rail["rail_anchor_path"]).HasAPI(UsdPhysics.RigidBodyAPI)
+    marker = UsdPhysics.Joint(stage.GetPrimAtPath(rail["arm_base_marker_path"]))                       # marks where the arm's chain starts
+    assert marker.GetJointEnabledAttr().Get() is False and [str(p) for p in marker.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
+    assert [str(p) for p in root_joint.GetBody1Rel().GetTargets()] == [rail["rail_link_path"]]
+    joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(rail["joint_path"]))
+    assert rail["joint_path"] == report["robot_path"] + "/rail_joint" and joint.GetAxisAttr().Get() == "X"
+    assert [joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()] == pytest.approx([-0.635, 0.635])
+    assert [[str(p) for p in rel.GetTargets()] for rel in (joint.GetBody0Rel(), joint.GetBody1Rel())] == [
+        [rail["rail_link_path"]], [rail["carriage_path"]]]
+    drive = UsdPhysics.DriveAPI(joint.GetPrim(), "linear")
+    assert [drive.GetStiffnessAttr().Get(), drive.GetDampingAttr().Get(), drive.GetMaxForceAttr().Get(),
+            drive.GetTargetPositionAttr().Get()] == pytest.approx([2e5, 6e3, 1240.0, 0.0])
+    base = world(stage, report["arm_base_link"])
+    expected = Gf.Matrix4d().SetTranslate(base.ExtractTranslation())
+    for path in (rail["rail_link_path"], rail["carriage_path"]):           # the world's axes at the base: identity joint frames
+        assert np.array(world(stage, path)) == pytest.approx(np.array(expected), abs=1e-9)
+        assert stage.GetPrimAtPath(path).HasAPI(UsdPhysics.RigidBodyAPI)
+    carriage = stage.GetPrimAtPath(rail["carriage_path"])
+    assert UsdPhysics.MassAPI(carriage).GetMassAttr().Get() == pytest.approx(4.6)
+    assert UsdPhysics.CollisionAPI(carriage.GetChild("gantry")).GetCollisionEnabledAttr().Get() is False   # rides on the rail
+    assert UsdPhysics.CollisionAPI(carriage.GetChild("plate")).GetCollisionEnabledAttr().Get() is not False
+    assert rail["colliders_off_where_it_rides_on_the_rail"] == 1
+    mount = UsdPhysics.FixedJoint(stage.GetPrimAtPath(rail["carriage_mount_path"]))
+    frames = []
+    for side in (0, 1):
+        local = Gf.Matrix4d().SetRotate(Gf.Quatd(getattr(mount, f"GetLocalRot{side}Attr")().Get()))
+        local.SetTranslateOnly(Gf.Vec3d(getattr(mount, f"GetLocalPos{side}Attr")().Get()))
+        frames.append(local * world(stage, getattr(mount, f"GetBody{side}Rel")().GetTargets()[0]))
+    assert np.array(frames[0]) == pytest.approx(np.array(frames[1]), abs=1e-6)
+    assert rail["joint"] == "rail_joint" and rail["real_axis"]["at_default_mm"] == pytest.approx(635.0)
+    assert any(part["prim_path"] == rail["part_path"] and part["asset_id"] == "pack/rail_carriage" for part in report["parts"])
+    assert any("seventh axis" in line for line in report["limitations"])
+
+
+def test_a_fixed_base_keeps_the_carriage_as_scenery(cell, tmp_path):
+    stage, pack, config = _rail_cell(cell, tmp_path, moving=False)
+    report = robot.build_robot(stage, pack, config)
+    assert report["rail"] is None
+    root_joint = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
+    assert [str(p) for p in root_joint.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
+    assert not stage.GetPrimAtPath(report["robot_path"] + "/rail_joint")
+    carriage = stage.GetPrimAtPath(report["assembly_path"] + "/rail")
+    assert carriage and not carriage.HasAPI(UsdPhysics.RigidBodyAPI)
+    assert any("rail.moving is false" in line for line in report["limitations"])
+
+
+@pytest.mark.parametrize("fault", ["bad_limits", "carriage_has_a_body", "nothing_above_the_rail", "name_taken"])
+def test_a_bad_rail_rolls_back(cell, tmp_path, fault):
+    stage, pack, config = _rail_cell(cell, tmp_path)
+    if fault == "bad_limits":
+        config["rail"]["limits_m"] = [0.2, -0.2]
+    else:
+        source = Usd.Stage.Open(str(pack.paths["pack/rail_carriage" if fault != "name_taken" else "pack/robot"]))
+        if fault == "carriage_has_a_body":
+            UsdPhysics.RigidBodyAPI.Apply(source.GetPrimAtPath("/Asset/plate"))
+        elif fault == "nothing_above_the_rail":
+            source.RemovePrim("/Asset/plate")
+        else:
+            UsdGeom.Xform.Define(source, "/Asset/rail_joint")
+        source.GetRootLayer().Save()
+    with pytest.raises(ValueError):
+        robot.build_robot(stage, pack, config)
+    assert not stage.GetPrimAtPath("/World/RobotAssembly") and not stage.GetSessionLayer().subLayerPaths
+
+
+def test_what_the_rg2_body_carries_is_in_its_mass(cell):
+    """The printed bracket and the D415 have no rigid body of their own: their masses go on the RG2 body, so the
+    force/torque reading holds them, as on the real arm."""
+    stage, pack, config = cell
+    base = {"mass_kg": 0.6, "com_m": [0.0, 0.0, 0.06], "diagonal_inertia_kgm2": [0.0012, 0.0011, 0.0004], "principal_axes_wxyz": [1, 0, 0, 0]}
+    config["inertials"] = {"rg2_links": {"onrobot_rg2_base_link": dict(base)}}
+    config["wrist_camera"] = {"bracket_mass_kg": 0.1, "bracket_cog_in_rg2_m": [0.01, -0.01, 0.09],
+                              "mass_kg": 0.064, "cog_in_rg2_m": [0.066, -0.068, 0.117]}
+    report = robot.build_robot(stage, pack, config)
+    api = UsdPhysics.MassAPI(stage.GetPrimAtPath(report["gripper_path"] + "/onrobot_rg2_base_link"))
+    assert api.GetMassAttr().Get() == pytest.approx(0.764)
+    expected = (0.6 * np.array(base["com_m"]) + 0.1 * np.array([0.01, -0.01, 0.09]) + 0.064 * np.array([0.066, -0.068, 0.117])) / 0.764
+    assert list(api.GetCenterOfMassAttr().Get()) == pytest.approx(expected.tolist(), abs=1e-7)
+    moments = np.array(api.GetDiagonalInertiaAttr().Get())
+    assert (moments > 0).all() and moments.sum() > sum(base["diagonal_inertia_kgm2"])    # the carried masses add inertia
+    assert moments[0] + moments[1] >= moments[2] - 1e-12                                 # still a physical tensor
+    assert [item["mass_kg"] for item in report["carried_on_rg2"]] == [0.1, 0.064]
+    assert report["inertials_kg"]["onrobot_rg2_base_link"] == pytest.approx(0.764)
+    assert any("point masses" in line for line in report["limitations"])
+
+
+def test_carried_masses_need_the_rg2_bodys_own_mass_properties(cell):
+    stage, pack, config = cell
+    config["wrist_camera"] = {"mass_kg": 0.064, "cog_in_rg2_m": [0.066, -0.068, 0.117]}
+    with pytest.raises(ValueError, match="inertials must hold the RG2 body"):
+        robot.build_robot(stage, pack, config)
+    assert not stage.GetPrimAtPath("/World/RobotAssembly")
 
 
 def test_base_plate_pose_metadata_and_static_geometry(cell):
@@ -203,6 +365,7 @@ def test_base_plate_failure_rolls_back(cell, fault):
 
 def test_black_pads_follow_finger_frames_and_export(cell):
     stage, pack, config = cell
+    config["bota"]["mounted"] = True
     report = robot.build_robot(stage, pack, config)
     for path in report["pad_paths"]:
         prim = stage.GetPrimAtPath(path)
@@ -218,7 +381,7 @@ def test_black_pads_follow_finger_frames_and_export(cell):
         assert all(UsdPhysics.MeshCollisionAPI(p).GetApproximationAttr().Get() == "convexHull"
                    for p in shapes if p.IsA(UsdGeom.Mesh))
     reopened = Usd.Stage.Open(stage.Flatten())
-    assert reopened.GetPrimAtPath(report["bota_sensor_path"])
+    assert reopened.GetPrimAtPath(report["bota"]["sensor_path"])
     before = stage.GetSessionLayer().ExportToString()
     with pytest.raises(ValueError, match="new absolute"):
         robot.build_robot(stage, pack, config)
@@ -226,7 +389,8 @@ def test_black_pads_follow_finger_frames_and_export(cell):
 
 
 @pytest.mark.parametrize("fault", ["stage_units", "asset_units", "up_axis", "missing_body", "bad_model",
-                                    "bad_quaternion", "bad_order", "bad_width", "pads", "world_joint", "nested_body"])
+                                    "bad_quaternion", "bad_order", "bad_width", "pads", "world_joint", "nested_body",
+                                    "switch_not_a_boolean", "mounted_without_a_plate", "mounted_with_a_bad_bota_body"])
 def test_invalid_configuration_rolls_back(cell, fault):
     stage, pack, config = cell
     if fault == "stage_units":
@@ -243,13 +407,21 @@ def test_invalid_configuration_rolls_back(cell, fault):
             body(source, "/khi_rs080n/onrobot_rg2_base_link/nested")
         source.GetRootLayer().Save()
     elif fault == "missing_body":
+        config["asset_layout"]["quick_changer"]["body"] = "missing"
+    elif fault == "switch_not_a_boolean":
+        config["bota"]["mounted"] = "yes"
+    elif fault == "mounted_without_a_plate":
+        config["bota"]["mounted"] = True
+        del config["bota"]["tool_side_plate"]
+    elif fault == "mounted_with_a_bad_bota_body":
+        config["bota"]["mounted"] = True
         config["asset_layout"]["bota"]["body"] = "missing"
     elif fault == "bad_model":
         config["asset_layout"]["rg2"]["model"] = "husarion_rg2_ft"
     elif fault == "bad_quaternion":
         config["robot"]["placement"]["orientation_wxyz"] = [2, 0, 0, 0]
     elif fault == "bad_order":
-        config["stack"]["order"] = ["rg2", "bota", "quick_changer"]
+        config["stack"]["order"] = ["bota", "quick_changer", "rg2"]      # a leftover order is refused, not ignored
     elif fault == "bad_width":
         config["rg2"]["max_opening_m"] = 0.16
     elif fault == "pads":
@@ -266,8 +438,8 @@ class Articulation:
     count = 1
     max_links = 1
 
-    def __init__(self, report=None):
-        self.shared_metatype = SimpleNamespace(dof_names=["left_joint", "right_joint"], link_indices={"bota_body": 0})
+    def __init__(self, report=None, link="quick_changer_body"):
+        self.shared_metatype = SimpleNamespace(dof_names=["left_joint", "right_joint"], link_indices={link: 0})
         self.prim_paths = [report["articulation_root"]] if report else []
         self.targets = np.array([[0.1, 0.2]], dtype=np.float32)
         self.wrench = np.array([[[0, 10, 0, 0, 0, 1]]], dtype=np.float32)
@@ -326,27 +498,60 @@ def test_width_requires_explicit_calibration():
             robot.command_gripper(view, width, config)
 
 
-@pytest.mark.parametrize("rotated", [False, True])
-def test_bota_measured_wrench_origin_and_axes(cell, rotated):
+def test_flange_wrench_is_the_default_reading(cell):
+    """No Bota on the arm: the reading is the UR5e's own flange sensor, the reaction at the joint between wrist 3
+    and the first part on the flange, at the flange centre in tool0's axes, and nothing in it is named after a Bota."""
     stage, pack, config = cell
-    if rotated:
-        config["bota"]["sensor_orientation_wxyz"] = [math.sqrt(0.5), 0, 0, math.sqrt(0.5)]
     report = robot.build_robot(stage, pack, config)
     view = Articulation(report)
     args = dict(physics_time_s=1.5, backend="physx")
-    assert sensors.read_bota_wrench(stage, view, report, config, **args)["measurement"] is None
-    config["bota"]["measurement"] = "incoming_joint_wrench"
-    result = sensors.read_bota_wrench(stage, view, report, config, **args)
-    assert result["status"] == "measured"
-    assert result["force_n"] == pytest.approx([10, 0, 0] if rotated else [0, 10, 0], abs=1e-6)
-    assert result["torque_nm"] == pytest.approx([0, 0, 0.84], abs=1e-6)
-    assert not result["gravity_compensated"]
+    assert sensors.read_wrench(stage, view, report, config, **args)["measurement"] is None    # not configured: nothing is made up
+    config["flange_ft_sensor"]["measurement"] = "incoming_joint_wrench"
+    result = sensors.read_wrench(stage, view, report, config, **args)
+    assert result["status"] == "measured" and result["source"] == sensors.FLANGE_SOURCE == "ur5e_tool_flange_sensor"
+    assert result["frame_id"] == "tool0" and result["frame_path"] == report["tool0_path"]
+    assert result["source_joint"] == report["flange_joint_path"] and result["load_body_path"] == report["flange_load_body_path"]
+    assert "bota" not in json.dumps(result).lower().replace("robotassembly", "")
+    # The view's wrench is in the joint (flange) frame: +Y force, +Z torque. tool0 +X is the flange's +Y, +Y its +Z.
+    assert result["force_n"] == pytest.approx([10, 0, 0], abs=1e-6)
+    assert result["torque_nm"] == pytest.approx([0, 1, 0], abs=1e-6)
+    assert not result["gravity_compensated"] and not result["payload_compensated"] and not result["noise_modelled"]
     assert result["physics_time_s"] == 1.5
+    refused = sensors.read_wrench(stage, view, report, config, source=sensors.BOTA_SOURCE, **args)
+    assert refused["status"] == "unsupported" and "bota.mounted is false" in refused["reason"]
+    assert sensors.read_wrench(stage, view, report, config, source="other", **args)["status"] == "unsupported"
     view.wrench[:] = np.nan
-    result = sensors.read_bota_wrench(stage, view, report, config, **args)
-    assert result["measurement"] is None
+    assert sensors.read_wrench(stage, view, report, config, **args)["measurement"] is None
     view.shared_metatype.link_indices.clear()
-    assert sensors.read_bota_wrench(stage, view, report, config, **args)["status"] == "unavailable"
+    assert sensors.read_wrench(stage, view, report, config, **args)["status"] == "unavailable"
+
+
+@pytest.mark.parametrize("rotated", [False, True])
+def test_bota_wrench_is_read_at_its_tool_side_face_when_mounted(cell, rotated):
+    """With the Bota mounted the default reading is the Bota's: the reaction at the joint on its tool-side face, in its
+    sensor frame; the flange reading is still there for the asking."""
+    stage, pack, config = cell
+    config["bota"]["mounted"] = True
+    if rotated:
+        config["bota"]["sensor_orientation_wxyz"] = [math.sqrt(0.5), 0, 0, math.sqrt(0.5)]
+    report = robot.build_robot(stage, pack, config)
+    view = Articulation(report, link="bota_tool_plate")
+    args = dict(physics_time_s=1.5, backend="physx")
+    assert sensors.read_wrench(stage, view, report, config, **args)["measurement"] is None
+    config["bota"]["measurement"] = "incoming_joint_wrench"
+    result = sensors.read_wrench(stage, view, report, config, **args)
+    assert result["status"] == "measured" and result["source"] == sensors.BOTA_SOURCE == "bota_rokubi"
+    assert result["frame_id"] == "bota_ft_sensor" and result["frame_path"] == report["bota"]["sensor_path"]
+    assert result["source_joint"] == report["bota"]["joint_path"]
+    assert result["force_n"] == pytest.approx([10, 0, 0] if rotated else [0, 10, 0], abs=1e-6)
+    # The joint is on the tool-side face, 16 mm beyond the sensor frame along the tool axis: 1 + 0.016 * 10.
+    assert result["torque_nm"] == pytest.approx([0, 0, 1.16], abs=1e-6)
+    config["flange_ft_sensor"]["measurement"] = "incoming_joint_wrench"
+    flange = sensors.read_wrench(stage, Articulation(report, link="bota_robot_plate"), report, config,
+                                 source=sensors.FLANGE_SOURCE, **args)
+    assert flange["status"] == "measured" and flange["frame_id"] == "tool0"
+    assert flange["source_joint"] == report["assembly_path"] + "/joints/bota_robot_plate_mount"
+    assert flange["force_n"] == pytest.approx([10, 0, 0], abs=1e-6)
 
 
 class WarpLike:
@@ -359,17 +564,17 @@ class WarpLike:
         return self.values
 
 
-def test_bota_wrench_reads_a_warp_frontend_on_newton_and_refuses_an_unknown_engine(cell):
+def test_wrench_reads_a_warp_frontend_on_newton_and_refuses_an_unknown_engine(cell):
     stage, pack, config = cell
-    config["bota"]["measurement"] = "incoming_joint_wrench"
+    config["flange_ft_sensor"]["measurement"] = "incoming_joint_wrench"
     report = robot.build_robot(stage, pack, config)
     view = Articulation(report)
     flat = view.wrench.reshape(-1).copy()
     view.get_link_incoming_joint_force = lambda: WarpLike(flat)
-    result = sensors.read_bota_wrench(stage, view, report, config, physics_time_s=0.5, backend="newton")
+    result = sensors.read_wrench(stage, view, report, config, physics_time_s=0.5, backend="newton")
     assert result["status"] == "measured" and result["backend"] == "newton"
-    assert result["force_n"] == pytest.approx([0, 10, 0], abs=1e-6)
-    refused = sensors.read_bota_wrench(stage, view, report, config, physics_time_s=0.5, backend="mujoco")
+    assert result["force_n"] == pytest.approx([10, 0, 0], abs=1e-6)
+    refused = sensors.read_wrench(stage, view, report, config, physics_time_s=0.5, backend="mujoco")
     assert refused["status"] == "unsupported" and refused["measurement"] is None
 
 
@@ -399,18 +604,17 @@ def test_finger_measurement_is_explicit_and_never_fabricated():
 
 
 @pytest.mark.parametrize("method", ["check", "get_link_incoming_joint_force"])
-def test_bota_native_backend_failure_is_unavailable(cell, monkeypatch, method):
+def test_wrench_native_backend_failure_is_unavailable(cell, monkeypatch, method):
     stage, pack, config = cell
     report = robot.build_robot(stage, pack, config)
-    config["bota"]["measurement"] = "incoming_joint_wrench"
+    config["flange_ft_sensor"]["measurement"] = "incoming_joint_wrench"
     view = Articulation(report)
 
     def fail():
         raise Exception("Failed to get incoming link joint forces from backend")
 
     monkeypatch.setattr(view, method, fail)
-    result = sensors.read_bota_wrench(stage, view, report, config,
-                                      physics_time_s=1, backend="physx")
+    result = sensors.read_wrench(stage, view, report, config, physics_time_s=1, backend="physx")
     assert result["status"] == "unavailable"
     assert result["measurement"] is None
 

@@ -10,8 +10,8 @@ Checked against `origin/main` at `33ff56e` on 2026-11-13, and updated after the 
 
 ## The thesis in one paragraph
 
-A UR5e plays Jenga. The simulated cell is the lab's cell: the Vention bench, the Bota force-torque sensor, the OnRobot RG2 with
-its finger pads, a wrist D415 (the overhead one is not bought and not built), and, as a task pack loaded on top, 54 blocks that each differ a little in size, mass and friction, as real
+A UR5e plays Jenga. The simulated cell is the lab's cell: the Vention bench, the OnRobot RG2 on its
+Quick Changer (the lab's Bota force-torque sensor is not mounted and is built only on request), a wrist D415 (the overhead one is not bought and not built), and, as a task pack loaded on top, 54 blocks that each differ a little in size, mass and friction, as real
 blocks do. It runs on Newton's MuJoCo-Warp solver. Perception is markerless. Real recordings tune the simulation offline
 (system identification), a planner and a benchmark run in simulation, and the loop closes on the real robot only through ROS 2
 code the owner has approved.
@@ -40,7 +40,7 @@ What `origin/main` shows today. Each line is from the code or a recorded result,
 |---|---|
 | Tool surface | Eight groups: `core` (always on), `computer` (explicit only), `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval`. No tool answers "not implemented". |
 | Generic scenes on Newton | The 54-block tower holds for 10 s at 500 Hz (1.7 mm; Isaac Sim 6.2, Newton 1.6.1). Raycast is refused; a Franka joint move does not settle yet. |
-| Work cell on Newton | Builds and holds since #112 (pack `ur5e-jenga-workcell/v2` and per-engine drives). Live on Isaac Sim 6.2 / Newton 1.6.1: the arm holds within 0.05 degrees at the presentation pose, the RG2 fingers move with the mimic followers within 0.003 degrees, and the tower drifts at most 0.54 mm over 11 s after settling. Not yet: the force/torque read, cameras, `mirror_real` and measured finger widths ([details](OPEN-ITEMS.md#work-cell-on-newton)). |
+| Work cell on Newton | Builds and holds since #112 (per-engine drives; the cell pack is now `ur5e-workcell/v3`). Live on Isaac Sim 6.2 / Newton 1.6.1: the arm holds within 0.05 degrees at the presentation pose, the RG2 fingers move with the mimic followers within 0.003 degrees, and the tower drifts at most 0.54 mm over 11 s after settling. The force/torque read passes the static check on both engines. Not yet: cameras and `mirror_real` ([details](OPEN-ITEMS.md#work-cell-on-newton)). |
 | Jenga variation | Seeded per-block variation of size, mass and friction exists (`measured_pending` profile); every number in it is unconfirmed. |
 | Real-to-sim | `robosim` reproduced one real push by image displacement on CPU and GPU. It does not fit mass or friction, match rotation, or estimate the camera. Pinned to RoboSimStudio `ba3650c` (#116), where the CPU push gives the same result as at `87b5e32`. `sysid` recovers known parameters from synthetic data on CPU; no real dataset has been fitted. |
 | Perception | Nothing. The work cell reads its camera configuration only. |
@@ -160,7 +160,8 @@ it will load on Newton before a simulator is started.
 - Pack `v2` has a box collision layer, and its bench loads on Newton with no overflow.
 - `assets__pack` build writes the `collision` field from the split's report. `v2` was built before that existed. A box split
   of `v1` reproduces `v2`'s three bench files byte for byte and counts 385 meshes, 385 boxes, 0 hull triangles and 1,628,132
-  replaced triangles. Building a `v3` from it records the counts; that is the owner's call.
+  replaced triangles. Building a `ur5e-jenga-workcell/v3` from it records the counts; that is the owner's call (the cell pack
+  `ur5e-workcell/v3` is a different pack).
 - On a CPU (2026-11-14), `v2`'s composed bench has the same 2,157 rendered (non-guide) prims as `v1`, with identical
   non-physics values and schemas and the same units. A test checks the same for the test asset, with `box` and `auto`. Both
   bench results are recorded outside the repository, in `<workspace>/runs/assets-phase1-20261114`. A rendered image next

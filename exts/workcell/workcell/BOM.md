@@ -1,6 +1,6 @@
 # UR5e Jenga workcell bill of materials
 
-This is the human-readable companion to [bom.csv](bom.csv): the same 13 logical rows,
+This is the human-readable companion to [bom.csv](bom.csv): the same logical rows,
 asset IDs, quantities and units. Repeated instances share an asset ID. Geometry and
 installed-hardware confidence are separate from procurement status; see the
 [workcell README](README.md) for the external pack contract and measurement gaps.
@@ -12,14 +12,14 @@ missing prices are not zero, and no complete workcell total is available.
 | BOM / asset ID | Item / model | Quantity | Unit | Unit price (USD) | Hardware and fidelity notes |
 | --- | --- | --- | --- | --- | --- |
 | `bench` | Vention custom workbench with lab benchtop | 1 | each | Quote required | Preserved vendor mesh; top size and height need measurement |
+| `rail_carriage` | Carriage and robot plate of the bench's linear axis (Vention MO-LM-027 gantry, ST-RB-001-0002 plate) | 1 | each | Quote required | Part of the Vention bench; split out of the bench asset so the axis can move; part numbers read from the CAD |
 | `robot` | Universal Robots UR5e collaborative arm | 1 | each | Quote required | Model confirmed; vendor CAD does not qualify runtime behavior |
-| `base_plate` | UR5e mounting base plate | 1 | each | Quote required | Provisional 5 mm plate replaces the zero placeholder; installed thickness unconfirmed |
-| `bota` | Bota Rokubi BFT-ROKS-SER-M8 force/torque sensor | 1 | each | Quote required | Product identity confirmed; geometry is a proxy, dimensions and mass unconfirmed |
-| `quick_changer` | OnRobot Quick Changer, robot and tool sides | 1 | each | Quote required | CAD standoff 15.92 mm confirmed; installed size and mass unconfirmed |
-| `rg2` | OnRobot RG2 standard parallel gripper | 1 | each | Quote required | Standard RG2, not RG2-FT; nominal maximum opening 110 mm confirmed |
-| `finger_pad` | Black add-on RG2 finger pads | 2 | each | Quote required | Provisional 0.012 x 0.008 x 0.025 m proxy; installed geometry and friction unconfirmed |
+| `base_plate` | UR5e mounting base plate | 1 | each | Quote required | Not built by default: the bench asset holds the real Vention plates under the robot; the 5 mm proxy is behind `base_plate.present` |
+| `bota` | Bota Rokubi BFT-ROKS-SER-M8 force/torque sensor | 1 | each | Quote required | Owned by the lab, not mounted on the arm; built only with `bota.mounted`; geometry from Bota's official STEP; model to be confirmed; adapter plates unmeasured |
+| `quick_changer` | OnRobot Quick Changer, robot side (the tool side is part of the RG2) | 1 | each | Quote required | Geometry from OnRobot's official STEP; 13.6 mm high (datasheet and CAD); mass 0.06 kg from the datasheet, not weighed |
+| `rg2` | OnRobot RG2 standard parallel gripper with its standard fingertips | 1 | each | Quote required | Standard RG2, not RG2-FT; geometry from OnRobot's official STEP; fingertips taped on the real gripper; rubber pads open to 100.8 mm |
 | `d415` | Intel RealSense D415 depth camera | 2 | each | $272.00 each | Wrist unit present, drawn with the vendor's mesh; second overhead unit to buy and not built |
-| `wrist_mount` | Under-arm printed wrist bracket | 1 | each | Quote required | FreeCAD placeholder design; genuine bracket CAD, offset, rotation and real attachment details unconfirmed |
+| `wrist_mount` | Printed camera bracket clamped to the RG2 body | 1 | each | Quote required | Real part exists; the FreeCAD model is a copy estimated from one photo; clamp and arm sizes and the camera pose need measurement |
 | `overhead_mount` | Removable 80/20 1515 camera gantry | 1 | set | Quote required | Planned three-member gantry, not slab; two posts and cross-member, cantilever and real attachments unresolved; not purchased |
 | `overhead_release` | Thorlabs KB3X3 kinematic quick-release base | 1 | each | $117.27 | To buy; camera-only release, not load-bearing gantry base; installed attachment unconfirmed |
 | `overhead_shelf` | Printed overhead camera shelf | 1 | each | Quote required | Proposed proxy; dimensions, manufacture and attachment unconfirmed |

@@ -237,7 +237,7 @@ Nothing in twinsmith needs a pack of yours, a Hugging Face account or a token. W
 | A part an agent designs | SolidCraft beside twinsmith, then `hardware(action="part")`, `assets__mesh` and `assets__validate` ([from a SolidCraft part to the work cell](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)); `adopt` the result to keep it as a pack | Free, open source |
 
 A public Hugging Face repository also works with no token: list the pack in the sources file below and `pull` is anonymous.
-The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v2`, `jenga/v1`); they hold vendor CAD that
+The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v3`, `jenga/v1`); they hold vendor CAD that
 may not be redistributed, so each owner builds them from their own copy ([rebuild](REBUILD.md#the-sequence)).
 
 ## Pulling and pushing packs
@@ -257,7 +257,7 @@ The format is in [`config/pack-sources.example.toml`](../config/pack-sources.exa
 [hub]
 repo = "<hf-user>/twinsmith-assets"      # where push sends a pack that has no entry yet
 
-[packs."ur5e-workcell/v2"]
+[packs."ur5e-workcell/v3"]
 revision = "<40-character commit>"       # pinned; a branch name is refused
 # repo = "...", path = "...": default hub.repo and "<pack id>/<version>"
 
@@ -272,7 +272,7 @@ Both need the optional `hub` extra (`huggingface_hub`); without it they answer `
 UV_PROJECT_ENVIRONMENT=<repo>/mcp/.venv uv sync --project <repo>/mcp --locked --extra hub --no-dev   # add the extras you use
 ```
 
-**pull** downloads one pack version (`twinsmith assets pull ur5e-workcell/v2`) or every entry (`--all`) at its pinned commit.
+**pull** downloads one pack version (`twinsmith assets pull ur5e-workcell/v3`) or every entry (`--all`) at its pinned commit.
 Only that pack's folder is fetched, into a hidden staging folder under the asset root, then checked with the strict reader:
 every listed file present with its hash, nothing unlisted, no symlink. It is moved into place only if it verifies, so a
 failed or tampered download leaves nothing. A version that is already there is compared by its `pack.yaml`: the same one is
@@ -285,7 +285,7 @@ repositories only), never the `HF_TOKEN` of the environment.
 twinsmith assets pull --all
 #   jenga/v1: pulled, 1 file(s), 0.0 MB, verified (<hf-user>/twinsmith-assets @ 61c1bcd47fdf)
 #   realsense-d400-cad/v1: vendor download, not fetched: https://dev.realsenseai.com/download/41950 (...)
-#   ur5e-workcell/v2: pulled, 16 file(s), 74.9 MB, verified (<hf-user>/twinsmith-assets @ 91acc31360a1)
+#   ur5e-workcell/v3: pulled, 26 file(s), 75.5 MB, verified (<hf-user>/twinsmith-assets @ 27f882baf226)
 # run it again: each pack is "up to date" and nothing is downloaded
 ```
 
@@ -340,6 +340,6 @@ The licence of every third-party file the repository mentions is in [THIRD-PARTY
 ## The work cell's packs
 
 The examples above use `ur5e-jenga-workcell`, the source pack. The work cell reads two packs built from it:
-`ur5e-workcell/v2` (the base cell: robot, gripper stack, wrist camera, bench, mounting hardware) and `jenga/v1` (the
-Jenga block that the task files place). `scripts/workcell_split_packs.py` and `scripts/workcell_camera_assets.py`
-write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).
+`ur5e-workcell/v3` (the base cell: robot, gripper stack, wrist camera, bench with its rail, mounting hardware) and
+`jenga/v1` (the Jenga block that the task files place). `scripts/workcell_split_packs.py`,
+`scripts/workcell_camera_assets.py` and `scripts/workcell_bracket_assets.py` write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).

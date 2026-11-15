@@ -1,4 +1,7 @@
-"""Wrist camera bracket for the UR5e, as a FreeCAD model (run with ``freecadcmd``; millimetres, tool0 frame).
+"""SUPERSEDED placeholder bracket of pack v2 (run with ``freecadcmd``; millimetres, tool0 frame).
+
+The current model is ``rg2_camera_bracket.py`` (the real bracket, on the RG2; pack v3). This file is kept only so
+``scripts/workcell_camera_assets.py`` can still rebuild pack v2.
 
 A split clamp ring around the wrist 3 housing behind the tool flange, an arm out to the underside, a web, and a tilted
 plate the D415 screws to through its two M3 rear holes (45 mm apart). Clamping the housing leaves the flange stack (Bota,

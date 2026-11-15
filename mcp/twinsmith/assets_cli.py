@@ -9,7 +9,7 @@ Examples::
 
     twinsmith assets where
     twinsmith assets list
-    twinsmith assets doctor ur5e-workcell/v2
+    twinsmith assets doctor ur5e-workcell/v3
     twinsmith assets adopt <folder> --pack my-robot/v1 --source "vendor CAD" --license "private"
     twinsmith assets adopt --from-old <root>/workcell --source "lab files" --license "private"
     twinsmith assets pin my-robot/v1
