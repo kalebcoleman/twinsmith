@@ -159,8 +159,43 @@ def test_the_estimate_of_the_real_pack_becomes_a_task_the_cell_can_load(tmp_path
     assert sorted(piece["name"] for piece in estimate["pieces"] if piece.get("parent") == "base3") == ["fork_orange", "fork_yellow", "line_brown", "line_red"]
     written = json.loads(scan.write_task(estimate, tmp_path / "task", "a test").read_text())
     pieces = {piece["name"]: piece for piece in written["puzzle"]["pieces"]["value"]}
-    assert pieces["fork_yellow"] == {"name": "fork_yellow", "asset": "fork_yellow", "parent": "base3", "position_m": [0.0, -0.036, 0.035],
-                                     "rpy_deg": [-90.0, 0.0, 0.0]}
+    assert pieces["fork_yellow"] == {"name": "fork_yellow", "asset": "fork_yellow", "parent": "base3", "position_m": [0.0, -0.036, 0.0351],
+                                     "rpy_deg": [-90.0, 0.0, 0.0]}                          # the slot's pose, 0.1 mm above resting
     assert list(pieces).index("base3") < list(pieces).index("fork_yellow") and set(written["assets"]) == set(pieces)
     rows = (tmp_path / "task/task.bom.csv").read_text().splitlines()
     assert len(rows) == 11 and rows[0].startswith("bom_id,")
+
+
+def test_what_stands_between_the_camera_and_the_table_hides_and_is_no_object(pack, tmp_path):
+    hand = scan.Pack({**PIECES, "hand": {"boxes": [box([0, 0, 0], [0.008, 0.012, 0.01])], "colour": [0.8, 0.8, 0.8]}}, ASSEMBLIES)
+    truth = {"plate": flat(pack, "plate", (0.0, 0.0), 15), "bar_red": flat(pack, "bar_red", (0.1, -0.05), 45)}
+    over = scan._pose(np.eye(3), [0.0115, 0.0115, 0.32])            # 0.13 m under the camera: it hides a corner of the plate
+    scan.synthetic(hand, {**truth, "hand": over}, CAMERA, tmp_path / "clip", tmp_path / "run")
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    estimate = scan.match(looked, pack)
+    assert 1 < looked.table["blind_percent"] < 10 and not estimate["unexplained"]
+    assert sorted(piece["name"] for piece in estimate["pieces"]) == ["bar_red", "plate"]
+    result = scan.score(estimate, {name: p.tolist() for name, p in truth.items()}, pack)
+    assert result["correct"] == 2 and result["position_error_mm"]["max"] < 2.5
+
+
+def test_colours_are_measured_from_a_known_layout_and_then_used(pack, tmp_path):
+    truth = {"bar_red": flat(pack, "bar_red", (0.05, 0.02), 20), "bar_yellow": flat(pack, "bar_yellow", (-0.06, -0.03), 100)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    seen = scan.measure_colours(tmp_path / "clip", truth, pack)
+    assert set(seen) == set(truth) and seen["bar_red"][0] > 5 * seen["bar_red"][1] and seen["bar_yellow"][1] > 0.3 * seen["bar_yellow"][0]
+    # A pack whose two bars are listed with each other's colours names them wrongly, until it is given the measured ones.
+    swapped = {**PIECES, "bar_red": {**PIECES["bar_red"], "colour": PIECES["bar_yellow"]["colour"]},
+               "bar_yellow": {**PIECES["bar_yellow"], "colour": PIECES["bar_red"]["colour"]}}
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    wrong = scan.score(scan.match(looked, scan.Pack(swapped, ASSEMBLIES)), {name: p.tolist() for name, p in truth.items()}, pack)
+    right = scan.score(scan.match(looked, scan.Pack(swapped, ASSEMBLIES, colours=seen)), {name: p.tolist() for name, p in truth.items()}, pack)
+    assert len(wrong["misidentified"]) == 2 and right["correct"] == 2
+
+
+def test_two_pieces_are_never_left_in_one_place(pack):
+    a = {"name": "bar_red", "pose": flat(pack, "bar_red", (0.0, 0.0), 0)}
+    assert scan._overlap(pack, a, {"name": "bar_yellow", "pose": flat(pack, "bar_yellow", (0.005, 0.0), 0)}) == pytest.approx(0.015)
+    assert scan._overlap(pack, a, {"name": "bar_yellow", "pose": flat(pack, "bar_yellow", (0.03, 0.0), 0)}) <= 0
+    slot = flat(pack, "plate", (0.0, 0.0), 0) @ scan._pose(np.eye(3), ASSEMBLIES["plate"][0]["position_m"])
+    assert scan._overlap(pack, {"name": "plate", "pose": flat(pack, "plate", (0.0, 0.0), 0)}, {"name": "bar_red", "pose": slot}) < 1e-6

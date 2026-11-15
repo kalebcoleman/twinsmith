@@ -10,6 +10,8 @@ File in, file out, on the CPU; no simulator, no camera, no model. The steps a ca
   ``workcell__cell(action="quick_start", task=<file>)`` builds.
 * ``diff --estimate new.json --previous old.json``: which pieces were added, removed or moved.
 * ``score --estimate estimate.json --truth truth.json``: the estimate against known poses.
+* ``colours --clip C --truth truth.json --out colours.json``: what colour each piece is to this camera, from a clip
+  of a known layout; ``match --colours colours.json`` then uses those in place of the pack's own.
 * ``synthetic --task FILE --out DIR``: a clip and perfect label images of a task's layout, drawn by ray casting the
   pack's boxes. For testing the matcher alone.
 
@@ -40,12 +42,17 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 CELL = 0.002                    # height-map cell
 TABLE_M = 0.004                 # at or below this height a point is the table
+CEILING_M = 0.25                # above this it is not on the table: the gripper the camera rides on, an arm, a hand
 CAP_M = 0.010                   # a height disagreement counts up to this much
 TOLERANCE_M = 0.004             # heights this close agree
 MAX_FRAMES = 5
 # Costs are 0 (perfect) to 1. A match needs a shape cost under SHAPE_MAX; colour is weighed in to choose among pieces.
-SHAPE_MAX, COLOUR_WEIGHT, COLOUR_MAX, MARGIN = 0.30, 0.6, 0.75, 0.08
+SHAPE_MAX, COLOUR_WEIGHT, COLOUR_MAX, MARGIN = 0.30, 0.6, 0.4, 0.08
 SLOT_AGREE, SLOT_CELLS = 0.7, 25
+# An assembled piece is written this far above its resting pose. In exact contact (a zero gap between parallel box
+# faces) Newton's MuJoCo-Warp returned non-finite states for the whole scene at some yaws of the base (132.0 degrees;
+# not 131.9, not 0).
+DROP_IN_M = 0.0001
 
 
 def _rotations():
@@ -210,7 +217,9 @@ class Pack:
     """The pieces a scan can hold: ``pieces`` is {name: {"boxes": [(centre, half)], "colour": linear RGB}} and
     ``assemblies`` {base name: [{"piece", "position_m", "rpy_deg"}]}. Pieces of one shape share a ``Shape``."""
 
-    def __init__(self, pieces, assemblies=None, name="pack"):
+    def __init__(self, pieces, assemblies=None, name="pack", colours=None):
+        """``colours`` {piece: linear RGB} replaces the pack's own for the pieces it names: what a camera actually
+        sees, measured with ``measure_colours``."""
         self.name, self.assemblies, self.shapes, self.shape_of, self.colour = name, assemblies or {}, [], {}, {}
         for piece, record in pieces.items():
             shape = Shape(record["boxes"])
@@ -218,7 +227,7 @@ class Pack:
             if index is None:
                 index = len(self.shapes)
                 self.shapes.append(shape)
-            self.shape_of[piece], self.colour[piece] = index, np.asarray(record["colour"], dtype=float)
+            self.shape_of[piece], self.colour[piece] = index, np.asarray((colours or {}).get(piece, record["colour"]), dtype=float)
         self.pieces = list(pieces)
 
     def shape(self, piece):
@@ -228,8 +237,9 @@ class Pack:
         return [other for other in self.pieces if self.shape_of[other] == self.shape_of[piece]]
 
 
-def load_pack(pack="puzzles/v1"):
-    """A pack version of the asset root, verified, as a ``Pack``: every USD asset's box colliders and colour."""
+def load_pack(pack="puzzles/v1", colours=None):
+    """A pack version of the asset root, verified, as a ``Pack``: every USD asset's box colliders and colour.
+    ``colours`` is a JSON file of measured colours, {piece: linear RGB}."""
     sys.path.insert(0, str(REPO / "mcp"))
     from pxr import Usd, UsdGeom, UsdShade
     from twinsmith import pack_manifest
@@ -246,7 +256,7 @@ def load_pack(pack="puzzles/v1"):
                  for prim in stage.Traverse() if prim.IsA(UsdGeom.Cube)]
         colour = next(UsdShade.Shader(prim).GetInput("diffuseColor").Get() for prim in stage.Traverse() if prim.IsA(UsdShade.Shader))
         pieces[record["asset_id"]] = {"boxes": boxes, "colour": list(colour)}
-    return Pack(pieces, manifest.get("assemblies"), pack)
+    return Pack(pieces, manifest.get("assemblies"), pack, json.loads(Path(colours).read_text())["colours"] if colours else None)
 
 
 # ---- the scan ---------------------------------------------------------------------------------------------
@@ -303,7 +313,7 @@ class Scan:
             raise SystemExit(f"{clip} needs rgb/ and depth/ of equal length, and {run} a label folder per prompt")
         picked = sorted(set(np.linspace(0, len(colour) - 1, min(MAX_FRAMES, len(colour))).round().astype(int).tolist()))
         scale = camera.get("depth_scale", 0.001)
-        self.frame, self.cameras, gathered, self.notes = "world", [], {}, []
+        self.frame, self.cameras, gathered, levels = "world", [], {}, {}
         fixed = None
         for index in picked:
             image = np.asarray(Image.open(colour[index]).convert("RGB"))
@@ -318,13 +328,25 @@ class Scan:
                 pose, self.frame = fixed, "table"
             pose = np.array(pose, dtype=float)
             world = points @ pose[:3, :3].T + pose[:3, 3]
+            from scipy import ndimage
+
+            blind = ~valid | (world[..., 2] > CEILING_M)       # no depth, or something between the camera and the table
+            valid = valid & ~blind
             self.cameras.append({"pose": pose, "fx": camera["fx"], "fy": camera["fy"], "cx": camera["cx"], "cy": camera["cy"],
-                                 "width": width, "height": height})
+                                 "width": width, "height": height, "blind": ndimage.binary_dilation(blind, iterations=3)})
             masks = []
             for tag in tags:
                 files = sorted((run / tag).glob("labels_*.png"))
                 labels = np.asarray(Image.open(files[min(index, len(files) - 1)]))
                 masks += [(f"{tag}:{i}", labels == i) for i in np.unique(labels) if i]
+            step, level = np.zeros(metres.shape), ndimage.median_filter(world[..., 2], size=3)
+            for axis in (0, 1):                                         # the height change to the neighbouring pixels
+                change = np.abs(np.diff(level, axis=axis))
+                pad = [(0, 0), (0, 0)]
+                for pad[axis] in ((0, 1), (1, 0)):
+                    step = np.maximum(step, np.pad(change, pad))
+            # A wall seen at an angle is a ramp a few pixels wide: steeper than about 60 degrees is a step, not a surface.
+            surface = step < np.maximum(0.0015, 1.7 * metres / camera["fx"])
             taken = np.zeros(metres.shape, dtype=bool)
             for name, mask in sorted(masks, key=lambda item: item[1].sum()):     # a pixel goes to the smallest mask over it
                 own = mask & ~taken & valid & (world[..., 2] > TABLE_M)
@@ -332,11 +354,13 @@ class Scan:
                     continue                                                    # another mask of the same thing, or the table
                 taken |= own
                 gathered.setdefault(name, []).append((world[own], image[own]))
+                if name not in levels:                                           # its level surfaces, should the whole fit nothing
+                    parts, count = ndimage.label(ndimage.binary_opening(own & surface, iterations=1))
+                    sizes = np.bincount(parts.ravel())[1:]
+                    levels[name] = [(world[parts == part], image[parts == part]) for part in np.flatnonzero(sizes >= 30) + 1]
             rest = valid & ~taken & (world[..., 2] > 1.5 * TABLE_M)                # raised and in no mask: what SAM 3 left out
             if index == picked[0] and rest.any():
-                from scipy import ndimage
-
-                blobs, count = ndimage.label(ndimage.binary_opening(rest, iterations=2))
+                blobs, count = ndimage.label(ndimage.binary_opening(rest & surface, iterations=1))
                 for blob in range(1, count + 1):
                     own = blobs == blob
                     if own.sum() * (metres[own].mean() / camera["fx"]) ** 2 > 2e-4:   # more than 2 cm2 of surface
@@ -344,32 +368,51 @@ class Scan:
             if index == picked[0]:
                 flat = world[valid & ~taken][:, 2]
                 flat = flat[np.abs(flat) < 0.02]
-                self.table = {"points": int(len(flat)), "median_height_mm": round(float(np.median(flat)) * 1000, 2) if len(flat) else None,
+                self.table = {"blind_percent": round(100 * float(self.cameras[-1]["blind"].mean()), 1), "points": int(len(flat)), "median_height_mm": round(float(np.median(flat)) * 1000, 2) if len(flat) else None,
                               "spread_mm": round(float(np.percentile(flat, 84) - np.percentile(flat, 16)) * 500, 2) if len(flat) else None}
         everything = np.concatenate([points for parts in gathered.values() for points, _ in parts]) if gathered else np.zeros((1, 3))
         self.origin = everything[:, :2].min(0) - 0.05
         shape = np.ceil((everything[:, :2].max(0) + 0.05 - self.origin) / CELL).astype(int)
         self.height, self.owner, self.colour, self.objects = np.full(shape, np.nan), np.full(shape, -1), np.zeros((*shape, 3)), []
-        for name, parts in gathered.items():
+        first = np.full(shape, -1)                              # which object took each cell first
+
+        def surface_of(name, parts):
+            """An object's top surface on the grid: its cells, their centres and heights, its area and colour."""
             points = np.concatenate([p for p, _ in parts])
-            cells = np.floor((points[:, :2] - self.origin) / CELL).astype(int)
             pixels = _linear(np.concatenate([c for _, c in parts]))
+            cells = np.floor((points[:, :2] - self.origin) / CELL).astype(int)
             order = np.argsort(points[:, 2])                 # the highest point of a cell is written last
             top, tint = np.full(shape, -np.inf), np.zeros((*shape, 3))
             top[cells[order, 0], cells[order, 1]] = points[order, 2]
             tint[cells[order, 0], cells[order, 1]] = pixels[order]
             filled = np.argwhere(np.isfinite(top))
             if len(filled) < 20:
-                continue
+                return None, tint
             z = top[filled[:, 0], filled[:, 1]]
+            return {"name": name, "cells": filled, "xy": self.origin + (filled + 0.5) * CELL, "z": z, "area": len(filled) * CELL * CELL,
+                    # Of its upper surface: side faces, which a mask also covers, are lit differently.
+                    "colour": np.median(tint[filled[:, 0], filled[:, 1]][z >= np.percentile(z, 90) - 1.5 * TOLERANCE_M], axis=0),
+                    "centroid": (self.origin + (filled + 0.5) * CELL).mean(0)}, tint
+
+        for name, parts in gathered.items():
+            item, tint = surface_of(name, parts)
+            if item is None:
+                continue
+            filled, z = item["cells"], item["z"]
+            under = first[filled[:, 0], filled[:, 1]]
+            shared = np.bincount(under[under >= 0], minlength=len(self.objects) + 1)
+            if any(count > 0.5 * max(len(filled), len(self.objects[other]["z"])) for other, count in enumerate(shared[:len(self.objects)])):
+                continue                                       # the same thing again: another prompt's mask, or another frame's
             index = len(self.objects)
+            first[filled[:, 0], filled[:, 1]] = np.where(under >= 0, under, index)
             higher = ~(self.height[filled[:, 0], filled[:, 1]] >= z)
             self.height[filled[higher, 0], filled[higher, 1]] = z[higher]
             self.owner[filled[higher, 0], filled[higher, 1]] = index
             self.colour[filled[higher, 0], filled[higher, 1]] = tint[filled[higher, 0], filled[higher, 1]]
-            self.objects.append({"name": name, "cells": filled, "xy": self.origin + (filled + 0.5) * CELL, "z": z,
-                                 "area": len(filled) * CELL * CELL, "colour": np.median(pixels, axis=0),
-                                 "centroid": (self.origin + (filled + 0.5) * CELL).mean(0)})
+            # A mask that took in two touching pieces at different heights: its level surfaces, tried if the whole fits nothing.
+            split = [surface_of(f"{name}.{number}", [part])[0] for number, part in enumerate(levels.get(name, []), start=1)]
+            item["levels"] = [part for part in split if part] if len(split) > 1 else []
+            self.objects.append(item)
 
     def cell(self, xy):
         index = np.floor((xy - self.origin) / CELL).astype(int)
@@ -393,6 +436,7 @@ class Scan:
             u = camera["fx"] * local[:, 0] / local[:, 2] + camera["cx"]
             v = camera["fy"] * local[:, 1] / local[:, 2] + camera["cy"]
             clear = (local[:, 2] > 0) & (u > 2) & (u < camera["width"] - 2) & (v > 2) & (v < camera["height"] - 2)
+            clear &= ~camera["blind"][np.clip(v, 0, camera["height"] - 1).astype(int), np.clip(u, 0, camera["width"] - 1).astype(int)]
             reach = np.clip((ceiling + 0.002 - top[:, 2]) / np.maximum(eye[2] - top[:, 2], 1e-6), 0, 1)
             for step in np.linspace(0.08, 1.0, 12):                       # along the line of sight, up to the tallest thing
                 at = top + (eye - top) * (reach * step)[:, None]
@@ -452,21 +496,53 @@ def fit(scan, item, shape):
             lift = 0.0 if abs(lift) <= TABLE_M else lift               # on the table: exactly on it
             turn = yaw_matrix(yaw) @ rest.turn
             position = np.array([at[0], at[1], lift + rest.drop])
-            verdict = scan.evidence(shape.top(turn, position))[0]
+            verdict, _, tint = scan.evidence(shape.top(turn, position))
             agree, against = int((verdict == 1).sum()), int((verdict == -1).sum())
             total = 0.5 * cost + 0.5 * against / max(1, agree + against)
             if best is None or total < best["cost"]:
-                best = {"cost": total, "turn": turn, "at": position, "rest": rest, "lift": lift,
-                        "agree": agree / max(1, len(verdict))}
+                best = {"cost": total, "turn": turn, "at": position, "rest": rest, "lift": lift, "agree": agree / max(1, len(verdict)),
+                        # Of the surface this pose says is the piece's own, whatever else the object's mask took in.
+                        "colour": np.median(tint[verdict == 1], axis=0) if agree >= 20 else item["colour"]}
         if best:
             found.append(best)
     return sorted(found, key=lambda one: one["cost"])
 
 
+def _overlap(pack, a, b):
+    """How deep two posed pieces are inside each other, in metres (0 when apart): over their boxes, the smallest
+    overlap along the separating axes of each pair."""
+    def placed(piece):
+        turn, at = piece["pose"][:3, :3], piece["pose"][:3, 3]
+        return [(turn @ centre + at, np.diag(half) @ turn.T) for centre, half in pack.shape(piece["name"]).boxes]
+
+    worst = 0.0
+    for ca, ha in placed(a):
+        for cb, hb in placed(b):
+            axes = [h / np.linalg.norm(h) for h in (*ha, *hb)]
+            axes += [c / np.linalg.norm(c) for u in axes[:3] for v in axes[3:] for c in [np.cross(u, v)] if np.linalg.norm(c) > 1e-6]
+            depth = min(np.abs(ha @ axis).sum() + np.abs(hb @ axis).sum() - abs((cb - ca) @ axis) for axis in axes)
+            worst = max(worst, depth)
+    return worst
+
+
+def _hue(colour):
+    """Hue in degrees of a linear RGB colour, or None for a grey."""
+    high, low = float(np.max(colour)), float(np.min(colour))
+    if high - low < 0.02 or high - low < 0.15 * high:
+        return None
+    r, g, b = (float(c) for c in colour)
+    if high == r:
+        return 60 * ((g - b) / (high - low)) % 360
+    return 60 * ((b - r) / (high - low)) + 120 if high == g else 60 * ((r - g) / (high - low)) + 240
+
+
 def _colour_cost(seen, wanted, gain):
-    chroma = lambda c: c / max(float(c.sum()), 1e-4)
-    shade = abs(math.log(max(float(seen.mean()), 1e-4) / max(float(wanted.mean()), 1e-4)) - gain)
-    return 0.7 * min(1.0, float(np.linalg.norm(chroma(seen) - chroma(wanted))) / 0.25) + 0.3 * min(1.0, shade / math.log(3))
+    """0 to 1: how unlike two colours are. Mostly hue, which light and shadow leave alone; partly lightness, corrected
+    by the scan's overall brightness (``gain``, a log ratio), which is all that tells maroon from red."""
+    a, b = _hue(seen), _hue(wanted)
+    turn = 0.5 if a is None or b is None else min(1.0, min(abs(a - b), 360 - abs(a - b)) / 30.0)
+    shade = abs(math.log(max(float(np.mean(seen)), 1e-4) / max(float(np.mean(wanted)), 1e-4)) - gain)
+    return 0.7 * turn + 0.3 * min(1.0, shade / math.log(3))
 
 
 def _gain(scan, pack):
@@ -474,8 +550,7 @@ def _gain(scan, pack):
     pack colour nearest in hue."""
     ratios = []
     for item in scan.objects:
-        nearest = min(pack.pieces, key=lambda piece: np.linalg.norm(item["colour"] / max(item["colour"].sum(), 1e-4)
-                                                                   - pack.colour[piece] / pack.colour[piece].sum()))
+        nearest = min(pack.pieces, key=lambda piece: _colour_cost(item["colour"], pack.colour[piece], 0.0))
         ratios.append(math.log(max(float(item["colour"].mean()), 1e-4) / float(pack.colour[nearest].mean())))
     return float(np.median(ratios)) if ratios else 0.0
 
@@ -521,7 +596,8 @@ def match(scan, pack):
     gain = _gain(scan, pack)
     every = {(o, s): fit(scan, item, shape) for o, item in enumerate(scan.objects) for s, shape in enumerate(pack.shapes)}
     fits = {key: found[0] if found else None for key, found in every.items()}
-    colours = {(o, piece): _colour_cost(item["colour"], pack.colour[piece], gain) for o, item in enumerate(scan.objects) for piece in pack.pieces}
+    colours = {(o, piece): _colour_cost((fits[o, pack.shape_of[piece]] or item)["colour"], pack.colour[piece], gain)
+               for o, item in enumerate(scan.objects) for piece in pack.pieces}
     free, used, pieces = set(pack.pieces), set(), []
 
     def record(piece, pose, **more):
@@ -580,8 +656,69 @@ def match(scan, pack):
                seen=found["agree"], lift=found["lift"], other_stance=stances[0] if stances else None,
                runner_up=others[0][1] if others and others[0][0] - table[i, j] < MARGIN else None)
 
-    # 3. What is left: objects a placed piece already accounts for, and objects nothing accounts for.
+    # Fragments: objects still unmatched that are of one colour and within 3 cm of each other are tried as one object
+    # (a piece SAM 3 cut in two, or one with the gripper across it).
+    left = [o for o in range(len(scan.objects)) if o not in used]
+    groups = []
+    for o in left:
+        near = [group for group in groups if any(
+            _colour_cost(scan.objects[o]["colour"], scan.objects[other]["colour"], 0.0) < 0.15
+            and np.abs(scan.objects[o]["cells"][:, None, :] - scan.objects[other]["cells"][None, ::7, :]).max(2).min() * CELL < 0.03
+            for other in group)]
+        merged = [o] + [other for group in near for other in group]
+        groups = [group for group in groups if group not in near] + [merged]
+    for group in (group for group in groups if len(group) > 1):
+        parts = [scan.objects[o] for o in group]
+        whole = {"name": " + ".join(part["name"] for part in parts), "cells": np.concatenate([part["cells"] for part in parts]),
+                 "xy": np.concatenate([part["xy"] for part in parts]), "z": np.concatenate([part["z"] for part in parts]),
+                 "area": sum(part["area"] for part in parts), "colour": np.median([part["colour"] for part in parts], axis=0)}
+        whole["centroid"] = whole["xy"].mean(0)
+        options = []
+        for piece in sorted(free):
+            found = fit(scan, whole, pack.shape(piece))
+            cost = _colour_cost(found[0]["colour"] if found else whole["colour"], pack.colour[piece], gain)
+            if found and found[0]["cost"] <= SHAPE_MAX and cost <= COLOUR_MAX:
+                options.append((found[0]["cost"] + COLOUR_WEIGHT * cost, piece, found[0], cost))
+        if options:
+            _, piece, found, cost = min(options, key=lambda option: option[0])
+            used.update(group)
+            record(piece, _pose(found["turn"], found["at"]), object=whole["name"], rest=found["rest"].label,
+                   support="table" if found["lift"] == 0.0 else "raised", shape_cost=found["cost"], colour_cost=cost,
+                   seen=found["agree"], lift=found["lift"], in_fragments=len(group))
+
+    # A mask that fits nothing whole may hold two touching pieces at different heights: its level surfaces, one by one.
+    for o in [o for o in range(len(scan.objects)) if o not in used and scan.objects[o]["levels"]]:
+        options = []
+        for part in scan.objects[o]["levels"]:
+            for piece in sorted(free):
+                found = fit(scan, part, pack.shape(piece))
+                if found and found[0]["cost"] <= SHAPE_MAX:
+                    cost = _colour_cost(found[0]["colour"], pack.colour[piece], gain)
+                    if cost <= COLOUR_MAX:
+                        options.append((found[0]["cost"] + COLOUR_WEIGHT * cost, part["name"], piece, found[0], cost))
+        taken = set()
+        for _, part, piece, found, cost in sorted(options, key=lambda option: option[0]):
+            if part not in taken and piece in free:
+                taken.add(part)
+                used.add(o)
+                record(piece, _pose(found["turn"], found["at"]), object=part, rest=found["rest"].label,
+                       support="table" if found["lift"] == 0.0 else "raised", shape_cost=found["cost"], colour_cost=cost,
+                       seen=found["agree"], lift=found["lift"], split_from=scan.objects[o]["name"])
+
+    # Two pieces cannot be in one place: of a pair more than 3 mm inside each other, the worse fit is withdrawn.
     unexplained = []
+    for a in sorted(pieces, key=lambda piece: (piece["rest"] != "assembled" and piece["name"] not in pack.assemblies, piece["shape_cost"])):
+        if a not in pieces:
+            continue
+        for b in [piece for piece in pieces if piece is not a]:
+            depth = _overlap(pack, a, b)
+            if depth > 0.003:
+                pieces.remove(b)
+                free.add(b["name"])
+                unexplained.append({"object": b["object"], "why": f"it fits {b['name']}, but there it would be {depth * 1000:.0f} mm inside {a['name']}",
+                                    "centre_m": [round(float(v), 4) for v in b["pose"][:2, 3]], "nearest_shape": pack.alike(b["name"])})
+
+    # 3. What is left: objects a placed piece already accounts for, and objects nothing accounts for.
     for o, item in enumerate(scan.objects):
         if o in used:
             continue
@@ -624,6 +761,10 @@ def match(scan, pack):
             flags.append("upside down")
         if piece.get("runner_up"):
             flags.append(f"could be {piece['runner_up']}")
+        if piece.get("split_from"):
+            flags.append("its mask also covered another piece")
+        if piece.get("in_fragments"):
+            flags.append(f"put together from {piece['in_fragments']} fragments")
         if piece.get("other_stance"):
             flags.append(f"from this view it could as well be standing another way ({piece['other_stance']})")
         if piece["seen"] < 0.5:
@@ -633,7 +774,7 @@ def match(scan, pack):
         index, inside = scan.cell(shape.top(pose[:3, :3], pose[:3, 3], cell=CELL)[:, :2])
         piece["_cells"] = np.zeros(scan.height.shape, dtype=bool)
         piece["_cells"][index[inside, 0], index[inside, 1]] = True
-        out.append({**{k: v for k, v in piece.items() if k not in ("slot", "_cells", "lift", "upside_down", "other_stance")},
+        out.append({**{k: v for k, v in piece.items() if k not in ("slot", "_cells", "lift", "upside_down", "other_stance", "in_fragments", "split_from")},
                     "position_m": [round(float(v), 5) for v in pose[:3, 3]], "rotation": np.round(pose[:3, :3], 6).tolist(),
                     "rpy_deg": [round(v, 3) for v in matrix_rpy(pose[:3, :3])],
                     "centroid_m": [round(float(v), 5) for v in pose[:3, :3] @ shape.centroid + pose[:3, 3]],
@@ -709,13 +850,13 @@ def write_task(estimate, folder, source, like=REPO / "exts/workcell/tasks/puzzle
     for piece in order:
         placed = piece.get("in_parent")
         pieces.append({"name": piece["name"], "asset": piece["name"], **({"parent": piece["parent"]} if placed else {}),
-                       "position_m": placed["position_m"] if placed else piece["position_m"],
+                       "position_m": [*placed["position_m"][:2], round(placed["position_m"][2] + DROP_IN_M, 6)] if placed else piece["position_m"],
                        "rpy_deg": placed["rpy_deg"] if placed else piece["rpy_deg"]})
     names = [piece["name"] for piece in pieces]
     task = {"schema": 1, "optional": True, "description": f"Puzzle layout estimated from a scan: {source}",
             "pack": {"id": record(pack_id, "The pack the scan was matched against."), "version": record(version, "As above.")},
             "assets": {name: record(name, "Matched by puzzle_scan.py from colour and shape.") for name in names},
-            "puzzle": {"pieces": record(pieces, f"Estimated by scripts/puzzle_scan.py from {source}; assembled pieces are at the pack's assembled poses."),
+            "puzzle": {"pieces": record(pieces, f"Estimated by scripts/puzzle_scan.py from {source}; assembled pieces are at the pack's assembled poses, {DROP_IN_M * 1000:g} mm above resting."),
                        **{key: model["puzzle"][key] for key in ("density_kg_m3", "static_friction", "dynamic_friction")}},
             "documentation": {"bom_csv": record("task.bom.csv", "BOM rows of the pieces the scan found, next to this file.")}}
     (folder / "task.json").write_text(json.dumps(task, indent=1) + "\n")
@@ -787,6 +928,31 @@ def synthetic(pack, poses, camera, clip, run, noise_m=0.0, seed=0):
                                                         "frames": [{"world_from_camera": np.array(camera["pose"]).tolist()}]}))
 
 
+def measure_colours(clip, truth, pack):
+    """What colour each piece is to this camera, from a clip of a known layout: {piece: linear RGB}, the median over
+    the pixels where the picture shows the piece's own top surface (``truth`` is {piece: 4 x 4 world pose})."""
+    from PIL import Image
+
+    clip, camera = Path(clip), json.loads((Path(clip) / "camera.json").read_text())
+    image = _linear(np.asarray(Image.open(sorted((clip / "rgb").iterdir())[0]).convert("RGB")))
+    first = sorted((clip / "depth").iterdir())[0]
+    metres = np.load(first) if first.suffix == ".npy" else np.asarray(Image.open(first), dtype=np.float32) * camera.get("depth_scale", 0.001)
+    pose = np.array((camera["frames"][0] if "frames" in camera else camera)["world_from_camera"], dtype=float)
+    colours = {}
+    for name, placed in truth.items():
+        placed = np.array(placed)
+        top = pack.shape(name).top(placed[:3, :3], placed[:3, 3], cell=CELL)
+        local = (top - pose[:3, 3]) @ pose[:3, :3]
+        u = np.round(camera["fx"] * local[:, 0] / local[:, 2] + camera["cx"]).astype(int)
+        v = np.round(camera["fy"] * local[:, 1] / local[:, 2] + camera["cy"]).astype(int)
+        inside = (u >= 0) & (u < metres.shape[1]) & (v >= 0) & (v < metres.shape[0])
+        seen = inside & (np.abs(np.where(inside, metres[np.where(inside, v, 0), np.where(inside, u, 0)], 0) - local[:, 2]) < TOLERANCE_M)
+        seen &= top[:, 2] >= top[:, 2].max() - 1.5 * TOLERANCE_M          # its upper surface, as a scan's objects are read
+        if seen.sum() >= 50:
+            colours[name] = [round(float(c), 4) for c in np.median(image[v[seen], u[seen]], axis=0)]
+    return colours
+
+
 def task_poses(path):
     """{piece name: world pose 4 x 4} of a puzzle task file."""
     frames = {}
@@ -812,12 +978,17 @@ def main(argv=None):
     p = add("score")
     p.add_argument("--estimate", required=True, type=Path)
     p.add_argument("--truth", required=True, type=Path, help="JSON {piece name: 4 x 4 world pose}, or a puzzle task file")
+    p = add("colours")
+    p.add_argument("--clip", required=True, type=Path)
+    p.add_argument("--truth", required=True, type=Path, help="JSON {piece name: 4 x 4 world pose}, or a puzzle task file")
+    p.add_argument("--out", required=True, type=Path)
     p = add("synthetic")
     p.add_argument("--task", required=True, type=Path)
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--camera", type=Path, help="JSON camera: fx, fy, cx, cy, width, height, pose; default 0.52 m above the layout")
-    for command in ("match", "score", "synthetic"):
+    for command in ("match", "score", "synthetic", "colours"):
         commands.choices[command].add_argument("--pack", default="puzzles/v1")
+    commands.choices["match"].add_argument("--colours", type=Path, help="measured colours, from the colours command")
     args = parser.parse_args(argv)
     read = lambda path: json.loads(path.read_text())
     if args.command == "task":
@@ -827,8 +998,14 @@ def main(argv=None):
     if args.command == "diff":
         print(json.dumps(difference(read(args.estimate), read(args.previous)), indent=1))
         return 0
-    pack = load_pack(args.pack)
-    if args.command == "match":
+    pack = load_pack(args.pack, getattr(args, "colours", None) if args.command == "match" else None)
+    if args.command == "colours":
+        truth = read(args.truth)
+        truth = {name: pose.tolist() for name, pose in task_poses(args.truth).items()} if "puzzle" in truth else truth
+        found = measure_colours(args.clip, truth, pack)
+        args.out.write_text(json.dumps({"clip": str(args.clip), "colours": found, "pack_colours": {name: pack.colour[name].tolist() for name in found}}, indent=1) + "\n")
+        print(json.dumps(found))
+    elif args.command == "match":
         estimate = match(Scan(args.clip, args.run), pack)
         estimate.update(clip=str(args.clip), run=str(args.run))
         args.out.parent.mkdir(parents=True, exist_ok=True)
