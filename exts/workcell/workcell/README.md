@@ -53,7 +53,13 @@ objects, which are Aldrin's rescaled conversions of FMB object CAD (CC BY 4.0,
 [notices](../../../THIRD-PARTY-NOTICES.md)). Each piece is a union of axis-aligned boxes, and its colliders are those
 boxes (22 for a base, 1 to 5 for a piece), checked to fill the mesh's volume to 0.1 %: slots are real slots. In the CAD
 a piece has 1.0 to 1.4 mm of room on each side in its slot. Colours are read off a lab photo. The fiducial tags on the
-real pieces are not modelled.
+real pieces are not modelled. `pack.yaml` also records `assemblies`: per base, each piece's pose in the base's frame
+when the puzzle is assembled, in the order the pieces go in.
+
+On Newton, leave a hair of room between assembled pieces. With pieces in exact contact (a zero gap between parallel
+box faces) the solver returned non-finite states for the whole scene at one yaw of the base (132.0 degrees) and not at
+others (131.9, 0): the same task built cleanly with its assembled pieces 0.1 mm higher. `puzzle_scan.py` writes
+assembled pieces 0.1 mm above resting for that reason.
 
 `puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
 and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
@@ -74,6 +80,106 @@ show it.
 An earlier run of this lift slipped 9 mm and hung 2.3 degrees tilted. That was the script, not the grip: it sent the
 arm a new joint target every 50 ms, and Newton's stiff drives jerked the gripper at each one. Send interpolated
 targets every 10 ms or faster while something is held.
+
+### Scan to scene
+
+`scripts/puzzle_scan.py` turns one RGB-D look at the table into a puzzle task: which pieces of the pack are there and
+where. It reads files and writes files, on the CPU, and needs neither the simulator nor a camera. Its input is a clip
+folder (`rgb/`, `depth/`, `camera.json`: the folder the `sam3` tool reads) and that tool's label images for it.
+
+| Command | Does |
+|---|---|
+| `match --clip C --run R --out estimate.json` | Every segment matched to a piece and given a pose |
+| `task --estimate estimate.json --out DIR` | The estimate as `DIR/task.json` and its BOM, for `quick_start(task=...)` |
+| `diff --estimate new.json --previous old.json` | Pieces added, removed and moved between two looks |
+| `score --estimate estimate.json --truth truth.json` | The estimate against known poses |
+| `colours --clip C --truth truth.json --out colours.json` | What colour each piece is to this camera, from a clip of a known layout; `match --colours` then uses them |
+| `synthetic --task FILE --out DIR` | A clip and perfect label images of a task's layout, ray cast from the pack's boxes |
+
+How a piece is recognised:
+
+- **Shape, from depth.** A segment's points are put in the world frame (or, for a clip with no camera pose, in a frame
+  fitted to the table) and reduced to a height map seen from above. Each shape has a height-map template for every
+  stable way it can rest, made from its collision boxes. A template is turned and slid over the segment until the
+  heights agree. Where the template expects surface and the scan shows a lower one that the camera could see, that
+  counts against it; where another object is in the way or the spot is out of view, it does not.
+- **Colour, among pieces of one shape.** The three bars, the two forks and the two U pieces differ only in colour.
+  A candidate's colour is read off the surface its pose claims, not off its whole mask, and compared mostly by hue,
+  which light and shadow leave alone, and partly by lightness, corrected by the scan's overall brightness. Lightness is
+  all that separates the maroon bar from the red one, so a bar in shadow is named with the flag "could be ...". Every
+  piece is used at most once.
+- **Slots, from the base.** A base plate is tried both ways up and at each quarter turn. For the right-way-up poses
+  each slot is checked against the scan directly, with the colour read off the surface itself, so a bar cut into three
+  fragments by the forks crossing it is still found. A piece found in a slot is given the pack's assembled pose
+  (`assemblies` in `pack.yaml`) and the base as its `parent`, so it does not start inside the base's walls.
+- **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside
+  another, or lying on it, is a region of its own) and matched like any segment. With the first prompts tried SAM 3.1
+  returned no mask at all for the base plates and the dark pieces, and this path carried much of the work; with the
+  prompts below it is the fallback.
+- **What the camera cannot see.** Anything more than 0.25 m above the table (the gripper the camera rides on, an arm, a
+  hand) and every pixel without depth is a blind spot, not an object: nothing behind it counts for or against a pose.
+- **One piece per place.** Of two matched pieces more than 3 mm inside each other, the worse fit is withdrawn and
+  listed under `unexplained`, so the task never starts with interpenetrating bodies.
+- **Masks that are wrong.** The same thing masked twice (by two prompts, or in one frame and not another) is one
+  object. Unmatched objects of one colour within 3 cm of each other are tried together (a piece cut in two by SAM 3 or
+  by the gripper across it). An object that fits nothing whole is tried as its level surfaces, one by one (one mask
+  over two touching pieces at different heights). Two touching pieces of one colour and one height stay one object
+  and are listed as `unexplained`.
+- **Colours as the camera sees them.** A renderer's tone mapping or a real camera's white balance moves every colour
+  away from the pack's nominal ones. `colours` measures them once from a clip of a known layout; `match --colours`
+  uses them. With the pack's own colours the simulator's wrist picture gave 4 of 10 pieces; with measured ones, 10.
+
+**Prompts for SAM 3.1.** It answers to the noun, not to the colour. Measured on the simulator's wrist picture of
+`puzzle_table` (2026-11-15, each object against its piece's true outline, counted when their intersection over union
+is 0.5 or more):
+
+| Prompt | Pieces masked, of 10 |
+|---|---|
+| `block`, `plastic block` | 10, as 10 objects, each 0.88 to 0.96 of its piece; nothing else masked |
+| `building block`; `toy block` | 10 (one at 0.80); 10 (two loosely, 0.51 and 0.66) |
+| `toy`; `square` | 6; the 2 base plates |
+| `green block`, `green box`, `green board`; `green square` | green base and green bar; green base |
+| `red block`; `dark red block`; `dark green block` | red bar, maroon bar and maroon U; maroon U; green bar |
+| `yellow plastic piece`; `orange plastic piece` | both forks and the yellow U; the orange fork, the orange U and the red base |
+| `puzzle piece`, `object`, `green square plate`, `red square plate`, `red square`, `green tray`, `red tray`, `red board`, `bar`, `red bar`, `dark green bar`, `brick`, `brown block`, `maroon block`, `pink block`, `dark red plastic piece` | 0 |
+
+Use `block` and `plastic block` together: each sometimes joins two touching pieces that the other separates, and the
+matcher takes the same thing masked twice as one object. On four recorded pile and assembled layouts they masked 29
+of 30 pieces (one fork lying against another piece was joined to it). Shadows help: without them the same prompts cut
+each fork in two at its centre tab. No real picture has been tried.
+
+The estimate lists, besides the poses: `not_seen` (pieces of the pack it did not find), `unexplained` (segments no
+piece accounts for, with the reason), and per piece its `rest` (flat, on its side, on end, assembled), what it
+is `touching`, and `flags` such as "could be line_red", "raised 35 mm: on top of something", "upside down", "poor fit",
+and "from this view it could as well be standing another way".
+
+Measured (2026-11-15, Isaac Sim 6.2.0 on Newton, one run each; the scripts and reports are in the puzzle project, not
+in this repository):
+
+| | Simulator: Newton scenes, wrist D415 render, SAM 3.1 masks | CPU: ray-cast pictures, perfect masks |
+|---|---|---|
+| Layouts (loose, assembled, piles) and pieces | 15, 112 | 45, 312 (and 45, 320 with 1 mm depth noise, a brightness change and a mask withheld) |
+| Pieces named correctly | 107 as it ran; 111 on the same recordings with the matcher as it is now | 311; 319 |
+| Named as another piece; reported but not there | 0; 0 | 0; 0 |
+| Position error of the centre: median, 95th percentile | 0.8, 2.7 mm | 0.5, 1.3 mm; 0.6, 1.8 mm |
+| Right piece, pose off by more than 5 mm or 10 degrees | 4, all flagged | 4; 9, all flagged |
+| Base swaps reported exactly | 3 of 3 (25 of 25 pieces in the six scans) | 6 of 6 |
+| Estimate built back on Newton | no piece moved more than 0.11 mm in 14 of 15; in one a missed base left its pieces to fall | not applicable |
+
+The 111 is not an independent figure: three fixes were made while looking at two of those fifteen layouts. The base
+swaps ran afterwards on fresh scenes. Those runs used the first prompts (a colour with `plastic piece`, `square plate`
+or `bar`) and the cell's light pointing straight down.
+
+Run again the same day on nine new layouts (59 pieces, another seed) with the tilted key light, colours measured
+again under it, and the prompts `block` and `plastic block`, matcher unchanged: 57 pieces named correctly (96.6 %),
+position error 0.9 mm median and 2.1 mm at the 95th percentile, how the piece lies right for all of them. One maroon
+bar lying loose in shadow was named as the red bar, with the flag "could be line_brown": lightness is all that
+separates those two, and a shadow now changes it. One green bar with half its length hidden under the gripper was
+placed 21 mm along its own length, with no flag. One base swap, reported exactly. Built back on Newton, no piece
+moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remains wrong: a piece not resting flat (tipped into a slot, leaning) is
+listed as `unexplained`, not posed; a U piece standing on end looks the same from straight above whichever end is
+down, so its turn about the vertical is a guess, flagged as one; two touching pieces of one colour and one height
+under one mask stay one object. Nothing here has seen a real camera.
 
 Machine-readable data:
 

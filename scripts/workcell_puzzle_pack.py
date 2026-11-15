@@ -15,6 +15,11 @@ render mesh of ``<piece>.usda`` and the box colliders of ``<piece>_physics.usda`
 * ``Looks/Surface``: one colour, from the lab photo of 2026-11-14 (the upstream fmb3 files have none).
 * ``puzzle:volumeM3`` on the root: the solid volume, from which a task computes the mass.
 
+``pack.yaml`` also records ``assemblies``: per base, the pose of each of its pieces in the base's frame when the
+puzzle is assembled, in the order they go in. These are upstream's ``fmb_assembly1.json`` and ``fmb_assembly3.json``
+with the angles rounded to right angles and each piece raised by however much its boxes sat inside the base's
+(0.05 mm for the bars).
+
 The pieces carry fiducial tags in the lab; none is modelled. Nothing upstream is run or changed, and a pack that
 exists is left alone. Run from ``mcp/``:
 
@@ -24,6 +29,7 @@ exists is left alone. Run from ``mcp/``:
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -37,7 +43,9 @@ sys.path.insert(0, str(REPO / "mcp"))
 from twinsmith import asset_packs, pack_manifest  # noqa: E402
 
 COMMIT = "27f610056017d7bffc2ff56fac6d219702b781a0"
-OBJECTS = "exts/ur5e-dt/assets/objects"
+ASSETS = "exts/ur5e-dt/assets"
+OBJECTS = f"{ASSETS}/objects"
+ASSEMBLIES = ("fmb_assembly1.json", "fmb_assembly3.json")     # one per base
 PACK = ("puzzles", "v1")
 # Piece -> (upstream folder, linear RGB). The colours are read off the lab photo; where upstream authors one (fmb1)
 # it agrees, except u_brown, which is maroon on the table and near black upstream.
@@ -104,6 +112,28 @@ def union_volume(boxes):
     return float(cells[inside].sum())
 
 
+def assembly(path: Path, boxes):
+    """One base's assembled pieces, in the order they go in: [{"piece", "position_m", "rpy_deg"}] in the base's frame."""
+    def turn(rpy):
+        (cr, sr), (cp, sp), (cy, sy) = [(round(math.cos(math.radians(a))), round(math.sin(math.radians(a)))) for a in rpy]
+        return np.array([[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+                         [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr], [-sp, cp * sr, cp * cr]], dtype=float)
+
+    parts = sorted(json.loads(path.read_text())["components"], key=lambda part: part["assembly_order"])
+    base, rows = boxes[parts[0]["name"]], []
+    for part in parts[1:]:
+        rpy = [90.0 * round(math.degrees(part["rotation"]["rpy"][axis]) / 90.0) for axis in "xyz"]
+        at, lift = np.array([part["position"][axis] for axis in "xyz"]), 0.0
+        for centre, half in boxes[part["name"]]:
+            centre, half = turn(rpy) @ centre + at, np.abs(turn(rpy) @ half)
+            for other, size in base:
+                sunk = (other[2] + size[2]) - (centre[2] - half[2])
+                if (np.abs(centre - other)[:2] < (half + size)[:2] - 1e-6).all() and 0 < sunk < 0.001:
+                    lift = max(lift, sunk)
+        rows.append({"piece": part["name"], "position_m": [round(float(v), 6) for v in at + [0.0, 0.0, lift]], "rpy_deg": rpy})
+    return parts[0]["name"], rows
+
+
 def write_piece(path: Path, name, colour, points, counts, indices, boxes, volume):
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade, Vt
 
@@ -149,10 +179,11 @@ def main(argv) -> int:
     if (root / PACK[0] / PACK[1] / "pack.yaml").is_file():
         print(json.dumps({"/".join(PACK): "exists, left alone"}))
         return 0
-    report, files, records = {}, {}, {}
+    report, files, records, boxes_of = {}, {}, {}, {}
     with tempfile.TemporaryDirectory() as scratch:
         for name, (folder, colour) in PIECES.items():
             points, counts, indices, boxes = read_piece(checkout / OBJECTS, folder, name)
+            boxes_of[name] = boxes
             volume, covered = mesh_volume(points, counts, indices), union_volume(boxes)
             if abs(covered - volume) > 0.001 * volume:
                 raise SystemExit(f"{name}: the boxes cover {covered * 1e6:.2f} cm3 of a {volume * 1e6:.2f} cm3 mesh")
@@ -176,7 +207,8 @@ def main(argv) -> int:
         written = asset_packs.write_version(
             root, *PACK, files, records, defaults={}, notes=[],
             extra=dict(qualification="task pack: the lab's two 3D-printed assembly puzzles (red base fmb1, green base fmb3)",
-                       derived_from=f"github.com/inbarajaldrin/isaac-sim-mcp@{COMMIT}"))
+                       derived_from=f"github.com/inbarajaldrin/isaac-sim-mcp@{COMMIT}",
+                       assemblies=dict(assembly(checkout / ASSETS / name, boxes_of) for name in ASSEMBLIES)))
     print(json.dumps({"pack": written["pack"], "pieces": report}, indent=2))
     return 0
 
