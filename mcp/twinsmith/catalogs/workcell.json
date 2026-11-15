@@ -121,6 +121,28 @@
       "namespace": "workcell",
       "owner_id": "workcell"
     },
+    "workcell.robot_rail": {
+      "description": "The linear axis under the robot's base (the cell's seventh axis), in the real axis's units. Without arguments: read its position. With position_mm: set its position target; nothing is stepped. Millimetres, absolute from the axis's home position, as the real cell's /vention/axis1_position_cmd; the reply also gives the joint value in metres and the limits in both units. Where home is on the real rail is an assumption in the cell's config. Needs an initialized simulation and rail.moving true. The same joint is rail_joint in the joint tools, in metres.",
+      "parameters": {
+        "position_mm": {
+          "type": "number",
+          "description": "Optional absolute target in millimetres from the axis's home position; refused outside the travel limits. Omitted: read only."
+        }
+      },
+      "fields": [
+        {
+          "name": "position_mm",
+          "kind": "number",
+          "enum": null,
+          "required": false,
+          "default": null,
+          "has_default": false,
+          "description": "Optional absolute target in millimetres from the axis's home position; refused outside the travel limits. Omitted: read only."
+        }
+      ],
+      "namespace": "workcell",
+      "owner_id": "workcell"
+    },
     "workcell.perception_status": {
       "description": "Read camera build details; this does not capture sensor data.",
       "parameters": {},

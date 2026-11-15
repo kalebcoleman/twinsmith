@@ -134,9 +134,9 @@ def live_workcell_tools(server):
 # ---- the snapshot ----------------------------------------------------------------------
 
 def test_the_snapshot_is_packaged_valid_and_complete():
-    assert len(PROXIES) == 8
+    assert len(PROXIES) == 9
     catalog = host_catalog.load_catalog()
-    assert len(catalog) == 8 and all(name.startswith("workcell.") for name in catalog)
+    assert len(catalog) == 9 and all(name.startswith("workcell.") for name in catalog)
     assert {meta["owner_id"] for meta in catalog.values()} == {OWNER}
     # It is data inside the package, read through importlib.resources (what a wheel ships).
     from importlib import resources
@@ -149,7 +149,7 @@ def test_the_snapshot_is_packaged_valid_and_complete():
 def test_the_snapshot_matches_the_extension_registry_exactly():
     """Drift guard: a registry edit without a regenerated snapshot fails here."""
     registry = workcell_registry()
-    assert len(registry) == 8
+    assert len(registry) == 9
     expected = {f"workcell.{name}": {
         "description": schema["description"],
         "parameters": schema.get("parameters", {}),
@@ -407,7 +407,7 @@ def test_use_bridge_to_a_bridge_without_the_extension_keeps_every_proxy():
             server, call("use_bridge", {"port": other.port}), tools, call(STATUS),
             call("demo__inspect"))
     assert "switched to bridge" in switched
-    assert "Note: workcell: 8 tool(s) are listed from the packaged catalog" in switched
+    assert "Note: workcell: 9 tool(s) are listed from the packaged catalog" in switched
     assert set(PROXIES) <= set(listed) and "demo__inspect" in listed
     assert "did not register it" in play and f"port {other.port}" in play
     assert json.loads(inspect) == {"seen": True}

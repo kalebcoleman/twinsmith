@@ -5,12 +5,12 @@ this project is robot-agnostic; use `sim__quick_start` for a generic scene.
 
 The extension integrates the pack-backed Workcell API with the shared
 `twinsmith.bridge`; it has no socket server or UI panel of its own. The
-workcell integration provides four grouped tools and seven actions:
+workcell integration provides four grouped tools and eight actions:
 
 | Group | Actions |
 | --- | --- |
 | `workcell__cell` | `quick_start`, `status`, `shutdown` |
-| `workcell__robot` | `status`, `wrench` |
+| `workcell__robot` | `status`, `wrench`, `rail` |
 | `workcell__perception` | `status` |
 | `workcell__jenga` | `build`, `status` |
 

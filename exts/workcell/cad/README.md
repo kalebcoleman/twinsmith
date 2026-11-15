@@ -6,6 +6,7 @@
 | `rg2_from_step.py` | Reads OnRobot's official RG2 STEP (a local copy, checked by SHA-256 by `scripts/workcell_rg2_assets.py`) and writes one mesh per link and material for the pack's RG2. Nothing of the STEP is kept here |
 | `part_from_step.py` | The same for one rigid part: OnRobot's Quick Changer robot side and Bota Systems' Rokubi (`scripts/workcell_stack_assets.py`) |
 | [`docs/media/workcell-rg2-front-real-vs-sim.jpg`](../../../docs/media/workcell-rg2-front-real-vs-sim.jpg) | The real RG2 from the front (photo before the bracket was fitted, cropped) beside an Isaac Sim 6.2 capture of the built cell |
+| [`docs/media/workcell-base-rail-real-vs-sim.jpg`](../../../docs/media/workcell-base-rail-real-vs-sim.jpg), [`workcell-overview-real-vs-sim.jpg`](../../../docs/media/workcell-overview-real-vs-sim.jpg) | The robot's base on its rail carriage, and the whole cell, each beside an Isaac Sim 6.2 capture ([the rail](../workcell/README.md#the-rail-the-robots-base-is-a-seventh-axis)) |
 | `wrist_bracket.py` | Superseded placeholder (a ring on the wrist 3 housing). Kept only so `scripts/workcell_camera_assets.py` can rebuild pack `v2` |
 | [`docs/media/workcell-bracket-real-vs-sim.jpg`](../../../docs/media/workcell-bracket-real-vs-sim.jpg) | The real bracket (photo, cropped to the wrist) beside an Isaac Sim 6.2 capture of the built cell from the same viewpoint, gripper open |
 | [`docs/media/workcell-wrist-view-sim.jpg`](../../../docs/media/workcell-wrist-view-sim.jpg) | What the simulated wrist D415 sees, gripper fully open and partly open |

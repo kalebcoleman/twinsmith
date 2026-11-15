@@ -49,8 +49,8 @@ LOOKS = {
     "BeltBlack": dict(diffuseColor=(0.010, 0.010, 0.011), metallic=0.0, roughness=0.8),
     "FrameNavy": dict(diffuseColor=(0.010, 0.022, 0.045), metallic=0.5, roughness=0.42),        # the bench's own extrusions
     "MotorBlack": dict(diffuseColor=(0.020, 0.020, 0.022), metallic=0.2, roughness=0.6),
-    "CarriagePlate": dict(diffuseColor=(0.030, 0.048, 0.080), metallic=0.4, roughness=0.5),     # dark blue hole-grid plate
-    "RobotPlate": dict(diffuseColor=(0.060, 0.090, 0.200), metallic=0.4, roughness=0.5),        # blue plate under the base
+    "CarriagePlate": dict(diffuseColor=(0.018, 0.032, 0.052), metallic=0.4, roughness=0.5),     # dark blue hole-grid plate
+    "RobotPlate": dict(diffuseColor=(0.035, 0.050, 0.130), metallic=0.4, roughness=0.5),        # blue plate under the base
 }
 
 

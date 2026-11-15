@@ -28,7 +28,8 @@ rail_carriage asset (the bench's own carriage and robot plate) becomes a rigid
 body under the robot's base, a geometry-free rail link fixed to the world is the
 articulation's root, a prismatic joint named rail.joint_name joins the two, and
 a fixed joint holds the robot's base on the carriage. The arm's root joint keeps
-its prim path. Joint tools see one more degree of freedom, first in order.
+its prim path. Joint tools see one more degree of freedom, first in order. The
+arm tools' inverse kinematics still starts at the robot's base link: six joints.
 No simulator lifecycle, ROS publishers, markers or asset-cache lookup lives here.
 """
 
@@ -502,8 +503,8 @@ def _rail(stage, root, robot_root, arm_root, base_link, rail, reference, limitat
     if arm_root.GetParent() != robot_root:
         raise ValueError("rail.moving needs the robot's root joint directly under the robot's prim")
     name = rail["joint_name"]
-    if robot_root.GetChild(name) or robot_root.GetChild("carriage_mount"):
-        raise ValueError(f"the robot asset already has a prim named {name} or carriage_mount")
+    if any(robot_root.GetChild(taken) for taken in (name, "carriage_mount", "rail_link", "rail_anchor", "arm_base")):
+        raise ValueError(f"the robot asset already has a prim named {name}, carriage_mount, rail_link, rail_anchor or arm_base")
     base_world = _world(base_link)
     frame = Gf.Matrix4d().SetTranslate(base_world.ExtractTranslation())    # the world's axes, at the robot's base
     part = reference("rail_carriage", root.AppendChild("rail"))            # the BOM part: the axis's moving half
@@ -543,10 +544,25 @@ def _rail(stage, root, robot_root, arm_root, base_link, rail, reference, limitat
     api.CreateCenterOfMassAttr().Set(Gf.Vec3f(0, 0, -0.09))
     api.CreateDiagonalInertiaAttr().Set(Gf.Vec3f(0.05, 6.0, 6.0))
     api.CreatePrincipalAxesAttr().Set(Gf.Quatf(1, 0, 0, 0))
+    # The arm's tools read the chain from these prims and start it at the one body that a joint ties to nothing else.
+    # That must stay the arm's base link, so that inverse kinematics is solved for the six arm joints from wherever the
+    # base is, as it was before the rail. So the root joint names a static frame as its first body (the engines treat a
+    # body that is not a rigid body as the world), and a disabled joint with the base link as its only body marks the
+    # chain's start. The marker does nothing in the physics.
+    anchor = UsdGeom.Xform.Define(stage, robot_root.GetPath().AppendChild("rail_anchor")).GetPrim()
+    _set_world(anchor, frame)
     root_joint = UsdPhysics.Joint(arm_root)
-    root_joint.GetBody1Rel().SetTargets([link.GetPath()])                  # world -> rail link; same prim path as before
-    root_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(frame.ExtractTranslation()))
+    root_joint.GetBody0Rel().SetTargets([anchor.GetPath()])                # the world, as a named static frame
+    root_joint.GetBody1Rel().SetTargets([link.GetPath()])                  # -> rail link; same prim path as before
+    root_joint.CreateLocalPos0Attr().Set(Gf.Vec3f(0, 0, 0))
     root_joint.CreateLocalRot0Attr().Set(Gf.Quatf(1, 0, 0, 0))
+    marker = UsdPhysics.FixedJoint.Define(stage, robot_root.GetPath().AppendChild("arm_base"))
+    marker.CreateBody1Rel().SetTargets([base_link.GetPath()])
+    marker.CreateJointEnabledAttr().Set(False)
+    marker.CreateLocalPos0Attr().Set(Gf.Vec3f(base_world.ExtractTranslation()))
+    marker.CreateLocalRot0Attr().Set(Gf.Quatf(base_world.ExtractRotationQuat()))
+    marker.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
+    marker.CreateLocalRot1Attr().Set(Gf.Quatf(1, 0, 0, 0))
     root_joint.CreateLocalPos1Attr().Set(Gf.Vec3f(0, 0, 0))
     root_joint.CreateLocalRot1Attr().Set(Gf.Quatf(1, 0, 0, 0))
     joint = UsdPhysics.PrismaticJoint.Define(stage, robot_root.GetPath().AppendChild(name))
@@ -570,13 +586,15 @@ def _rail(stage, root, robot_root, arm_root, base_link, rail, reference, limitat
     joint.GetPrim().CreateAttribute("physxJoint:maxJointVelocity", Sdf.ValueTypeNames.Float).Set(rail["speed_m_s"])
     mount = _fixed(stage, robot_root.GetPath().AppendChild("carriage_mount"), carriage, base_link, base_world, False)
     limitations.append("The robot's base is a seventh axis: joint tools see " + name + " first, in metres from the built pose. "
-                       "Inverse kinematics without base_link solves the rail too; pass the report's arm_base_link for the arm alone.")
+                       "Inverse kinematics is solved for the six arm joints from the robot's base, wherever the rail has put "
+                       "it; move the rail first, then the arm. Coordinated seven-axis inverse kinematics is not provided.")
     limitations.append("Rail: the carriage's gantry plate and bearing blocks have no collision (they ride on the rail); the "
                        "robot plate on it has.")
     limitations.append("Rail: the travel is Vention's for this actuator; speed and acceleration are simulation choices, and where "
                        "the real axis's zero is on the rail is an assumption. Only PhysX applies the speed as a joint velocity limit.")
     return {**rail_axis.caller_view(rail), "joint_path": str(joint.GetPath()), "carriage_path": str(carriage.GetPath()),
             "rail_link_path": str(link.GetPath()), "carriage_mount_path": str(mount.GetPath()),
+            "rail_anchor_path": str(anchor.GetPath()), "arm_base_marker_path": str(marker.GetPath()),
             "carriage_mass_kg": mass, "part_path": str(part.GetPath()), "colliders_off_where_it_rides_on_the_rail": len(riding)}
 
 

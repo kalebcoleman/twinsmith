@@ -104,7 +104,7 @@ def prepare(stage, config, assembly_path, timeline):
         for attr in ("newton:armature", "physxJoint:armature"):   # both, so no resolver default decides it
             prim.CreateAttribute(attr, Sdf.ValueTypeNames.Float).Set(float(d["armature_kgm2"]))
         authored[name] = dict(d)
-    margins = stability(drives, newton["physics_hz"])
+    margins, rail_drive = stability(drives, newton["physics_hz"]), None
     if rail_axis.moving(config):                                # the robot's base is a seventh axis: its drive, per engine
         record = rail_axis.check(config)
         name, d = record["joint_name"], record["drive"]["newton"]
@@ -116,8 +116,7 @@ def prepare(stage, config, assembly_path, timeline):
         drive.GetDampingAttr().Set(d["damping_ns_per_m"])
         for attr in ("newton:armature", "physxJoint:armature"):
             prim.CreateAttribute(attr, Sdf.ValueTypeNames.Float).Set(float(d["armature_kg"]))
-        authored[name] = dict(d)
-        margins[name] = rail_axis.stability(record, newton["physics_hz"])
+        rail_drive = dict(d, joint=name, stability=rail_axis.stability(record, newton["physics_hz"]))
     buffers_config, buffers = prepare_buffers(stage, scene, timeline)
     # The wrist force/torque reading is a mount joint's incoming reaction; Newton computes it only when asked before Play.
     buffers_config.solver_outputs.link_incoming_joint_force = True
@@ -125,4 +124,4 @@ def prepare(stage, config, assembly_path, timeline):
     buffers["link_incoming_joint_force"] = True
     return dict(settings=settings, colliders_with_contact_gap=colliders, drives=authored, buffers=buffers,
                 materials_with_static_mu=newton_mu,
-                stability=margins)
+                stability=margins, **({"rail_drive": rail_drive} if rail_drive else {}))

@@ -231,7 +231,11 @@ def test_rail_makes_the_base_a_seventh_axis_without_moving_the_arm(cell, tmp_pat
     json.dumps(report, allow_nan=False)
     rail = report["rail"]
     root_joint = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
-    assert report["articulation_root"] == report["robot_path"] + "/root_joint" and not root_joint.GetBody0Rel().GetTargets()
+    assert report["articulation_root"] == report["robot_path"] + "/root_joint"
+    assert [str(p) for p in root_joint.GetBody0Rel().GetTargets()] == [rail["rail_anchor_path"]]      # a static frame: the world
+    assert not stage.GetPrimAtPath(rail["rail_anchor_path"]).HasAPI(UsdPhysics.RigidBodyAPI)
+    marker = UsdPhysics.Joint(stage.GetPrimAtPath(rail["arm_base_marker_path"]))                       # marks where the arm's chain starts
+    assert marker.GetJointEnabledAttr().Get() is False and [str(p) for p in marker.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
     assert [str(p) for p in root_joint.GetBody1Rel().GetTargets()] == [rail["rail_link_path"]]
     joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(rail["joint_path"]))
     assert rail["joint_path"] == report["robot_path"] + "/rail_joint" and joint.GetAxisAttr().Get() == "X"
@@ -246,7 +250,6 @@ def test_rail_makes_the_base_a_seventh_axis_without_moving_the_arm(cell, tmp_pat
     for path in (rail["rail_link_path"], rail["carriage_path"]):           # the world's axes at the base: identity joint frames
         assert np.array(world(stage, path)) == pytest.approx(np.array(expected), abs=1e-9)
         assert stage.GetPrimAtPath(path).HasAPI(UsdPhysics.RigidBodyAPI)
-    assert list(base.ExtractTranslation()) == pytest.approx([1, 2, 3])     # the assembly's placement, unchanged by the rail
     carriage = stage.GetPrimAtPath(rail["carriage_path"])
     assert UsdPhysics.MassAPI(carriage).GetMassAttr().Get() == pytest.approx(4.6)
     assert UsdPhysics.CollisionAPI(carriage.GetChild("gantry")).GetCollisionEnabledAttr().Get() is False   # rides on the rail

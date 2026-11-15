@@ -395,8 +395,8 @@ def _posed_bodies(stage, assembly, degrees, rail_m=0.0):
             continue
         joint = UsdPhysics.Joint(prim)
         ends = [joint.GetBody0Rel().GetTargets(), joint.GetBody1Rel().GetTargets()]
-        if not all(ends):
-            continue                                     # an anchor to the world
+        if not all(ends) or not all(stage.GetPrimAtPath(end[0]).HasAPI(UsdPhysics.RigidBodyAPI) for end in ends):
+            continue                                     # an anchor to the world (no body, or a static frame)
         turn = Gf.Matrix4d(1.0)
         if prim.IsA(UsdPhysics.RevoluteJoint):
             axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[UsdPhysics.RevoluteJoint(prim).GetAxisAttr().Get()]
@@ -803,13 +803,13 @@ def _sim_tools_ik():
 def test_the_rail_is_a_seventh_axis_and_callers_see_exactly_this(cell):
     """What changes for a caller. The arm's root joint keeps its path and now fixes a rail link to the world; a
     prismatic rail_joint (metres, zero at the built pose, +X) carries the carriage, and a fixed joint holds the base on
-    it. The joint tools' IK, which reads the chain from these prims, sees seven joints from the rail link, and the six
-    arm joints when it is given the report's arm_base_link."""
+    it. The arm tools' IK, which reads the chain from these prims, still starts at the arm's base link: an unchanged
+    call solves the six arm joints from wherever the rail has put the base."""
     config, stage, report, _, _ = cell
     rail = report["rail"]
     assert report["articulation_root"] == report["robot_path"] + "/root_joint"       # the path callers already use
     root = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
-    assert root.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI) and not root.GetBody0Rel().GetTargets()
+    assert root.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI)
     assert [str(path) for path in root.GetBody1Rel().GetTargets()] == [rail["rail_link_path"]]
     joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(rail["joint_path"]))
     assert joint and joint.GetPrim().GetName() == rail["joint"] == "rail_joint" and joint.GetAxisAttr().Get() == "X"
@@ -841,16 +841,23 @@ def test_the_rail_is_a_seventh_axis_and_callers_see_exactly_this(cell):
     ik = _sim_tools_ik()
     robot_prim = stage.GetPrimAtPath(report["robot_path"])                 # where the joint tools look: beside the root joint
     joints = [prim for prim in Usd.PrimRange(robot_prim) if prim.IsA(UsdPhysics.Joint)]
-    assert ik.find_base(joints) == rail["rail_link_path"]
+    # The arm tools start the chain at the one body a joint ties to nothing else. That is still the arm's base link:
+    # the root joint names a static frame as its first body, and a disabled marker joint holds the base link alone.
+    assert [str(p) for p in root.GetBody0Rel().GetTargets()] == [rail["rail_anchor_path"]]
+    assert not stage.GetPrimAtPath(rail["rail_anchor_path"]).HasAPI(UsdPhysics.RigidBodyAPI)
+    marker = UsdPhysics.Joint(stage.GetPrimAtPath(rail["arm_base_marker_path"]))
+    assert marker.GetJointEnabledAttr().Get() is False and not marker.GetBody0Rel().GetTargets()
+    assert [str(p) for p in marker.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
+    assert not marker.GetExcludeFromArticulationAttr().Get()               # or the joint tools would not see it
+    assert ik.find_base(joints) == report["arm_base_link"]
     wrist = report["robot_path"] + "/wrist_3_link"
-    whole = ik.build_chain(stage, joints, rail["rail_link_path"], wrist)
-    assert whole.names == ["rail_joint", *ARM_JOINTS] and whole.kinds[0] == "prismatic"
-    assert [whole.lower[0], whole.upper[0]] == pytest.approx([-0.635, 0.635])
-    arm = ik.build_chain(stage, joints, report["arm_base_link"], wrist)
-    assert arm.names == list(ARM_JOINTS)
+    arm = ik.build_chain(stage, joints, ik.find_base(joints), wrist)       # an unchanged call: six joints from the base
+    assert arm.names == list(ARM_JOINTS) and "prismatic" not in arm.kinds
     here = np.array(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(wrist)).ExtractTranslation())
-    assert whole.fk(np.zeros(7))[:3, 3] == pytest.approx(here, abs=1e-5)
-    assert whole.fk(np.array([0.2, 0, 0, 0, 0, 0, 0]))[:3, 3] == pytest.approx(here + [0.2, 0, 0], abs=1e-5)   # +X, metres
+    assert arm.fk(np.zeros(6))[:3, 3] == pytest.approx(here, abs=1e-5)
+    moved = ik.pose_matrix([0.3, 0.0, 0.08], ik.quat_to_matrix(0.0, 0.0, 0.0, 1.0))   # the base 0.3 m along the rail, as physics would report it
+    shifted = ik.build_chain(stage, joints, report["arm_base_link"], wrist, moved)
+    assert shifted.fk(np.zeros(6))[:3, 3] == pytest.approx(here + [0.3, 0, 0], abs=1e-5)
 
 
 @pytest.mark.parametrize("where", ["rail at its -X end", "rail at its +X end"])

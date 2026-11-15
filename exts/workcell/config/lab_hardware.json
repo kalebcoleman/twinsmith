@@ -1432,12 +1432,12 @@
         },
         "DefaultMaterial": {
           "diffuseColor": [
-            0.45,
-            0.45,
-            0.46
+            0.6,
+            0.6,
+            0.61
           ],
-          "metallic": 0.4,
-          "roughness": 0.45
+          "metallic": 0.5,
+          "roughness": 0.35
         },
         "JointGrey": {
           "diffuseColor": [

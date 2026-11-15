@@ -24,9 +24,9 @@ def single_purpose_tool_list(member_listing):
 def test_full_catalog_and_errors(monkeypatch):
     catalog = load_catalog()
     builtins = {"run_python", "status", "reload_tools", "put_file", "get_file", "stat_file", "job_status", "job_cancel"}
-    assert len(catalog) == 8 + len(REGISTRY) + len(builtins)
+    assert len(catalog) == 9 + len(REGISTRY) + len(builtins)
     assert {k for k in catalog if "." not in k} == builtins
-    assert len([k for k in catalog if k.startswith("workcell.")]) == 8
+    assert len([k for k in catalog if k.startswith("workcell.")]) == 9
     server = gw.build_server({"TWINSMITH_TOOLSETS": "all"})
 
     class Offline:
@@ -138,7 +138,7 @@ def test_scene_opt_out_is_per_server_offline_and_after_live_refresh(monkeypatch)
     assert "run_python" not in hidden._tool_manager._tools
     assert "sim__stage__info" in visible._tool_manager._tools
     assert "sim__stage__info" not in hidden._tool_manager._tools
-    assert sum(n.startswith("workcell__") for n in visible._tool_manager._tools) == 12  # 8 members and their 4 groups
+    assert sum(n.startswith("workcell__") for n in visible._tool_manager._tools) == 13  # 9 members and their 4 groups
     assert not any(n.startswith("workcell__") for n in hidden._tool_manager._tools)
     with LiveBridge() as bridge:
         owner = bridge.bridge.register_owner("generic-sim", "sim")

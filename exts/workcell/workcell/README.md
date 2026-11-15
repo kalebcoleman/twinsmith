@@ -7,7 +7,7 @@ does not run the simulator or inspect private assets.
 
 ## Scope
 
-The work cell is one UR5e on a Vention bench with an OnRobot Quick Changer, a standard OnRobot RG2
+The work cell is one UR5e on the carriage of a Vention linear axis (a [seventh axis](#the-rail-the-robots-base-is-a-seventh-axis)) on a Vention bench, with an OnRobot Quick Changer, a standard OnRobot RG2
 with its standard fingertips, and one camera: a D415 on a printed bracket on the gripper. That camera is the
 cell's only sensor for perception and real-to-sim. The lab also owns a Bota Rokubi force/torque sensor; it is not
 mounted on the arm, and the cell builds it only when `bota.mounted` is `true`
@@ -42,13 +42,13 @@ Machine-readable data:
 
 ## Pack-backed Workcell API
 
-The integration exposes four grouped tools with seven actions through `twinsmith.bridge`, in the `sim` toolset (off by
+The integration exposes four grouped tools with eight actions through `twinsmith.bridge`, in the `sim` toolset (off by
 default: add `+sim`):
 
 | Group | Actions | Purpose |
 | --- | --- | --- |
 | `workcell__cell` | `quick_start`, `status`, `shutdown` | Build a stopped pack-backed scene, read its report, or release workcell state without clearing the stage |
-| `workcell__robot` | `status`, `wrench` | Read the robot build report, or the simulated wrist force/torque sensor with the weight it carries: the UR5e's own flange sensor, or the Bota when `bota.mounted` is `true` |
+| `workcell__robot` | `status`, `wrench`, `rail` | Read the robot build report; read the simulated wrist force/torque sensor with the weight it carries (the UR5e's own flange sensor, or the Bota when `bota.mounted` is `true`); read or set the position of the rail under the robot's base, in the real axis's millimetres |
 | `workcell__perception` | `status` | Read camera configuration, not captured sensor data |
 | `workcell__jenga` | `build`, `status` | With the `jenga_tower` task loaded: replace the tower on a stopped timeline or read its build report |
 
@@ -355,8 +355,9 @@ built pose and with the tool down, with and without `task="jenga_tower"` on Newt
 The bench asset is Vention's CAD of the lab's bench (`VentionAssembly_393251_v88`) and already holds what the photo of
 the base shows: a rail along one long side of the table with its belt (`MO_LM_024`), the carriage plate on it
 (`MO_LM_027_0001`, 268 x 268 mm, top face 58 mm above the table top) and the robot plate (`ST_RB_001_0002`,
-180 x 180 x 22 mm, top face 80 mm above the table top, centred within 1 mm of the robot's axis). The robot's base now
-sits on that plate (`robot.placement` z = 0.080 m) and the 5 mm proxy plate is not built (`base_plate.present` is
+180 x 180 x 22 mm, top face 80 mm above the table top, centred within 1 mm of the robot's axis). The robot's base
+sits on that plate (`robot.placement` z = 0.080 m), the carriage and the plate move with it
+([the rail](#the-rail-the-robots-base-is-a-seventh-axis)), and the 5 mm proxy plate is not built (`base_plate.present` is
 `false`; `true` builds it again for a bench without plates). Until 2026-11-14 the base sat 5 mm above the table top,
 inside these parts. The 80 mm is the CAD's, not a lab measurement: measure the underside of the base flange above the
 table top.
@@ -365,7 +366,8 @@ table top.
 
 | Prim group (default build, no task) | On the real cell? |
 |---|---|
-| `/World/Bench` (frame, table top, rail, carriage plate, robot plate) | Yes (photos); Vention's CAD. Colliders are one box per part; the top's colour and friction are placeholders |
+| `/World/Bench` (frame, table top, the rail with its belt and motor, the controller boxes under the table) | Yes; Vention's CAD. The rail, the table top and the frame's top edge are in the photos; the motor, the frame below the table and the controller boxes are not visible in any photo and are kept as the CAD has them. Colliders are one box per part; the top's colour and friction are placeholders |
+| `/World/RobotAssembly/rail` (the carriage's gantry plate and the robot plate) | Yes (photos); Vention's CAD, split out of the bench so it can move |
 | `/World/RobotAssembly/robot` (UR5e) | Yes (photos); vendor mesh |
 | `/World/RobotAssembly/quick_changer` | Yes (photos); OnRobot's CAD. Its connector plug and cable are not modelled |
 | `/World/RobotAssembly/rg2`, with its fingertips | Yes (photos); OnRobot's CAD. The tape on the fingertips is a friction value, not geometry |
@@ -377,6 +379,114 @@ Not on the real cell, and no longer built by default (each stays available behin
 plates (`bota.mounted`), the 5 mm base plate proxy (`base_plate.present`), the overhead camera with its gantry, release
 plate and shelf (`overhead_camera.enabled`, already off). The add-on finger pads are gone altogether: the real gripper
 has none. Task objects (Jenga blocks) appear only with `task=`.
+
+Left out of the bench (`scripts/workcell_rail_assets.py`): **the cable carrier**. Vention's CAD has a drag chain beside
+the rail (27 links, `MO_DC_001`), its bracket on the carriage (`ST_GP_001_0004`) and, below the rail's outer side, the
+tray it lies in with the tray's supports (one 1260 mm extrusion, three 135 mm cross pieces, five end caps, four corner
+plates and three connectors: 18 prims in all). The photos of the real cell show no drag chain, and cable management is
+not modelled. The chain and its bracket are absent in the photos; the tray is below the table's edge, where no photo
+looks, and goes with the chain it serves: say so if the real bench has it. Cables, wires and conduits are not modelled
+anywhere.
+
+Looks follow the photos and change nothing in the physics: grey anodised aluminium and black covers on the RG2, a
+blue Quick Changer ring, the UR's grey tubes, silver housings and light blue caps (`looks.robot_materials`, applied to
+the robot asset's own materials on the stage), a black rail, a dark blue carriage plate and a blue robot plate.
+
+## The rail: the robot's base is a seventh axis
+
+On the real cell the UR5e is bolted to the carriage of a Vention linear axis that runs along the table's long edge, and
+the lab moves it (`RISL_vention_ros`). The cell models it as a driven joint under the robot's base.
+
+![Real base on its rail carriage and the simulated one](../../../docs/media/workcell-base-rail-real-vs-sim.jpg)
+
+![Real cell and simulated cell](../../../docs/media/workcell-overview-real-vs-sim.jpg)
+
+What still differs: cables, conduits and the objects on the table are not modelled; the arm's pose is only roughly the
+photo's; looks are approximate.
+
+### Specification
+
+Status says where a value comes from: **lab code** (the lab's public packages, read at the commits named below),
+**CAD** (Vention's CAD of the lab's bench, the bench asset in the private pack), **Vention** (its public
+documentation), **assumed** or **chosen** (not from any source, and labelled so in the config), **not found**.
+
+| Item | Value | Source and status |
+|---|---|---|
+| Actuator | Vention heavy-duty enclosed timing belt actuator, 1530 mm extrusion (MO-LM-027 family); belt 20 mm HTD8, 208 mm per motor turn | CAD: carriage group `MO_LM_027_0001`, 268 x 268 mm gantry plate, extrusion `ST_EXT_007_0585_1530`, belt `MO_LM_024_XXXX_1720`, 1777 mm overall. Vention: the heavy-duty version has a 270 x 270 mm gantry and is extrusion + 247.5 mm long (<https://docs.vention.com/docs/enclosed-timing-belt-actuator>). Not read off the actuator's label |
+| Motor | Motor and gearbox at the +X end (`MO_SM_012_0001`) | CAD. Type and gear ratio not read |
+| Controller | Vention MachineMotion, TCP port 9999 | Lab code (`vention_socket_control.py`) |
+| Travel | 1270 mm between the home and end sensors; 1285 mm between the hard stops | Vention: extrusion length - 260 mm for the heavy-duty version, including 15 mm for the sensors. CAD agrees within 1 cm (1262 mm before the carriage passes the extrusion's ends). **Not confirmed for the lab's unit**: the sensors can sit in any of four ports |
+| Simulated limits | -0.635 to +0.635 m about the built pose | Chosen: Vention's travel centred on the carriage's position in the CAD (the middle of the extrusion). Inside what the geometry allows. The lab's own soft limits: **not found** |
+| Axis direction in the cell | World +X, along the table's long edge, beside the table top's +Y edge; the motor is at the +X end | CAD and photos |
+| Sign convention of the real axis | Positive toward +X | **Assumed.** Not found in lab code or Vention's documentation |
+| Zero (home) of the real axis | At the -X end of the travel, so the built pose is 635 mm | **Assumed.** Lab code shows only that 0.0 mm is reachable (the test moves to 100.0 and back to 0.0) and that the README's example is 650.0 mm, which is 15 mm from the middle if zero is at an end. Vention: homing runs to the home sensor and sets zero there; where that sensor is on this rail is not known |
+| Default position | Joint zero: the carriage where the CAD has it, the middle of the travel, the robot's axis at the cell's origin | CAD. The real resting position: **not found** |
+| Speed | 0.25 m/s | **Chosen** for the simulation. Not found: lab code sets none; Vention gives performance curves, not a number |
+| Acceleration | 0.5 m/s2 | **Chosen** for the simulation. Not found |
+| Force | 1240 N, the position drive's limit | Vention: maximum peak axial force |
+| Repeatability, backlash | 0.3 mm, 0.25 mm | Vention. Not modelled |
+| Real interface | Topic `/vention/axis1_position_cmd`, `std_msgs/msg/Float64`, an absolute position of axis 1 in **millimetres**; the node sends `SET im_move_abs_1/<mm>/` and polls `isReady` and `isBusy` | Lab code, <https://github.com/MaxlGao/RISL_vention_ros> at `ac9c7da23cf7daeacd5c9ecc37c7d5d699c1e53b` (Apache-2.0). Mirrored in `interfaces.rail_position_command` |
+| How the carriage holds the robot | Rail top 35 mm above the table top; gantry plate 268 x 268 x 23 mm (`MO_LM_025_0004`), top at 58 mm; Vention robot plate 180 x 180 x 22 mm with two locating pins (`ST_RB_001_0002`), top at 80 mm; the robot's base on it, four screws | CAD for the sizes and heights, photo for the stack and the four screws. Bolt pattern not read from the CAD; nothing measured in the lab |
+| Moving mass | 4.6 kg for the carriage and the robot plate | Estimate: CAD volumes as aluminium. Vention gives only the whole actuator's 27.31 kg |
+
+The other four lab packages (`RISL_ur` at `011539ab`, `RISL_onrobot_ros` at `7f86a05a`, `RISL_simulation` at `d659f7d4`,
+`risl_assembly_workspace` at `82b9a510`) do not mention the rail beyond listing the Vention package. Vention's current
+socket document (<https://docs.vention.com/docs/application-programming-interface-low-level-sockets-for-machinemotion>,
+MachineMotion 3.1 and newer) confirms port 9999 and millimetres, mm/s and mm/s2; the older command set the lab's node
+uses was not found in Vention's public documentation.
+
+**To be read from the controller or measured on the real axis:** the travel between its sensors and its soft limits;
+which end is home and which way positive runs; the configured speed and acceleration; where the carriage rests; the
+height of the robot's base above the table top; the moving mass.
+
+### How it is built
+
+- The pack's bench is split (`scripts/workcell_rail_assets.py`): `bench` is the static bench with the rail, and
+  `rail_carriage` is what moves, the carriage group and the robot plate, referenced from the same vendor meshes.
+- One articulation, as before, with one more joint. A geometry-free **rail link** is fixed to the world by the arm's
+  root joint, which keeps its path (`<assembly>/robot/root_joint`); a prismatic **`rail_joint`** carries the carriage;
+  a fixed joint holds the robot's base on the carriage. The rail must be in the arm's articulation for the carriage's
+  motion to act on the arm, and both engines want it this way round: Newton keeps the base fixed when the root joint
+  itself is made prismatic, and refuses a joint written child first.
+- The joint is in **metres, zero at the built pose, positive along world +X**, limits -0.635 to 0.635. Its position
+  drive is per engine (`rail.drive`): 200,000 N/m and 6,000 N s/m on both, with a 5 kg armature on Newton
+  (`dt^2 k / armature` = 0.16 against a limit of 4), limited to 1240 N.
+- The carriage's gantry plate and bearing blocks ride on the rail and have no collision; the robot plate and the screws
+  beside it keep theirs.
+- `rail.moving: false` builds the base fixed at the built pose, with the carriage as scenery.
+
+### What changes for a caller
+
+| | Before | Now |
+|---|---|---|
+| Joint names from the joint tools | six arm joints, then the gripper's | `rail_joint` first, then the same names. **Every index moves up by one**; names do not change |
+| `sim__joints` (state, command, move, teleport) | arm in radians | the same, plus `rail_joint` in metres from the built pose; a target outside -0.635 to 0.635 is refused |
+| `sim__arm(action="ik")` and `fk` without `base_link` | the six arm joints | **a seven-joint chain from the rail link: the answer holds a `rail_joint` target, and it is usually not zero** (0.50 m for a point 0.2 m from the robot in the check below). Pass `base_link=<robot report's arm_base_link>` to solve for the six arm joints at the rail's current position |
+| Articulation root path | `<assembly>/robot/root_joint` | unchanged |
+| A step command to the rail | | PhysX limits the joint's speed to `rail.speed_m_s` (0.26 m/s measured). **Newton applies no joint velocity limit**: a 0.3 m step peaked at 3.3 m/s. Send intermediate targets for a move at the configured speed, as for the arm |
+| Real units | | `workcell__robot(action="rail")` reads the position, and with `position_mm` sets the target, in the real axis's millimetres from home (650.0 is joint 0.015 m with the assumed mapping). It steps nothing |
+
+### Measured (2026-11-14, Isaac Sim 6.2.0, one run each)
+
+The arm held tool down (0, -80, 100, -110, -90, 0 degrees) while the rail was sent along a trapezoid at 0.25 m/s and
+0.5 m/s2, a new target every 20 ms.
+
+| Engine | Move | Reached, error | Arm's worst joint error during the move | Drift over 2 s after | RG2 body, carriage and base link contact pairs | Flange force (9.8492 N expected) |
+|---|---|---|--:|--:|--:|--:|
+| Newton | 0 to +0.635 m (3.0 s) | 0.6349998 m, 0.0002 mm | 0.062 degrees | 0 | 0 | 9.8492 N |
+| Newton | +0.635 to -0.635 m (5.6 s) | -0.6349998 m, 0.0002 mm | 0.054 degrees | 0 | 0 | 9.8492 N |
+| Newton | back to 0 | 0.0000000 m | 0.062 degrees | 0 | 0 | 9.8492 N |
+| PhysX | 0 to +0.635 m | 0.6349946 m, 0.005 mm | 0.008 degrees | 0 | 0 | 9.7989 N, 2 s after stopping |
+| PhysX | +0.635 to -0.635 m | -0.6349723 m, 0.028 mm | 0.008 degrees | 0 | 0 | 9.8535 N |
+| PhysX | back to 0 | 0.0000153 m, 0.015 mm | 0.008 degrees | 0 | 0 | 9.8529 N |
+
+On Newton the carriage lagged its moving target by at most 4.8 mm. At the built pose (every joint at zero, rail at 0):
+0 contact pairs on both engines. Limits: the joint tools refuse a target beyond the limit on both engines, and the work
+cell's tool refuses 1300 mm ("outside the simulated travel [0, 1270] mm"). At the default rail position the static
+wrench check passes on both engines (Newton 9.8492 N in three poses, with and without the tower; PhysX 9.8495, 9.8533
+and 9.8492 N), and the `push_block` grasp passes on Newton with the arm's IK given `base_link` (flange force +0.14716 N
+for a 0.14715 N block, 0.14 mm of slip in the lift and 0.11 mm over 3 s). Host tests repeat the guard distances with
+the carriage at both ends of the travel.
 
 ## Physical fidelity
 
@@ -452,7 +562,8 @@ configuration or a design envelope and are not vendor drawings.
 | RG2 mass and link split | 0.78 kg total, split by pack-v2 hull volume (base 0.639 kg, CoM z 0.064 m) | total `confirmed` (OnRobot datasheet v1.8); split `unconfirmed` |
 | Bracket and D415 mass | 0.100 kg (estimate) and 0.064 kg (datasheet), on the RG2 body | bracket `unconfirmed`: weigh it with its screws |
 | UR5e link inertials | 3.761 / 8.058 / 2.846 / 1.37 / 1.3 / 0.365 kg with UR's CoMs and inertia tensors | `confirmed` (Universal Robots ROS 2 description `physical_parameters.yaml`; UR's DH article) |
-| RG2 maximum opening | 0.110 m in the datasheet; 0.1008 m between the standard fingertips' pads in OnRobot's CAD | `confirmed` |
+| RG2 maximum opening | 0.110 m in the datasheet; 0.1008 m between the standard fingertips' pads in OnRobot's CAD | CAD and datasheet width `confirmed`; **measure the fully open gap between the fingertips** on the real gripper |
+| Rail travel, home end, positive direction, speed, acceleration, resting position | 1.27 m, -X end, +X, 0.25 m/s, 0.5 m/s2, the middle | travel from Vention's documentation; the rest assumed or chosen: read them from the MachineMotion controller ([the rail](#the-rail-the-robots-base-is-a-seventh-axis)) |
 | Fingertip | block 9.9 x 20.5 x 29.9 mm with a 1.5 mm rubber pad (OnRobot's CAD) | `confirmed`; the real fingertips are wrapped in tape |
 | Fingertip friction | 0.7 static, 0.6 dynamic | `unconfirmed` estimate for the tape, no source found: measure with a tilt test |
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
@@ -545,6 +656,13 @@ the bridge; one run each).**
   datasheet's 149 mm overall width. The gap between the pads runs from 0 to 100.8 mm (75.3 mm at joint zero): the
   datasheet's 110 mm is not reachable between the standard fingertips, whose mounting faces are 123.6 mm apart fully
   open. Measured: 100.68 mm open after 1.44 s, 0.38 mm closed after 1.68 s.
+- Why the open limit is where it is: (1) the datasheet's dimensions are 213 x 149 x 36 mm, and 149 mm is the overall
+  width at 26.07 degrees; (2) in OnRobot's CAD the inner link closes onto the outer arm there (their clearance is
+  0.55 mm at 24 degrees and nothing from 27 degrees on), a mechanical stop at the same angle; (3) with these
+  fingertips the pads could never be 110 mm apart: with the arms horizontal, 44 degrees, the gap would be 106.1 mm.
+  The datasheet calls its 0 to 110 mm stroke "adjustable" and does not say between which faces it is measured, so it
+  must refer to another fingertip position or mounting than the CAD's. The limit stays at 100.8 mm; the fully open gap
+  between the real fingertips is on the list of things to measure.
 - The fingertips move on an arc: they are 38.1 mm further along the tool axis closed than fully open (16.8 mm from
   joint zero to closed). Approach with the fingertips a few millimetres wider than the part and their ends clear of
   the table once closed, or the tips press on the bench and the 1 N m drive stalls.

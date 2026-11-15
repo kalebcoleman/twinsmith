@@ -300,9 +300,24 @@ def test_prepare_writes_per_degree_gains_and_both_armatures(monkeypatch):
     package.__path__ = []
     monkeypatch.setitem(sys.modules, "sim_tools", package)
     monkeypatch.setitem(sys.modules, "sim_tools.newton_support", support)
+    rail = UsdPhysics.PrismaticJoint.Define(stage, "/World/RobotAssembly/robot/rail_joint").GetPrim()
+    linear = UsdPhysics.DriveAPI.Apply(rail, "linear")
+    linear.CreateStiffnessAttr(1.0)
+    linear.CreateDampingAttr(1.0)
+    rail_section = {"moving": True, "joint_name": "rail_joint", "axis_in_world": [1, 0, 0], "travel_m": 1.27, "limits_m": [-0.635, 0.635],
+                    "default_position_m": 0.0, "real_zero_at_joint_m": -0.635, "real_positive_direction": 1, "speed_m_s": 0.25,
+                    "acceleration_m_s2": 0.5, "max_force_n": 1240.0, "carriage_mass_kg": 4.6, "rail_mass_kg": 22.7,
+                    "drive": {"physx": {"stiffness_n_per_m": 1e5, "damping_ns_per_m": 3e3},
+                              "newton": {"stiffness_n_per_m": 2e5, "damping_ns_per_m": 6e3, "armature_kg": 5.0}}}
     report = cell.prepare(stage, {"newton": newton_section(stiffness_nm_per_rad=25000, damping_nms_per_rad=300),
-                                  "contact": {"newton_friction": "static"}},
+                                  "contact": {"newton_friction": "static"}, "rail": rail_section},
                           "/World/RobotAssembly", timeline=None)
+    # The rail's Newton gains: a linear drive is per metre, so no per-degree conversion; the arm's report is unchanged.
+    assert rail.GetAttribute("drive:linear:physics:stiffness").Get() == pytest.approx(2e5)
+    assert rail.GetAttribute("drive:linear:physics:damping").Get() == pytest.approx(6e3)
+    assert rail.GetAttribute("newton:armature").Get() == rail.GetAttribute("physxJoint:armature").Get() == pytest.approx(5.0)
+    assert report["rail_drive"]["joint"] == "rail_joint" and report["rail_drive"]["stability"] == {"ratio": 0.16, "limit": 8.8}
+    assert "rail_joint" not in report["drives"] and "rail_joint" not in report["stability"]
     assert wood.GetDynamicFrictionAttr().Get() == pytest.approx(0.3) and report["materials_with_static_mu"] == 1
     joint = stage.GetPrimAtPath("/World/RobotAssembly/robot/joints/elbow_joint")
     assert joint.GetAttribute("drive:angular:physics:stiffness").Get() == pytest.approx(25000 * 3.141592653589793 / 180)
