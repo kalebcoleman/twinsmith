@@ -6,12 +6,14 @@ from pathlib import Path
 
 ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2",
          "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf", "materials")
+# Every role's asset must exist in the pack, mounted or not, so one switch in the config is all a variant needs:
+# the Bota (bota.mounted) and the overhead camera (overhead_camera.enabled) are built only when switched on.
 
 
 # What a Newton build has not shown yet. PhysX is the work cell's qualified engine; see the README's Newton section.
 NEWTON_LIMITATIONS = [
     "Newton: the arm's drives are the config's newton.drives (per engine), not the pack's PhysX gains; tracking differs.",
-    "Newton: the cameras are not qualified on this engine; the Bota force/torque read passes the static gravity check.",
+    "Newton: the cameras are not qualified on this engine; the wrist force/torque read passes the static gravity check.",
 ]
 
 
@@ -206,12 +208,17 @@ def bench_colliders(stage, path="/World/Bench", engine="physx") -> str:
 
 def scene_rows(config, rows):
     """The BOM rows the scene must hold. With the overhead camera off, its mount rows and its D415 unit
-    (the second one) are left out; the BOM itself still lists them."""
+    (the second one) are left out, and so are the Bota while it is not mounted and the separate base plate while it
+    is switched off; the BOM itself still lists them."""
+    from . import stack
     from .cameras import OVERHEAD_ASSET_ROLES, overhead_enabled
 
+    absent = set() if stack.bota_mounted(config) else {config["assets"].get("bota")}  # owned, not on the arm
+    if (config.get("base_plate") or {}).get("present", True) is False:                  # the bench holds the real plates
+        absent.add(config["assets"].get("base_plate"))
     if overhead_enabled(config):
-        return rows
-    absent = {config["assets"][role] for role in OVERHEAD_ASSET_ROLES}
+        return [row for row in rows if row["asset_id"] not in absent]
+    absent |= {config["assets"][role] for role in OVERHEAD_ASSET_ROLES}
     d415 = config["assets"]["d415"]
     return [{**row, "quantity": row["quantity"] - (row["asset_id"] == d415)}
             for row in rows if row["asset_id"] not in absent]
@@ -481,8 +488,9 @@ class Workcell:
         return copy.deepcopy(report)
 
     def read_wrench(self):
-        """The Bota reading now, plus the engine's mass of every body below the sensor (bota and everything its
-        mount chain carries), so a caller can compare the static force with that weight."""
+        """The wrist force/torque reading now, plus the engine's mass of every body the measured joint carries, so a
+        caller can compare the static force with that weight. Without a Bota (the default) this is the UR5e's tool
+        flange sensor; with ``bota.mounted`` it is the Bota's reading, and the flange reading comes with it."""
         if self._runtime is None or self._report.get("state") != "ready":
             raise RuntimeError("Build the workcell before reading its sensor")
         import omni.usd
@@ -496,19 +504,30 @@ class Workcell:
         robot = self._report["robot"]
         engine = selected_engine()
         view = physics.view_for(robot["articulation_root"], articulation=True)
-        reading = sensors.read_bota_wrench(stage, view, robot, config,
-                                           physics_time_s=physics.manager().get_simulation_time(), backend=engine)
-        below = bodies_below(stage, robot["bota_body_path"])
-        names = view.shared_metatype.link_indices
-        masses = sensors._numpy(view.get_masses()).reshape(-1)
-        links = {name: float(masses[names[name]]) for name in below if name in names}
-        total = sum(links.values())
         gravity = 0.0 if self._report.get("robot_gravity_disabled") else abs(self._report.get("gravity_m_s2", -9.81))
-        reading["load_below_sensor"] = {"links_kg": links, "missing": sorted(set(below) - set(links)),
-                                        "mass_kg": total, "gravity_m_s2": gravity, "weight_n": total * gravity,
-                                        "note": "Engine masses. At rest the force magnitude should equal weight_n; "
-                                                "it includes the whole modelled Bota body, which a real Rokubi "
-                                                "measures only partly and tares."}
+
+        def read(source):
+            reading = sensors.read_wrench(stage, view, robot, config, source=source,
+                                          physics_time_s=physics.manager().get_simulation_time(), backend=engine)
+            if reading.get("status") != "measured":
+                return reading
+            below = bodies_below(stage, reading["load_body_path"])
+            names = view.shared_metatype.link_indices
+            masses = sensors._numpy(view.get_masses()).reshape(-1)
+            links = {name: float(masses[names[name]]) for name in below if name in names}
+            total = sum(links.values())
+            reading["load_below_sensor"] = {"links_kg": links, "missing": sorted(set(below) - set(links)),
+                                            "mass_kg": total, "gravity_m_s2": gravity, "weight_n": total * gravity,
+                                            "note": "Engine masses of what the measured joint carries. At rest the "
+                                                    "force magnitude should equal weight_n. Raw reaction: the real "
+                                                    "controller subtracts the payload set on the pendant."}
+            return reading
+
+        flange = read(sensors.FLANGE_SOURCE)
+        if not robot.get("bota"):
+            return flange
+        reading = read(sensors.BOTA_SOURCE)
+        reading["flange"] = flange
         return reading
 
     def shutdown(self):

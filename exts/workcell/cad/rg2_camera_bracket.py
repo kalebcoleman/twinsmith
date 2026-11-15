@@ -13,9 +13,10 @@ the camera turns with the gripper. Two printed pieces:
 
 Four M4 cross bolts (two each side of the body, along the body's thickness) pull the halves together across a split.
 
-CAD frame: origin on the tool axis at the top of the RG2's Quick Changer tool side, +Z along the approach axis toward
-the fingertips, +X the finger-opening axis, +Y out of the front face. The RG2 datasheet's mounting plane is at Z = 16
-(its 132 mm body length ends at Z = 148). The work cell pack's RG2 body frame (``onrobot_rg2_base_link``) is this frame
+CAD frame: origin on the tool axis at the rim of the Quick Changer's robot side (2.5 mm on the robot's side of the
+flange plane), +Z along the approach axis toward the fingertips, +X the finger-opening axis, +Y out of the front
+face. The RG2 datasheet's mounting plane is at Z = 16 (its 132 mm body length ends at Z = 148). The work cell pack's
+RG2 body frame (``onrobot_rg2_base_link``) is this frame
 turned a quarter turn about Z (body +Y = CAD +X, body +X = CAD -Y); ``scripts/workcell_bracket_assets.py`` converts.
 
 Sourced dimensions (vendor documents, fetched 2026-11-14):
@@ -23,6 +24,11 @@ Sourced dimensions (vendor documents, fetched 2026-11-14):
 * RG2 body 54 mm wide and 36 mm thick at the waist, 65 mm wide lower down, 132 mm from the mounting plane to the lower
   end of the body, mounting bracket 75 mm wide: OnRobot RG2 datasheet v1.8, section 1.3,
   https://onrobot.com/storage/datasheets/rg2/datasheet_rg2_v1.8_en.pdf
+* Checked against OnRobot's official RG2 STEP (https://onrobot.com/storage/303_rg2_tool.step, 2026-11-14): the body's
+  section where the collar sits is 54.0 x 36.0 mm, as the datasheet says, from Z = 71 to Z = 104; the mounting
+  bracket's arms end at Z = 70.7; the body widens from Z = 104 and is 65 mm wide from Z = 120. The section is not
+  centred on the tool axis: it leans 1.0 degree toward the back, its centre 0.39 mm behind the axis at Z = 72 and
+  0.83 mm behind it at Z = 98 (``rg2_waist_centre_y``).
 * D415 body 99 x 23 x 20 mm, two M3 mounting points on the back 45 mm apart with a maximum insertion depth of 3 mm:
   Intel RealSense D400 Series Datasheet rev 017 (September 2023), table 3-51 and figure 10-8,
   https://www.realsenseai.com/wp-content/uploads/2023/10/Intel-RealSense-D400-Series-Datasheet-September-2023.pdf
@@ -58,6 +64,8 @@ P = {
     "rg2_waist_width": 54.0,        # RG2 datasheet v1.8, 1.3
     "rg2_body_thickness": 36.0,     # RG2 datasheet v1.8, 1.3
     "rg2_lower_width": 65.0,        # RG2 datasheet v1.8, 1.3
+    "rg2_waist_centre_y": -0.6,     # OnRobot's STEP: the 54 x 36 section's centre at the collar (-0.39 at Z 72, -0.83 at Z 98)
+    "rg2_waist_end_z": 104.0,       # OnRobot's STEP: the body starts to widen here
     "d415_length": 99.0,            # D400 datasheet rev 017, table 3-51
     "d415_height": 23.0,
     "d415_depth": 20.0,
@@ -71,8 +79,8 @@ P = {
     "d415_back": env("BACK_MM", -10.2),         # vendor mesh: back face along the optical axis
     "d415_body_cx": env("BODY_CX_MM", 34.95),   # vendor mesh: body centre along optical x
     # --- clamp: estimated from the photo -------------------------------------------------------------------------
-    "clamp_z0": 72.0,               # collar from here (just below the mounting bracket's arms, which end near Z = 69)
-    "clamp_z1": 98.0,               # ... to here (the body starts to widen near Z = 100)
+    "clamp_z0": 72.0,               # collar from here (the mounting bracket's arms end at Z = 70.7 in OnRobot's STEP)
+    "clamp_z1": 98.0,               # ... to here (the body starts to widen at Z = 104)
     "fit_clearance": 0.3,           # per side, on the 54 x 36 section
     "ear_width": 14.0,              # bolt boss beside the body, along X
     "front_thickness": 10.0,        # bar across the front face, along Y
@@ -102,8 +110,9 @@ P = {
 
 HX = P["rg2_waist_width"] / 2 + P["fit_clearance"]
 HY = P["rg2_body_thickness"] / 2 + P["fit_clearance"]
+YF, YB = P["rg2_waist_centre_y"] + HY, P["rg2_waist_centre_y"] - HY      # the pocket's front and back faces
 X_OUT = HX + P["ear_width"]
-Y_FRONT, Y_BACK = HY + P["front_thickness"], -(HY + P["back_thickness"])
+Y_FRONT, Y_BACK = YF + P["front_thickness"], YB - P["back_thickness"]
 Z0, Z1 = P["clamp_z0"], P["clamp_z1"]
 GAP = P["split_gap"] / 2
 BOLT_X = HX + P["ear_width"] / 2
@@ -175,8 +184,8 @@ def bolts(solid, front):
 
 
 def clamp_front():
-    half = box(-X_OUT, X_OUT, GAP, Y_FRONT, Z0, Z1).cut(box(-HX, HX, GAP - 1, HY, Z0 - 1, Z1 + 1))
-    bar = box(-P["rg2_waist_width"] / 2, P["rg2_waist_width"] / 2, HY, Y_FRONT, Z1, Z1 + P["front_bar_extension"])
+    half = box(-X_OUT, X_OUT, GAP, Y_FRONT, Z0, Z1).cut(box(-HX, HX, GAP - 1, YF, Z0 - 1, Z1 + 1))
+    bar = box(-P["rg2_waist_width"] / 2, P["rg2_waist_width"] / 2, YF, Y_FRONT, Z1, Z1 + P["front_bar_extension"])
     return bolts(half.fuse(bar), front=True).removeSplitter()
 
 
@@ -195,7 +204,7 @@ def truss_solid():
 
 def camera_arm():
     half = box(-X_OUT, X_OUT, Y_BACK, -GAP, Z0, Z1)
-    half = bolts(half.cut(box(-HX, HX, -HY, 1, Z0 - 1, Z1 + 1)), front=False)       # the 54 x 36 waist
+    half = bolts(half.cut(box(-HX, HX, YB, 1, Z0 - 1, Z1 + 1)), front=False)        # the 54 x 36 waist
     low, under, _ = truss_solid()
     plate = optical_box(PLATE_OX[0], PLATE_OX[1], PLATE_OY[0], PLATE_OY[1], PLATE_BACK, P["d415_back"])
     arm = half.fuse(low).fuse(under).fuse(plate)
@@ -208,6 +217,7 @@ def camera_arm():
 def describe(name, shape):
     box_ = shape.BoundBox
     return {"piece": name, "valid": bool(shape.isValid()), "solids": len(shape.Solids), "volume_cm3": round(shape.Volume / 1000, 2),
+            "centre_of_volume_mm": [round(v, 2) for v in shape.Solids[0].CenterOfMass],
             "bounds_min_mm": [round(v, 2) for v in (box_.XMin, box_.YMin, box_.ZMin)],
             "bounds_max_mm": [round(v, 2) for v in (box_.XMax, box_.YMax, box_.ZMax)],
             "size_mm": [round(v, 2) for v in (box_.XLength, box_.YLength, box_.ZLength)]}
@@ -222,10 +232,14 @@ errors = [f"{item['piece']} is not one valid solid" for item in report["pieces"]
 # path of a screwdriver to the two M3 screws behind the plate.
 d415 = optical_box(P["d415_body_cx"] - P["d415_length"] / 2, P["d415_body_cx"] + P["d415_length"] / 2, -P["d415_height"] / 2,
                    P["d415_height"] / 2, P["d415_back"], P["d415_back"] + P["d415_depth"])
-waist = box(-P["rg2_waist_width"] / 2, P["rg2_waist_width"] / 2, -P["rg2_body_thickness"] / 2, P["rg2_body_thickness"] / 2, 60.0, 100.0)
-lower = box(-P["rg2_lower_width"] / 2, P["rg2_lower_width"] / 2, -P["rg2_body_thickness"] / 2, P["rg2_body_thickness"] / 2, 100.0, 148.0)
-# The finger linkage moves in the X-Z plane; in OnRobot's CAD it stays within 16.7 mm of that plane and below Z = 111.
-fingers = box(-80.0, 80.0, -16.7, 16.7, 111.0, 230.0)
+# The body as OnRobot's STEP has it, in boxes: the leaning 54 x 36 section within 0.25 mm at the collar, and the wider
+# lower body (back face at -19.6 mm at its lower end, front face at 17.1 mm at its upper end).
+waist = box(-P["rg2_waist_width"] / 2, P["rg2_waist_width"] / 2, P["rg2_waist_centre_y"] - P["rg2_body_thickness"] / 2 - 0.25,
+            P["rg2_waist_centre_y"] + P["rg2_body_thickness"] / 2 + 0.25, 71.0, P["rg2_waist_end_z"])
+lower = box(-P["rg2_lower_width"] / 2, P["rg2_lower_width"] / 2, -19.6, 17.1, P["rg2_waist_end_z"], 148.3)
+# The finger linkage moves in the X-Z plane; in OnRobot's CAD it stays between 16.7 mm behind that plane and 13.9 mm in
+# front of it, and below Z = 111.
+fingers = box(-80.0, 80.0, -16.7, 14.0, 111.0, 230.0)
 screws = [Part.makeCylinder(4.0, 60.0, Vector(x, 0, PLATE_BACK - 60.0 - 0.01)).transformGeometry(CAMERA) for x in M3_OX]
 checks = {"halves": front.common(arm).Volume, "d415_vs_rg2_body": d415.common(waist).Volume + d415.common(lower).Volume,
           "d415_vs_finger_sweep": d415.common(fingers).Volume,
@@ -268,7 +282,7 @@ SUPPORT_Y = min([vertex.Y for vertex in UNDER.Vertexes] or [0.0])   # a boolean 
 SUPPORT_Z = PLATE_MID.z - (SUPPORT_Y - PLATE_MID.y) * SIN / COS     # the plate's back face above that far end
 report["collision_pieces_mm"] = {
     "collar": corners([-X_OUT, Y_BACK, Z0], [X_OUT, Y_FRONT, Z1]),
-    "front_bar_extension": corners([-P["rg2_waist_width"] / 2, HY, Z1],
+    "front_bar_extension": corners([-P["rg2_waist_width"] / 2, YF, Z1],
                                    [P["rg2_waist_width"] / 2, Y_FRONT, min(Z1 + P["front_bar_extension"], COLLISION_TOP_Z)]),
     "truss": [[point.x, point.y, z] for z in (Z0, Z_CAP) for point in OUTLINE],
     "plate_support": [[x, y, z] for x in (min(SPAN_X), max(SPAN_X))

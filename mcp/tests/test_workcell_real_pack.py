@@ -6,6 +6,7 @@ attachment, and the RG2 mass/joint warnings that only the real pack can show.
 """
 
 import importlib.util
+import json
 import math
 import sys
 from pathlib import Path
@@ -32,9 +33,10 @@ hardware_config, asset_pack, robot, cameras = (
     _load(name) for name in ("hardware_config", "asset_pack", "robot", "cameras"))
 
 
-def _cell(overhead):
+def _cell(overhead, bota=False):
     config, _ = hardware_config.load_config()
     config["overhead_camera"]["enabled"] = overhead
+    config["bota"]["mounted"] = bota                      # the one switch; nothing else is edited
     try:
         pack = asset_pack.resolve_pack(config)
     except asset_pack.PackError as error:
@@ -54,6 +56,17 @@ def _cell(overhead):
 def cell():
     """The shipped cell: wrist camera only."""
     return _cell(False)
+
+
+@pytest.fixture(scope="module")
+def bota_cell():
+    """The cell with the Bota switched on: the sensor and its two adapter plates between the flange and the Quick Changer."""
+    return _cell(False, bota=True)
+
+
+def _above_the_rg2(report):
+    """The bodies between the arm and the RG2, and wrist 3 itself."""
+    return [f"{report['assembly_path']}/{role}" for role in report["stack_order"] if role != "rg2"] + [f"{report['robot_path']}/wrist_3_link"]
 
 
 @pytest.fixture(scope="module")
@@ -96,9 +109,8 @@ def test_wrist_view_shows_the_fingertips_and_not_the_arm_or_its_own_bracket(cell
     config, stage, report, camera_report, _ = cell
     section = config["wrist_camera"]
     root = camera_report["cameras"]["wrist"]["root_path"]
-    arm = _in_wrist_image(stage, report, camera_report, section, [
-        f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"])
-    assert not len(arm), f"{len(arm)} Bota/Quick Changer/wrist vertices fall in the wrist image"
+    arm = _in_wrist_image(stage, report, camera_report, section, _above_the_rg2(report))
+    assert not len(arm), f"{len(arm)} Quick Changer/wrist vertices fall in the wrist image"
     own = _in_wrist_image(stage, report, camera_report, section, [f"{root}/bracket", f"{root}/body"])
     assert not len(own), f"{len(own)} bracket/camera-body vertices fall in the wrist image"
     gripper = _in_wrist_image(stage, report, camera_report, section, [report["gripper_path"]])
@@ -127,16 +139,28 @@ def test_bracket_clamps_the_rg2_waist_and_holds_the_camera_off_its_back_face(cel
     bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket"])
     body = _in_cad_frame(stage, report, config, [f"{root}/body"])
     rg2 = _in_cad_frame(stage, report, config, [frame])
-    waist = rg2[(rg2[:, 2] > 75) & (rg2[:, 2] < 95)]
-    assert np.abs(waist[:, 0]).max() < 27.3 and np.abs(waist[:, 1]).max() < 18.7     # the 54 x 36 mm section (datasheet)
-    # The collar is around that section: it reaches past the body on all four sides and no vertex is inside it.
+    # The real body (OnRobot's CAD) where the collar sits: the datasheet's 54 x 36 mm section, leaning one degree, so
+    # its centre is 0.4 to 0.8 mm behind the tool axis. It must lie inside the collar's pocket (0.3 mm a side nominal).
+    # (The render mesh has few vertices on these flat faces; exts/workcell/cad/README.md has the section as measured.)
+    waist = rg2[(rg2[:, 2] > 72) & (rg2[:, 2] < 98)]
+    pocket_back, pocket_front = -0.6 - 18.3, -0.6 + 18.3
+    assert len(waist) and np.abs(waist[:, 0]).max() < 27.3
+    assert pocket_back < waist[:, 1].min() and waist[:, 1].max() < pocket_front
+    ends = rg2[(rg2[:, 2] > 71) & (rg2[:, 2] < 104) & (np.abs(rg2[:, 0]) < 27.3)]
+    assert pocket_back < ends[:, 1].min() and ends[:, 1].max() < pocket_front
+    assert ends[:, 1].max() + ends[:, 1].min() < -0.5                                # the section sits behind the tool axis
+    # The collar is around that section: it reaches past the body on all four sides and no vertex is inside the pocket.
     collar = bracket[(bracket[:, 2] >= 72 - 1e-6) & (bracket[:, 2] <= 98 + 1e-6)]
-    assert collar[:, 0].min() < -27.3 and collar[:, 0].max() > 27.3 and collar[:, 1].min() < -18.3 and collar[:, 1].max() > 18.3
-    assert not ((np.abs(bracket[:, 0]) < 27.0 - 1e-6) & (np.abs(bracket[:, 1]) < 18.0 - 1e-6)).any()
-    assert not ((np.abs(bracket[:, 0]) < 32.5) & (np.abs(bracket[:, 1]) < 18.0) & (bracket[:, 2] > 100.0)).any()    # the wider lower body
+    assert collar[:, 0].min() < -27.3 and collar[:, 0].max() > 27.3 and collar[:, 1].min() < -18.9 and collar[:, 1].max() > 17.7
+    assert not ((np.abs(bracket[:, 0]) < 27.3 - 1e-6) & (bracket[:, 1] > pocket_back + 1e-6) & (bracket[:, 1] < pocket_front - 1e-6)).any()
+    # Lower down the body is wider (65 mm from Z = 120) and its front face is at 17.1 mm or less: the bar that runs down
+    # the front face stays in front of it, and nothing else of the bracket is level with it.
+    lower = rg2[(rg2[:, 2] > 104) & (rg2[:, 2] < 147) & (np.abs(rg2[:, 0]) < 32.6)]
+    assert lower[:, 1].max() < 17.15 and lower[:, 1].min() > -19.65
+    assert not ((np.abs(bracket[:, 0]) < 32.5) & (bracket[:, 1] > -19.6) & (bracket[:, 1] < 17.1) & (bracket[:, 2] > 104.0)).any()
     assert bracket[:, 2].min() == pytest.approx(72.0, abs=0.01)                    # below the mounting bracket's arms
-    arms = rg2[(np.abs(rg2[:, 0]) > 33.5) & (rg2[:, 2] < 72)]
-    assert arms[:, 2].max() < 72.0
+    arms = rg2[(np.abs(rg2[:, 0]) > 27.5) & (rg2[:, 2] < 80)]
+    assert 70.0 < arms[:, 2].max() < 72.0                                          # the arms end at 70.7 mm in OnRobot's CAD
     # The D415, in its own optical frame (the wrist root carries it): 99 x 23 x 20 mm, back face on the plate.
     optical_body = _vertices_in_frame(stage, root, [f"{root}/body"]) * 1000.0
     optical_bracket = _vertices_in_frame(stage, root, [f"{root}/bracket"]) * 1000.0
@@ -162,7 +186,7 @@ def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
     gripper = stage.GetPrimAtPath(report["gripper_path"])
     cache = UsdGeom.XformCache()
     to_rg2 = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(frame)).GetInverse()
-    moving, slab, lowest = [], 0.0, 1e9
+    moving, slab, lowest, front, back = [], 0.0, 1e9, -1e9, 1e9
     for prim in Usd.PrimRange(gripper):
         if prim.IsA(UsdPhysics.RevoluteJoint):
             joint = UsdPhysics.RevoluteJoint(prim)
@@ -178,11 +202,15 @@ def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
     for path in sorted(set(moving) - {frame}):
         points = _in_cad_frame(stage, report, config, [path])
         slab, lowest = max(slab, np.abs(points[:, 1]).max()), min(lowest, points[:, 2].min())
+        front, back = max(front, points[:, 1].max()), min(back, points[:, 1].min())
     assert slab <= 16.7 and lowest >= 111.0
+    assert front == pytest.approx(13.9, abs=0.1) and back == pytest.approx(-16.6, abs=0.1)     # not centred on the tool axis
     root = camera_report["cameras"]["wrist"]["root_path"]
     bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket", f"{root}/body"])
     near = bracket[bracket[:, 2] >= lowest - 4.0]            # the only part of the bracket level with the linkage
-    assert len(near) and np.abs(near[:, 1]).min() >= slab + 1.5
+    ahead, behind = near[near[:, 1] > 0], near[near[:, 1] < 0]
+    assert len(ahead) and len(behind)
+    assert ahead[:, 1].min() >= front + 1.5 and behind[:, 1].max() <= back - 1.5
     wrist = stage.GetPrimAtPath(root)       # everything under tool0 stays visual only, the D415 body included
     assert not any(item.HasAPI(UsdPhysics.CollisionAPI) or item.HasAPI(UsdPhysics.RigidBodyAPI) for item in Usd.PrimRange(wrist))
 
@@ -276,15 +304,16 @@ NEWTON_CONTACT_GAP_M = 0.004        # sim_tools.newton_support.collision_setting
 
 
 def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
-    """Five convex hulls on the RG2 body: no mass, no filtered pair, and never within two contact gaps of anything
-    that is another body: the finger linkage and its pads over the whole stroke, the Quick Changer, the Bota, wrist 3."""
+    """Five convex hulls on the RG2 body: no filtered pair, and never within two contact gaps of anything that is
+    another body: the finger linkage and its fingertips over the whole stroke, the Quick Changer, wrist 3."""
     config, stage, report, camera_report, _ = cell
     body_path = _rg2_frame(stage, report, config)
     body = stage.GetPrimAtPath(body_path)
     (collider,) = camera_report["colliders"]
     (authored,) = camera_report["authoring"]["colliders"]
     assert collider["body_path"] == authored["body_path"] == body_path and authored["status"] == "attached"
-    assert collider["filtered_pairs"] == [] and collider["mass"] == "none added" and "_path" not in collider
+    assert collider["filtered_pairs"] == [] and "_path" not in collider
+    assert collider["mass"] == "on the RG2 body, from wrist_camera.bracket_mass_kg"
     assert camera_report["cameras"]["wrist"]["physics"]["bracket_collider"]["prim_path"] == collider["prim_path"]
     root = stage.GetPrimAtPath(collider["prim_path"])
     assert root.GetParent() == body and body.HasAPI(UsdPhysics.RigidBodyAPI)
@@ -297,9 +326,10 @@ def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
     for prim in shapes.values():
         assert prim.IsA(UsdGeom.Mesh) and len(UsdGeom.Mesh(prim).GetPointsAttr().Get()) in (6, 8)
         assert UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() == "convexHull"
-    # No mass is added: the RG2 body keeps the explicit mass the config gives it.
+    # The shapes add no mass by themselves: the body has its own explicit mass plus the bracket's and the camera's.
     assert UsdPhysics.MassAPI(body).GetMassAttr().Get() == pytest.approx(
-        config["inertials"]["rg2_links"]["onrobot_rg2_base_link"]["mass_kg"])
+        config["inertials"]["rg2_links"]["onrobot_rg2_base_link"]["mass_kg"] + config["wrist_camera"]["bracket_mass_kg"]
+        + config["wrist_camera"]["mass_kg"])
 
     cache = UsdGeom.XformCache()
     to_body = cache.GetLocalToWorldTransform(body).GetInverse()
@@ -341,13 +371,13 @@ def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
 
     # The bodies fixed to the RG2: nothing of the bracket is anywhere near them.
     fixed = {}
-    for path in (f"{report['assembly_path']}/quick_changer", report["bota_body_path"], f"{report['robot_path']}/wrist_3_link"):
+    for path in _above_the_rg2(report):
         for prim in Usd.PrimRange(stage.GetPrimAtPath(path)):
             if prim.HasAPI(UsdPhysics.RigidBodyAPI):
                 matrix = cache.GetLocalToWorldTransform(prim) * to_body
                 for chunk in _collision_points(stage, prim, matrix):
                     fixed[path] = min([fixed.get(path, 1.0)] + [_gilbert(chunk, piece) for piece in pieces.values()])
-    assert len(fixed) == 3 and min(fixed.values()) > 0.05, fixed
+    assert len(fixed) == 2 and min(fixed.values()) > 0.05, fixed          # the Quick Changer and wrist 3
 
 
 ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
@@ -407,9 +437,9 @@ def _static_collision_points(stage, root, meshes=False):
 
 
 def bracket_clearances(cell):
-    """{pose: {shape: {"bench" | "base plate" | "robot": (metres, nearest collider)}}} for the five bracket collision
-    shapes and the D415 body box, against every collider of the bench, the base plate and every robot body except the
-    RG2 body the bracket belongs to."""
+    """{pose: {shape: {"bench" | "robot": (metres, nearest collider)}}} for the five bracket collision shapes and the
+    D415 body box, against every collider of the bench (which holds the plates the robot stands on) and every robot
+    body except the RG2 body the bracket belongs to."""
     config, stage, report, camera_report, pack = cell
     cache = UsdGeom.XformCache()
     assembly = stage.GetPrimAtPath(report["assembly_path"])
@@ -432,12 +462,12 @@ def bracket_clearances(cell):
         xy, scale = config["world"]["workstation_xy_m"], config["world"]["bench_scale"]
         bench.AddTranslateOp().Set(Gf.Vec3d(xy[0], xy[1], -config["world"]["bench_asset_top_z_m"]))
         bench.AddScaleOp().Set(Gf.Vec3f(scale, scale, scale))
-    static = {"bench": _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench")),
-              "base plate": _static_collision_points(stage, stage.GetPrimAtPath(report["base_plate_path"]), meshes=True)}
-    assert len(static["bench"]) > 20 and static["base plate"]
+    assert report["base_plate_path"] is None                                             # no proxy plate: the bench has the real ones
+    static = {"bench": _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench"))}
+    assert len(static["bench"]) > 20
     links = {prim.GetPath(): _collision_points(stage, prim) for prim in Usd.PrimRange(assembly)
              if prim.HasAPI(UsdPhysics.RigidBodyAPI) and prim != body}
-    assert sum(1 for chunks in links.values() if chunks) >= 12                          # the arm, the stack and the fingers
+    assert sum(1 for chunks in links.values() if chunks) >= 11                          # the arm, the stack and the fingers
 
     result = {}
     for pose, degrees in POSES_DEG.items():
@@ -446,7 +476,7 @@ def bracket_clearances(cell):
             for path, matrix in world.items():                                           # the walk reproduces the built stage
                 assert np.allclose(np.array(matrix), np.array(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(path))), atol=1e-5), path
         placed = {name: (np.c_[points, np.ones(len(points))] @ np.array(world[body.GetPath()]))[:, :3] for name, points in shapes.items()}
-        others = {"bench": static["bench"], "base plate": static["base plate"],
+        others = {"bench": static["bench"],
                   "robot": {f"{path.name}#{index}": (np.c_[chunk, np.ones(len(chunk))] @ np.array(world[path]))[:, :3]
                             for path, chunks in links.items() for index, chunk in enumerate(chunks)}}
         result[pose] = {}
@@ -466,12 +496,14 @@ def bracket_clearances(cell):
     return result
 
 
-def test_bracket_and_camera_clear_the_bench_the_base_and_the_arm_at_the_built_pose_and_tool_down(cell):
-    """The cell is built with every joint at zero: the arm lies stretched out, the tool axis 66 mm above the bench.
-    Nothing of the bracket or the camera may be within two of Newton's 4 mm contact gaps of the bench, the base plate
-    or any other body of the robot there, or with the tool pointing down. (With the RG2 mounted half a turn round, the
-    camera plate was inside the bench at the built pose and threw the arm.)"""
-    clearances = bracket_clearances(cell)
+@pytest.mark.parametrize("which", ["cell", "bota_cell"])
+def test_bracket_and_camera_clear_the_bench_the_base_and_the_arm_at_the_built_pose_and_tool_down(which, request):
+    """The cell is built with every joint at zero: the arm lies stretched out, the tool axis 141 mm above the table top.
+    Nothing of the bracket or the camera may be within two of Newton's 4 mm contact gaps of the bench (with the plates
+    the robot stands on) or any other body of the robot there, or with the tool pointing down, with the shipped stack and with the longer
+    one that has the Bota in it. (With the RG2 mounted half a turn round, the camera plate was inside the bench at
+    the built pose and threw the arm.)"""
+    clearances = bracket_clearances(request.getfixturevalue(which))
     assert set(clearances) == set(POSES_DEG)
     for pose, shapes in clearances.items():
         assert set(shapes) == BRACKET_SHAPES | {"d415_body (no collider)"}
@@ -607,3 +639,141 @@ def test_rg2_has_no_geometry_free_body_and_all_joint_frames_agree(cell):
         assert (frames[0].ExtractTranslation() - frames[1].ExtractTranslation()).GetLength() < 1e-3, prim.GetPath()
         relative = frames[0].ExtractRotationQuat() * frames[1].ExtractRotationQuat().GetInverse()
         assert 2 * math.degrees(math.acos(min(1.0, abs(relative.GetReal())))) < 0.5, prim.GetPath()
+
+
+def _manifest(pack, path):
+    return next(record for record in pack.manifest["files"] if record["path"] == path)
+
+
+def test_the_default_cell_has_no_bota_and_one_switch_builds_it(cell, bota_cell):
+    """The arm as it is: flange, Quick Changer, RG2. bota.mounted alone adds the sensor and both plates and moves the
+    RG2, the bracket and the camera 48 mm down the tool axis."""
+    config, stage, report, camera_report, _ = cell
+    assert report["stack_order"] == ["quick_changer", "rg2"] and report["bota"] is None and report["proxies"] == []
+    assert [str(prim.GetPath()) for prim in stage.Traverse() if prim.GetName().lower().startswith("bota")] == []
+    on_config, on_stage, on_report, on_cameras, _ = bota_cell
+    assert on_report["stack_order"] == ["bota_robot_plate", "bota", "bota_tool_plate", "quick_changer", "rg2"]
+    sensor = on_stage.GetPrimAtPath(on_report["bota"]["body_path"])
+    assert sensor.HasAPI(UsdPhysics.RigidBodyAPI) and UsdPhysics.MassAPI(sensor).GetMassAttr().Get() == pytest.approx(0.113)
+    assert len(on_report["proxies"]) == 2 and all("placeholder disc" in proxy["shape"] for proxy in on_report["proxies"])
+    assert sum("adapter plate" in line for line in on_report["tool"]["unmeasured"]) == 2
+
+    def in_flange(a_stage, a_report, path):
+        cache = UsdGeom.XformCache()
+        flange = cache.GetLocalToWorldTransform(a_stage.GetPrimAtPath(a_report["flange_path"]))
+        return np.array((cache.GetLocalToWorldTransform(a_stage.GetPrimAtPath(path)) * flange.GetInverse()).ExtractTranslation())
+
+    added = np.array([0.048, 0.0, 0.0])                                  # plate 8 mm + sensor 32 mm + plate 8 mm, along flange +X
+    for path_off, path_on in ((_rg2_frame(stage, report, config), _rg2_frame(on_stage, on_report, on_config)),
+                              (camera_report["cameras"]["wrist"]["prim_path"], on_cameras["cameras"]["wrist"]["prim_path"])):
+        assert in_flange(on_stage, on_report, path_on) == pytest.approx(in_flange(stage, report, path_off) + added, abs=1e-6)
+    # The RG2 body frame's origin is the rim of the Quick Changer's robot side: 2.5 mm on the robot's side of the flange.
+    assert in_flange(stage, report, _rg2_frame(stage, report, config)) == pytest.approx([-0.0025, 0, 0], abs=1e-6)
+    assert report["tool"]["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161], abs=1e-4)
+    assert on_report["tool"]["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2641], abs=1e-4)
+
+
+def test_quick_changer_and_bota_are_the_vendors_cad_and_meet_the_rg2(cell, bota_cell):
+    """Both parts come from the vendors' official STEP files (private pack, source and SHA-256 recorded, not
+    redistributable). The Quick Changer's robot side is 13.6 mm high, as OnRobot's datasheet says, and ends where
+    OnRobot's RG2 STEP puts it on the gripper."""
+    config, stage, report, _, pack = cell
+    for path, url, digest in (("quick_changer/quick_changer.usdc", "https://onrobot.com/storage/quick-changer-robot-side_v2_with_cable_holder.step",
+                               "ac3cb44b90b27b172423400def5150a9af8b6e9338baf358f413118cbf5f38db"),
+                              ("bota/bota.usdc", "https://shop.botasys.com/shop/rokubi-medusa-gen-0-series-kit-1877/document/180",
+                               "90cb4bd0551a8090428c7fa470b3c3bcb1cf3c7e60e8363cc976efd8a82c7063"),
+                              ("rg2/rg2.usdc", "https://onrobot.com/storage/303_rg2_tool.step",
+                               "b3c41f38efafd9eab44c53f61d618e437f2fd0248cbc774c7384e838290ad184")):
+        record = _manifest(pack, path)
+        assert url in record["source"] and digest in record["source"] and record["redistributable"] is False
+        assert "redistribution terms not known" in record["license"]
+    folder = Path(pack.asset(config["assets"]["rg2"])).parents[1]
+    assert not list(folder.rglob("*.step")) or {path.parent.name for path in folder.rglob("*.step")} == {"wrist_mount"}   # no vendor STEP in the pack
+    changer = json.loads((folder / "quick_changer/quick_changer.json").read_text())
+    assert changer["body_along_tool_axis_mm"] == pytest.approx([0.0, 13.6], abs=0.06) and changer["body_diameter_mm"] == pytest.approx(71.0, abs=0.3)
+    assert "113292" in changer["left_out"] and "102697" in changer["parts"]
+    sensor = json.loads((folder / "bota/bota.json").read_text())
+    assert sensor["body_height_mm"] == pytest.approx(32.0, abs=0.06) and sensor["body_diameter_mm"] == pytest.approx(48.0, abs=0.1)
+    gripper = json.loads((folder / "rg2/rg2.json").read_text())
+    assert gripper["flange_plane_z_mm"] == pytest.approx(2.5, abs=0.01) and gripper["robot_side_height_mm"] == pytest.approx(13.6, abs=0.01)
+    assert gripper["robot_side_tool_end_z_mm"] == pytest.approx(config["asset_layout"]["rg2"]["mount_pose"]["position_m"][2] * 1000.0, abs=0.01)
+    assert config["quick_changer"]["standoff_m"] * 1000.0 == pytest.approx(gripper["robot_side_height_mm"], abs=0.01)
+    # On the built stage the Quick Changer's collider runs from the flange plane to the RG2's inlet, 71 mm across.
+    cache = UsdGeom.XformCache()
+    flange = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["flange_path"]))
+    body = stage.GetPrimAtPath(report["flange_load_body_path"])
+    (hull,) = _collision_points(stage, body, cache.GetLocalToWorldTransform(body) * flange.GetInverse())
+    assert [hull[:, 0].min(), hull[:, 0].max()] == pytest.approx([0.0, 0.0136], abs=6e-5)
+    assert np.hypot(hull[:, 1], hull[:, 2]).max() == pytest.approx(0.0355, abs=1e-3)
+    # The RG2 link no longer holds the robot side: nothing of it reaches the flange plane's side of the Quick Changer's rim.
+    _, on_stage, on_report, _, _ = bota_cell
+    assert on_stage.GetPrimAtPath(on_report["bota"]["body_path"] + "/visuals").IsA(UsdGeom.Mesh)
+
+
+def test_the_weight_below_the_flange_is_the_configured_payload(cell, bota_cell):
+    """What hangs from the flange in the simulation weighs what the payload table says, in both states: the bracket and
+    the D415 are masses on the RG2 body, not weightless shapes. So the simulated flange reading at rest is the payload's
+    weight, and with the Bota mounted its reading is everything below its tool-side face."""
+    for config, stage, report, _, _ in (cell, bota_cell):
+        payload = report["tool"]["payload"]
+        below = set()
+        frontier = [report["flange_load_body_path"]]
+        joints = [UsdPhysics.Joint(prim) for prim in stage.Traverse() if prim.IsA(UsdPhysics.Joint) and prim.IsActive()]
+        while frontier:
+            parent = frontier.pop()
+            below.add(parent)
+            for joint in joints:
+                if [str(path) for path in joint.GetBody0Rel().GetTargets()] == [parent]:
+                    frontier += [str(path) for path in joint.GetBody1Rel().GetTargets() if str(path) not in below]
+        masses = {path: UsdPhysics.MassAPI(stage.GetPrimAtPath(path)).GetMassAttr().Get() for path in below}
+        assert all(mass and mass > 0 for mass in masses.values()), masses
+        assert sum(masses.values()) == pytest.approx(payload["mass_kg"], abs=2e-6)
+        assert payload["mass_kg"] == pytest.approx(1.251 if report["bota"] else 1.004, abs=1e-6)
+        carried = {item["item"]: item["mass_kg"] for item in report["carried_on_rg2"]}
+        assert carried == {"wrist camera bracket and its screws": 0.1, "Intel RealSense D415": 0.064}
+        if report["bota"]:
+            before = [report["assembly_path"] + "/bota_robot_plate", report["bota"]["body_path"]]
+            assert sum(masses[path] for path in before) == pytest.approx(0.067 + 0.113)
+            assert sum(masses.values()) - sum(masses[path] for path in before) == pytest.approx(1.004 + 0.067, abs=2e-6)   # below the Bota
+
+
+def test_carried_centres_of_gravity_follow_the_bracket_model(cell):
+    """The configured centre of the D415's body and of the bracket are the bracket model's, turned to the RG2 body
+    frame: they change when the camera pose does, and this says so."""
+    config, _, _, _, pack = cell
+    report = json.loads((Path(pack.asset(config["assets"]["wrist_mount"])).parent / "bracket.json").read_text())
+    x, y, z = report["camera"]["body_centre_mm"]
+    assert config["wrist_camera"]["cog_in_rg2_m"] == pytest.approx([-y / 1000.0, x / 1000.0, z / 1000.0], abs=5e-4)
+    volume = sum(piece["volume_cm3"] for piece in report["pieces"])
+    centre = sum(piece["volume_cm3"] * np.array(piece["centre_of_volume_mm"]) for piece in report["pieces"]) / volume
+    print_only = np.array([-centre[1], centre[0], centre[2]]) / 1000.0
+    assert np.linalg.norm(np.array(config["wrist_camera"]["bracket_cog_in_rg2_m"]) - print_only) < 0.006      # the bolts pull it toward the body
+    assert volume == pytest.approx(112.6, abs=1.0)
+
+
+def test_the_robot_stands_on_the_bench_assets_own_mounting_plates(cell):
+    """The bench asset is Vention's CAD of the lab's bench and already holds what the photo of the base shows: a rail,
+    its carriage plate and the robot plate. The robot's base sits on that plate's top face, 80 mm above the table top,
+    and no proxy plate is built."""
+    config, stage, report, _, pack = cell
+    bracket_clearances(cell)                                             # places the bench as the scene does
+    assert config["base_plate"]["present"] is False and report["base_plate_path"] is None
+    assert not stage.GetPrimAtPath(report["assembly_path"] + "/base_plate")
+    cache = UsdGeom.XformCache()
+    base = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["robot_path"] + "/base_link")).ExtractTranslation()
+    assert list(base) == pytest.approx([0.0, 0.0, 0.08], abs=1e-6)
+    boxes = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "guide", "proxy"])
+    found = {}
+    for prim in Usd.PrimRange(stage.GetPrimAtPath("/World/Bench")):
+        for part in ("ST_RB_001_0002", "MO_LM_027_0001"):
+            if part in prim.GetName() and part not in found:
+                box = boxes.ComputeWorldBound(prim).ComputeAlignedRange()
+                found[part] = (np.array(box.GetMin()), np.array(box.GetMax()))
+    assert set(found) == {"ST_RB_001_0002", "MO_LM_027_0001"}            # the robot plate and the carriage plate under it
+    low, high = found["ST_RB_001_0002"]
+    plates = [chunk for chunk in _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench")).values()
+              if np.ptp(chunk[:, 0]) == pytest.approx(0.18, abs=2e-3) and np.ptp(chunk[:, 1]) == pytest.approx(0.18, abs=2e-3)]
+    (plate,) = plates                                                    # the robot plate's collision box, 180 mm square
+    assert plate[:, 2].max() == pytest.approx(0.08, abs=5e-4) and plate[:, 2].min() == pytest.approx(0.058, abs=5e-4)
+    assert np.abs(plate[:, :2].mean(0)).max() < 0.002                    # centred under the robot's axis
+    assert found["MO_LM_027_0001"][1][2] == pytest.approx(0.058, abs=1.5e-3) and high[2] >= 0.08 - 5e-4

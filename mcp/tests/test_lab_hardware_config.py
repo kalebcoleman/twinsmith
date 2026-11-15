@@ -40,17 +40,75 @@ def test_default_cell_has_provenance_and_no_task_objects():
     for key in ("offset_in_rg2_m", "rotation_in_rg2_deg"):          # read from a photo: never to be taken as measured
         assert raw["wrist_camera"][key]["source"].startswith("Unconfirmed, estimated from photo")
     assert raw["pack"]["version"]["value"] == "v3"
-    assert raw["stack"]["order"]["value"] == ["bota", "quick_changer", "rg2"]   # the Bota question is open, not decided
+    assert "order" not in raw["stack"] and raw["bota"]["mounted"]["value"] is False   # one switch; the arm has no Bota
 
 
-@pytest.mark.parametrize("order", [["bota", "rg2", "quick_changer"], ["bota", "bota", "rg2"]])
-def test_invalid_stack_rejected_before_scene_changes(tmp_path, order):
+def _edited(tmp_path, mutate):
     _, raw = hardware.load_config()
-    raw["stack"]["order"]["value"] = order
-    path = tmp_path / "bad.json"
+    mutate(raw)
+    path = tmp_path / "edited.json"
     path.write_text(json.dumps(raw))
-    with pytest.raises(ValueError, match="stack.order"):
-        hardware.load_config(path)
+    return path
+
+
+@pytest.mark.parametrize("fault", ["leftover_order", "switch_not_a_boolean", "mounted_without_a_plate", "bad_standoff"])
+def test_invalid_stack_rejected_before_scene_changes(tmp_path, fault):
+    def mutate(raw):
+        if fault == "leftover_order":
+            raw["stack"]["order"] = {"value": ["bota", "quick_changer", "rg2"], "status": "unconfirmed", "source": "old file"}
+        elif fault == "switch_not_a_boolean":
+            raw["bota"]["mounted"]["value"] = 1
+        elif fault == "mounted_without_a_plate":
+            raw["bota"]["mounted"]["value"] = True
+            del raw["bota"]["robot_side_plate"]
+        else:
+            raw["quick_changer"]["standoff_m"]["value"] = 0
+    with pytest.raises(ValueError, match="stack.order|bota.mounted|robot_side_plate|standoff_m"):
+        hardware.load_config(_edited(tmp_path, mutate))
+
+
+def test_the_stack_is_the_real_arm_by_default_and_one_switch_mounts_the_bota(tmp_path):
+    """Default: flange, Quick Changer, RG2, and the wrist force/torque reading is the UR5e's own flange sensor. With
+    bota.mounted true and nothing else edited, the order, lengths, tool offset, payload and camera pose all follow."""
+    off, raw = hardware.load_config()
+    stack = hardware.stack
+    assert stack.order(off) == ["quick_changer", "rg2"]
+    assert stack.lengths(off) == {"quick_changer": 0.0136, "rg2": 0.0}
+    tool = stack.tool(off)
+    assert tool["flange_to_rg2_inlet_m"] == pytest.approx(0.0136)
+    assert tool["rg2_body_in_tool0"]["translation_m"] == pytest.approx([0, 0, -0.0025])
+    assert tool["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161])
+    payload = tool["payload"]
+    assert [item["mass_kg"] for item in payload["items"]] == [0.06, 0.78, 0.1, 0.064]
+    assert payload["mass_kg"] == pytest.approx(1.004)
+    assert payload["cog_in_tool0_m"] == pytest.approx([0.0056, 0.0056, 0.0771], abs=5e-5)
+    assert payload["not_included"] == ["cables"]
+    assert not any("adapter plate" in line for line in tool["unmeasured"])
+    assert off["flange_ft_sensor"]["frame_id"] == "tool0" and off["flange_ft_sensor"]["measurement"] == "incoming_joint_wrench"
+    assert off["flange_ft_sensor"]["wrench_topic"] == "/force_torque_sensor_broadcaster/wrench"
+    assert [off["flange_ft_sensor"][key] for key in ("force_range_n", "force_accuracy_n", "torque_range_nm", "torque_accuracy_nm")] == [50.0, 4.0, 10.0, 0.3]
+
+    on, _ = hardware.load_config(_edited(tmp_path, lambda raw: raw["bota"]["mounted"].update(value=True)))
+    assert stack.order(on) == ["bota_robot_plate", "bota", "bota_tool_plate", "quick_changer", "rg2"]
+    added = 0.008 + 0.032 + 0.008                                  # plate, sensor, plate
+    mounted = stack.tool(on)
+    assert mounted["flange_to_rg2_inlet_m"] == pytest.approx(0.0136 + added)
+    assert mounted["rg2_body_in_tool0"]["translation_m"] == pytest.approx([0, 0, -0.0025 + added])
+    assert mounted["rg2_body_in_tool0"]["quaternion_wxyz"] == pytest.approx(tool["rg2_body_in_tool0"]["quaternion_wxyz"])
+    assert mounted["tcp_in_tool0_m"] == pytest.approx([0, 0, 0.2161 + added])
+    assert mounted["payload"]["mass_kg"] == pytest.approx(1.004 + 0.067 + 0.113 + 0.067)
+    assert mounted["payload"]["cog_in_tool0_m"] == pytest.approx([0.0045, 0.0045, 0.1051], abs=5e-5)
+    assert sum("adapter plate" in line for line in mounted["unmeasured"]) == 2     # the build says what is not measured
+    for record in ("robot_side_plate", "tool_side_plate"):
+        assert raw["bota"][record]["status"] == "unconfirmed" and raw["bota"][record]["source"].startswith("PLACEHOLDER, measure it")
+
+
+def test_the_quick_changer_height_is_onrobots():
+    values, raw = hardware.load_config()
+    assert values["quick_changer"]["standoff_m"] == 0.0136 and values["quick_changer"]["mass_kg"] == 0.06
+    assert "datasheet" in raw["quick_changer"]["standoff_m"]["source"] and "onrobot.com/storage/quick-changer-robot-side" in raw["quick_changer"]["standoff_m"]["source"]
+    # OnRobot's RG2 STEP places the robot side on the gripper: the flange plane is 2.5 mm into the RG2 body frame.
+    assert values["asset_layout"]["rg2"]["mount_pose"]["position_m"] == [0, 0, 0.0161]
 
 
 def test_camera_intrinsics_match_configured_fov():

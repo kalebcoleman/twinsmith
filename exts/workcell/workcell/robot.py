@@ -10,11 +10,18 @@ An optional mount_pose {position_m, orientation_wxyz}, relative to mount_frame,
 defines a virtual inlet frame without changing the asset. Each inlet is aligned
 with the flange frame; downstream offsets use stack.axis_in_flange (default +X).
 
-finger_pads.mounts contains two {parent, position_m, orientation_wxyz} records in
-the standard RG2's finger-body frames. Legacy Husarion pad offsets are not used.
+The stack follows one switch, bota.mounted (see stack.py). Off: flange, Quick
+Changer, RG2, and no Bota prim is built. On: an adapter plate, the Bota and a
+second adapter plate come first; the plates are labelled placeholder discs made
+here from bota.robot_side_plate and bota.tool_side_plate, not pack assets. What
+the RG2 body carries without a body of its own (the printed camera bracket and
+the D415) is added to that body's mass properties.
+
 base_plate is static pack geometry (no body/mount_frame layout required), placed
 by base_plate.placement {position_m, orientation_wxyz} relative to the assembly.
 This pose is required: plate thickness and robot base elevation are not inferred.
+With base_plate.present false no plate is built: the robot stands on the plates
+the bench asset already holds, at robot.placement.
 No simulator lifecycle, ROS publishers, markers or asset-cache lookup lives here.
 """
 
@@ -23,6 +30,14 @@ from pathlib import Path
 
 import numpy as np
 from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
+
+try:  # package import inside Kit
+    from . import stack as tool_stack
+except ImportError:  # loaded by file path in host tests
+    import importlib.util as _importlib_util
+    _spec = _importlib_util.spec_from_file_location("workcell_stack", Path(__file__).with_name("stack.py"))
+    tool_stack = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(tool_stack)
 
 
 MODELS = {"robot": "ur5e", "bota": "bota_rokubi",
@@ -208,6 +223,14 @@ def _source(assets, config, role):
     return path, layout, asset_id
 
 
+def base_plate_present(config):
+    """Whether the separate base plate is built. Off when the bench asset already holds the real mounting plates."""
+    value = (config.get("base_plate") or {}).get("present", True)
+    if type(value) is not bool:
+        raise ValueError("base_plate.present must be true or false")
+    return value
+
+
 def build_robot(stage, assets, config):
     """Assemble referenced parts transactionally; raise ValueError for bad layouts.
 
@@ -217,18 +240,12 @@ def build_robot(stage, assets, config):
     stopped-timeline enforcement, initialization, tensor view creation and sampling.
     """
     _units(stage)
-    order = config["stack"]["order"]
-    if sorted(order) != ["bota", "quick_changer", "rg2"] or order[-1] != "rg2":
-        raise ValueError("stack.order requires bota, quick_changer, rg2 once; rg2 last")
+    order = tool_stack.order(config)
     if not math.isclose(config["rg2"]["max_opening_m"], 0.110, abs_tol=1e-9):
         raise ValueError("Standard RG2 max_opening_m must be 0.110")
-    axis = np.array(_vector(config["stack"].get("axis_in_flange", [1, 0, 0]), 3,
-                            "stack.axis_in_flange"))
-    if not np.isclose(np.linalg.norm(axis), 1):
-        raise ValueError("stack.axis_in_flange must be a unit vector")
-    lengths = {"bota": _positive(config["bota"]["length_m"], "bota.length_m"),
-               "quick_changer": _positive(config["quick_changer"]["standoff_m"],
-                                          "quick_changer.standoff_m"), "rg2": 0}
+    axis, lengths = tool_stack.axis(config), tool_stack.lengths(config)
+    tool_stack.masses(config)                                            # refuses a bad or missing mass before any edit
+    record = tool_stack.tool(config)
     root = Sdf.Path(config["robot"].get("assembly_path", "/World/RobotAssembly"))
     if not root.IsAbsolutePath() or not root.IsPrimPath() or stage.GetPrimAtPath(root):
         raise ValueError("robot.assembly_path must be a new absolute prim path")
@@ -236,7 +253,9 @@ def build_robot(stage, assets, config):
         raise ValueError("Assembly parent must already exist")
     pads = config.get("finger_pads", {}).get("present", False)
     sources = {role: _source(assets, config, role)
-               for role in ["robot", "base_plate", *order, *(["finger_pad"] if pads else [])]}
+               for role in ["robot", *(["base_plate"] if base_plate_present(config) else []),
+                            *(role for role in order if role not in tool_stack.PLATES),
+                            *(["finger_pad"] if pads else [])]}
     layer = Sdf.Layer.CreateAnonymous("workcell-robot.usda")
     session = stage.GetSessionLayer()
     session.subLayerPaths.insert(0, layer.identifier)
@@ -244,6 +263,7 @@ def build_robot(stage, assets, config):
         with Usd.EditContext(stage, layer):
             report = _assemble(stage, root, sources, config, order, axis, lengths, pads)
         report["layer_id"] = layer.identifier
+        report["tool"] = record
         return report
     except Exception:
         session.subLayerPaths.remove(layer.identifier)
@@ -262,7 +282,8 @@ def _assemble(stage, root, sources, config, order, axis, lengths, pads):
                    "Closed-chain RG2 dynamics and separate-articulation mounting require PhysX validation.",
                    "Initial joint angles are not applied; command named joints after physics initialization.",
                    "Width calibration, pad geometry and mount poses need independent physical verification.",
-                   "Bota reaction includes its modeled body inertia; internal sensing deformation is not modeled.",
+                   "The force/torque read is a joint reaction of the rigid-body model: no sensor noise, drift, "
+                   "accuracy limit or internal deformation is modelled.",
                    "Config dimensions, masses and sensor origins retain their source uncertainty."]
 
     def reference(role, path):
@@ -282,19 +303,32 @@ def _assemble(stage, root, sources, config, order, axis, lengths, pads):
             limitations.append(f"{role}: {fidelity} geometry; not a faithful CAD/dynamics claim.")
         return prim
 
-    plate = reference("base_plate", root.AppendChild("base_plate"))
-    for prim in Usd.PrimRange(plate):
-        if (prim.HasAPI(UsdPhysics.RigidBodyAPI)
-                or prim.HasAPI(UsdPhysics.ArticulationRootAPI) or prim.IsA(UsdPhysics.Joint)):
-            raise ValueError("base_plate must be static geometry without bodies, joints or articulations")
-        if UsdGeom.Xformable(prim):
-            if UsdGeom.Xformable(prim).GetResetXformStack():
-                raise ValueError("base_plate transforms cannot reset the asset transform stack")
-    plate_pose = config["base_plate"]["placement"]
-    _set_world(plate, _pose(plate_pose["position_m"], plate_pose["orientation_wxyz"]) * _world(assembly))
-    limitations.append("Base plate is static pack geometry; verify its explicit pose and robot elevation independently.")
+    plate = None
+    if base_plate_present(config):
+        plate = reference("base_plate", root.AppendChild("base_plate"))
+        for prim in Usd.PrimRange(plate):
+            if (prim.HasAPI(UsdPhysics.RigidBodyAPI)
+                    or prim.HasAPI(UsdPhysics.ArticulationRootAPI) or prim.IsA(UsdPhysics.Joint)):
+                raise ValueError("base_plate must be static geometry without bodies, joints or articulations")
+            if UsdGeom.Xformable(prim):
+                if UsdGeom.Xformable(prim).GetResetXformStack():
+                    raise ValueError("base_plate transforms cannot reset the asset transform stack")
+        plate_pose = config["base_plate"]["placement"]
+        _set_world(plate, _pose(plate_pose["position_m"], plate_pose["orientation_wxyz"]) * _world(assembly))
+        limitations.append("Base plate is static pack geometry; verify its explicit pose and robot elevation independently.")
+    else:
+        limitations.append("No separate base plate is built (base_plate.present is false): the robot stands on the "
+                           "mounting plates of the bench asset, at robot.placement; that height is the bench CAD's, "
+                           "not a lab measurement.")
 
+    proxies = []
     for role in ["robot", *order]:
+        if role in tool_stack.PLATES:
+            roots[role] = bodies[role] = mounts[role] = _plate(stage, root.AppendChild(role), tool_stack.plate(config, role))
+            proxies.append({"prim_path": str(roots[role].GetPath()), "what": "adapter plate beside the Bota sensor",
+                            "shape": "placeholder disc from bota." + tool_stack.PLATES[role] + "; not measured"})
+            limitations.append(f"{role}: placeholder disc; measure the real adapter plate (thickness, diameter, mass).")
+            continue
         roots[role] = reference(role, root.AppendChild(role))
         if role == "robot":
             dropped_joints += _deactivate_dangling_joints(stage, roots[role])
@@ -363,12 +397,12 @@ def _assemble(stage, root, sources, config, order, axis, lengths, pads):
         _set_world(tool0, _pose([0, 0, 0], [.5, .5, .5, .5]) * _world(flange))
         limitations.append("tool0 synthesized using UR flange +X / tool0 +Z convention; verify pack frames.")
 
-    offset, previous, bota_joint = 0.0, bodies["robot"], None
+    offset, previous, mount_joints, masses = 0.0, bodies["robot"], {}, tool_stack.masses(config)
     UsdGeom.Xform.Define(stage, root.AppendChild("joints"))
     gripper_articulation = None
     for role in order:
         frame = _pose((axis * offset).tolist()) * _world(flange)
-        layout = sources[role][1]
+        layout = sources[role][1] if role in sources else {}
         relative = _mount_world(mounts[role], layout) * _world(roots[role]).GetInverse()
         _set_world(roots[role], relative.GetInverse() * frame)
         separate = role == "rg2" and bool(layout.get("articulation_root"))
@@ -380,10 +414,9 @@ def _assemble(stage, root, sources, config, order, axis, lengths, pads):
             raise ValueError(f"{role} articulation roots do not match the declared layout")
         joint = _fixed(stage, root.AppendPath(f"joints/{role}_mount"), previous,
                        bodies[role], frame, separate)
-        if role == "bota":
-            bota_joint = joint
+        mount_joints[role] = joint
         if role in ("bota", "quick_changer"):
-            mass = _positive(config[role]["mass_kg"], f"{role}.mass_kg")
+            mass = masses[role]
             api = UsdPhysics.MassAPI.Apply(bodies[role])
             before, inertia = api.GetMassAttr().Get(), api.GetDiagonalInertiaAttr().Get()
             if before and inertia and any(inertia):   # keep the shape of an authored inertia, at the new mass
@@ -392,32 +425,70 @@ def _assemble(stage, root, sources, config, order, axis, lengths, pads):
         previous = bodies[role]
         offset += lengths[role]
 
-    sensor = UsdGeom.Xform.Define(stage, bodies["bota"].GetPath().AppendChild("bota_sensor")).GetPrim()
-    origin = float(config["bota"]["sensor_origin_along_axis_m"])
-    if not math.isfinite(origin) or not 0 <= origin <= lengths["bota"]:
-        raise ValueError("Bota sensor origin must lie within configured adapter length")
-    sensor_pose = _pose((axis * origin).tolist(), config["bota"].get("sensor_orientation_wxyz", [1, 0, 0, 0]))
-    _set_world(sensor, sensor_pose * _mount_world(mounts["bota"], sources["bota"][1]))
+    bota = None
+    if "bota" in order:
+        sensor = UsdGeom.Xform.Define(stage, bodies["bota"].GetPath().AppendChild("bota_sensor")).GetPrim()
+        origin = float(config["bota"]["sensor_origin_along_axis_m"])
+        if not math.isfinite(origin) or not 0 <= origin <= lengths["bota"]:
+            raise ValueError("Bota sensor origin must lie within configured adapter length")
+        sensor_pose = _pose((axis * origin).tolist(), config["bota"].get("sensor_orientation_wxyz", [1, 0, 0, 0]))
+        _set_world(sensor, sensor_pose * _mount_world(mounts["bota"], sources["bota"][1]))
+        after = order[order.index("bota") + 1]                           # what the sensor's tool-side face holds
+        bota = {"body_path": str(bodies["bota"].GetPath()), "sensor_path": str(sensor.GetPath()),
+                "joint_path": str(mount_joints[after].GetPath()), "load_body_path": str(bodies[after].GetPath())}
     pad_paths = _pads(stage, root, roots["rg2"], config, reference) if pads else []
-    inertials = _inertials(stage, root, config["inertials"]) if "inertials" in config else {}
+    section, carried = config.get("inertials"), []
+    rg2_body = bodies["rg2"].GetName()
+    group = next((name for name, links in (section or {}).items() if rg2_body in links), None)
+    if tool_stack.carried_on_rg2(config):
+        if group is None:
+            raise ValueError("inertials must hold the RG2 body to add what it carries (the camera bracket and the D415)")
+        combined, carried = tool_stack.rg2_body_with_carried(config, section[group][rg2_body])
+        section = {**section, group: {**section[group], rg2_body: combined}}
+    inertials = _inertials(stage, root, section) if section else {}
     if inertials:
         limitations.append("Explicit mass properties from the config's inertials replace the pack's on "
                            + ", ".join(sorted(inertials)) + ".")
-    if not pads:
-        limitations.append("Black finger pads are not installed: finger_pads.present is false.")
+    if carried:
+        limitations.append("The RG2 body's mass properties include " + " and ".join(item["item"] for item in carried)
+                           + " as point masses at their centres of gravity; their own inertia is left out.")
     if sources["rg2"][1].get("fidelity", "unverified") != "verified":
         limitations.append("Genuine standard RG2 asset remains unavailable/unverified; max opening is a command bound only.")
     return {"robot_path": str(roots["robot"].GetPath()), "articulation_root": str(arm.GetPath()),
-            "base_plate_path": str(plate.GetPath()),
+            "base_plate_path": str(plate.GetPath()) if plate else None,
             "flange_path": str(flange.GetPath()), "tool0_path": str(tool0.GetPath()),
             "gripper_path": str(roots["rg2"].GetPath()),
             "gripper_articulation_root": str(gripper_articulation.GetPath()) if gripper_articulation else None,
-            "bota_joint_path": str(bota_joint.GetPath()), "bota_body_path": str(bodies["bota"].GetPath()),
-            "bota_sensor_path": str(sensor.GetPath()), "pad_paths": pad_paths,
+            "flange_joint_path": str(mount_joints[order[0]].GetPath()), "flange_load_body_path": str(bodies[order[0]].GetPath()),
+            "bota": bota, "proxies": proxies, "carried_on_rg2": carried, "pad_paths": pad_paths,
             "parts": parts, "limitations": limitations, "max_opening_m": 0.110,
             "stack_order": list(order), "assembly_path": str(root),
             "frame_bodies_neutralized": frame_bodies, "joints_deactivated": dropped_joints,
             "velocity_iterations_clamped": clamped, "inertials_kg": inertials}
+
+
+def _plate(stage, path, record):
+    """A placeholder adapter plate: one rigid disc along +X from its robot-side face, with a solid disc's inertia."""
+    thickness, radius, mass = record["thickness_m"], record["diameter_m"] / 2.0, record["mass_kg"]
+    body = UsdGeom.Xform.Define(stage, path).GetPrim()
+    UsdPhysics.RigidBodyAPI.Apply(body)
+    api = UsdPhysics.MassAPI.Apply(body)
+    api.CreateMassAttr().Set(mass)
+    api.CreateCenterOfMassAttr().Set(Gf.Vec3f(thickness / 2.0, 0, 0))
+    across = mass * (3 * radius * radius + thickness * thickness) / 12.0
+    api.CreateDiagonalInertiaAttr().Set(Gf.Vec3f(mass * radius * radius / 2.0, across, across))
+    api.CreatePrincipalAxesAttr().Set(Gf.Quatf(1, 0, 0, 0))
+    disc = UsdGeom.Cylinder.Define(stage, path.AppendChild("disc"))
+    disc.CreateAxisAttr("X")
+    disc.CreateHeightAttr(thickness)
+    disc.CreateRadiusAttr(radius)
+    disc.CreateExtentAttr([Gf.Vec3f(-thickness / 2.0, -radius, -radius), Gf.Vec3f(thickness / 2.0, radius, radius)])
+    disc.AddTranslateOp().Set(Gf.Vec3d(thickness / 2.0, 0, 0))
+    disc.CreateDisplayColorAttr([Gf.Vec3f(0.62, 0.63, 0.65)])
+    UsdPhysics.CollisionAPI.Apply(disc.GetPrim())
+    body.SetCustomDataByKey("workcell:fidelity", "placeholder")
+    body.SetCustomDataByKey("workcell:proxy", "adapter plate: a disc from the config, not a measured part")
+    return body
 
 
 INERTIAL_KEYS = {"mass_kg", "com_m", "diagonal_inertia_kgm2", "principal_axes_wxyz"}

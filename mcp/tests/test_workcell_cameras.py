@@ -130,12 +130,16 @@ def same_rotation(first, second):
 
 
 def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_path):
-    """The pose is configured in the RG2 body frame; with the shipped stack that frame is tool0 moved 47.92 mm along
-    the tool axis (Bota 32 mm + Quick Changer 15.92 mm) and turned +90 degrees about it: the RG2's front face (body -X)
-    is on tool0 -Y, the side of wrist 3's tool connector, as on the real arm."""
+    """The pose is configured in the RG2 body frame. With the shipped stack (no Bota) the RG2's inlet is one Quick
+    Changer height (13.6 mm) from the flange and the body frame's origin, the rim of the Quick Changer's robot side, is
+    2.5 mm on the robot's side of the flange plane; the frame is turned +90 degrees about the tool axis: the RG2's
+    front face (body -X) is on tool0 -Y, the side of wrist 3's tool connector, as on the real arm."""
     rg2_t, rg2_q, length = cameras.rg2_in_tool0(config)
-    assert length == pytest.approx(config["bota"]["length_m"] + config["quick_changer"]["standoff_m"])
-    assert rg2_t == pytest.approx([0, 0, length])
+    assert config["bota"]["mounted"] is False
+    assert length == pytest.approx(config["quick_changer"]["standoff_m"]) == pytest.approx(0.0136)
+    origin = length - config["asset_layout"]["rg2"]["mount_pose"]["position_m"][2]
+    assert origin == pytest.approx(-0.0025)
+    assert rg2_t == pytest.approx([0, 0, origin])
     half = math.sqrt(0.5)
     assert same_rotation(rg2_q, [half, 0, 0, half])
     assert cameras._rotate_vector(rg2_q, [0, 0, 1]) == pytest.approx([0, 0, 1])      # approach axis = tool0 +Z
@@ -146,7 +150,7 @@ def test_wrist_pose_in_the_rg2_frame_and_optical_to_usd_conversion(config, tmp_p
     config["wrist_camera"]["rotation_in_rg2_deg"] = [0.0, 0.0, 0.0]
     config["wrist_camera"]["offset_in_rg2_m"] = [0.01, -0.02, 0.03]
     wrist = build(config, tmp_path)["cameras"]["wrist"]
-    offset = [0.02, 0.01, 0.03 + length]
+    offset = [0.02, 0.01, 0.03 + origin]
     assert wrist["optical"]["translation_m"] == pytest.approx(offset)
     assert same_rotation(wrist["optical"]["quaternion_wxyz"], rg2_q)
     assert wrist["mount"]["offset_in_tool0_m"] == pytest.approx(offset)
@@ -182,7 +186,7 @@ def test_wrist_camera_tilt_is_carried_through_the_pose_math(config, tmp_path):
     assert cameras._rotate_vector(optical, [0, 0, 1]) == pytest.approx([0, -sine, cosine])
     assert cameras._rotate_vector(optical, [1, 0, 0]) == pytest.approx([1, 0, 0])
     assert cameras._rotate_vector(optical, [0, 1, 0]) == pytest.approx([0, cosine, sine])
-    assert wrist["optical"]["translation_m"] == pytest.approx([0.03, 0.07, 0.12 + length])
+    assert wrist["optical"]["translation_m"] == pytest.approx([0.03, 0.07, 0.12 + rg2_t[2]])
     bracket = next(part for part in report["parts"] if part["role"] == "wrist_mount")["local"]
     # The bracket asset is in the RG2 body frame: seen from the camera it is the inverse of the camera's pose there.
     in_rg2 = cameras._euler_xyz_deg_to_quat([30.0, 0.0, -90.0])
@@ -194,14 +198,18 @@ def test_wrist_camera_tilt_is_carried_through_the_pose_math(config, tmp_path):
 
 
 def test_wrist_camera_follows_the_rg2_when_the_stack_changes(config, tmp_path):
-    """The bracket is on the gripper: a longer stack moves the camera in tool0 and leaves it where it was on the RG2."""
+    """The bracket is on the gripper: mounting the Bota (one switch) moves the camera in tool0 by the sensor and its
+    two adapter plates, and leaves it where it was on the RG2."""
     before = build(config, tmp_path)
     longer = copy.deepcopy(config)
-    longer["bota"]["length_m"] += 0.02
-    longer["stack"]["order"] = ["quick_changer", "bota", "rg2"]
+    longer["bota"]["mounted"] = True
     after = build(longer, tmp_path)
     old, new = (report["cameras"]["wrist"]["optical"]["translation_m"] for report in (before, after))
-    assert new == pytest.approx([old[0], old[1], old[2] + 0.02])
+    added = (config["bota"]["robot_side_plate"]["thickness_m"] + config["bota"]["length_m"]
+             + config["bota"]["tool_side_plate"]["thickness_m"])
+    assert added == pytest.approx(0.048)
+    assert new == pytest.approx([old[0], old[1], old[2] + added])
+    assert after["cameras"]["wrist"]["mount"]["stack_length_m"] == pytest.approx(before["cameras"]["wrist"]["mount"]["stack_length_m"] + added)
 
     def bracket(report):
         return next(part for part in report["parts"] if part["role"] == "wrist_mount")["local"]
@@ -395,7 +403,7 @@ def test_shipped_config_has_the_wrist_camera_only_on_the_rg2_bracket():
     assert along > 0 and -wrist["color_fov_deg"][1] / 2 < math.degrees(math.atan2(down, along)) < 0     # in the upper half of the image
     report = cameras.plan_cameras(values, ROBOT)
     in_tool0 = report["cameras"]["wrist"]["optical"]["translation_m"]
-    assert in_tool0[2] == pytest.approx(z + values["bota"]["length_m"] + values["quick_changer"]["standoff_m"])
+    assert in_tool0[2] == pytest.approx(z + cameras.rg2_in_tool0(values)[0][2]) == pytest.approx(z - 0.0025)
     assert wrist["resolution"] == [1280, 720] and wrist["color_fov_deg"] == [69.4, 42.5]
     # The near plane clears the camera's own body proxy, or the camera renders the inside of its box.
     assert wrist["body_size_m"][2] / 2 < wrist["clipping_range_m"][0] <= 0.03
@@ -624,13 +632,13 @@ def test_bracket_collider_is_planned_on_the_rg2_body(config, tmp_path):
     (collider,) = report["colliders"]
     assert collider["body_path"] == RG2_BODY and collider["prim_path"] == RG2_BODY + "/wrist_mount_collision"
     assert collider["source_prim"] == cameras.COLLISION_SCOPE == "Collision"
-    assert collider["filtered_pairs"] == [] and collider["mass"] == "none added"
+    assert collider["filtered_pairs"] == [] and collider["mass"] == "on the RG2 body, from wrist_camera.bracket_mass_kg"
     assert collider["asset_id"] == "wrist_mount" and "_path" not in collider
     wrist = report["cameras"]["wrist"]
     assert wrist["physics"]["attachment"] == ROBOT["tool0_path"]            # the camera prims themselves stay on tool0
     assert wrist["physics"]["bracket_collider"] == collider
     assert "bracket_collider" not in report["cameras"]["overhead"]["physics"]
-    assert any("belongs to the RG2 body and adds no mass" in item for item in report["limitations"])
+    assert any("belongs to the RG2 body; the bracket's mass is on that body from the config" in item for item in report["limitations"])
 
     elsewhere = copy.deepcopy(config)           # modelled in a frame that is not the rigid body: not attached, and said
     elsewhere["asset_layout"]["rg2"]["mount_frame"] = "some_other_frame"

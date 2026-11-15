@@ -26,9 +26,8 @@ Xform prim at the local origin, no joints):
 The wrist camera's pose is configured in that RG2 body frame
 (``wrist_camera.offset_in_rg2_m`` and ``rotation_in_rg2_deg``), because the
 bracket is fixed to the gripper. Its pose in tool0 is derived from the
-configured stack (``stack.order``, ``bota.length_m``,
-``quick_changer.standoff_m``, ``asset_layout.rg2.mount_pose``), so it follows
-the RG2 when the stack changes.
+configured stack (``stack.py``: ``bota.mounted``, the parts' lengths,
+``asset_layout.rg2.mount_pose``), so it follows the RG2 when the stack changes.
 * ``overhead_mount``: open three-member frame with a unit envelope, centred at
   the origin, axes equal to the world. Member proportions are provisional.
   It is scaled to the gantry envelope: extrusion thickness x post span x height,
@@ -51,6 +50,13 @@ try:  # package import inside Kit
     from .hardware_config import camera_intrinsics
 except ImportError:  # loaded by file path in host tests
     from hardware_config import camera_intrinsics
+try:  # package import inside Kit
+    from . import stack as tool_stack
+except ImportError:  # loaded by file path in host tests
+    import importlib.util as _importlib_util
+    _spec = _importlib_util.spec_from_file_location("workcell_stack", Path(__file__).with_name("stack.py"))
+    tool_stack = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(tool_stack)
 
 
 SCHEMA = 1
@@ -305,33 +311,9 @@ def read_frame(sensor, annotator="rgb"):
 # --------------------------------------------------------------------------- plan
 
 def rg2_in_tool0(config):
-    """The RG2 body frame in tool0 as ``(translation_m, quaternion_wxyz, stack_length_m)``, from the configured stack.
-
-    ``robot.build_robot`` puts every stack part's inlet on the flange frame, moved along ``stack.axis_in_flange`` by
-    the lengths of the parts before it; ``asset_layout.rg2.mount_pose`` is that inlet in the RG2 body frame. tool0
-    is the flange frame turned by UR's fixed convention (tool0 +Z = flange +X).
-    """
-    stack = config.get("stack") or {}
-    order = list(stack.get("order") or [])
-    if "rg2" not in order:
-        raise ValueError("stack.order must contain rg2 to place the wrist camera")
-    lengths = {"bota": (config.get("bota") or {}).get("length_m"),
-               "quick_changer": (config.get("quick_changer") or {}).get("standoff_m")}
-    length = 0.0
-    for role in order[:order.index("rg2")]:
-        value = lengths.get(role)
-        if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
-            raise ValueError(f"the length of {role} is missing; the RG2 cannot be placed in tool0")
-        length += float(value)
-    axis = _vector(stack.get("axis_in_flange", [1.0, 0.0, 0.0]), 3, "stack.axis_in_flange")
-    pose = (((config.get("asset_layout") or {}).get("rg2") or {}).get("mount_pose")) or {}
-    inlet_t = _vector(pose.get("position_m", [0.0, 0.0, 0.0]), 3, "asset_layout.rg2.mount_pose.position_m")
-    inlet_q = _normalized_quat(pose.get("orientation_wxyz", [1.0, 0.0, 0.0, 0.0]), "asset_layout.rg2.mount_pose.orientation_wxyz")
-    body_q = _quat_conjugate(inlet_q)                                    # the RG2 body in its inlet (= flange) frame
-    body_t = [-value for value in _rotate_vector(body_q, inlet_t)]
-    flange_q = _quat_conjugate(TOOL0_IN_FLANGE)                          # the flange frame in tool0
-    in_flange = [axis[index] * length + body_t[index] for index in range(3)]
-    return _rotate_vector(flange_q, in_flange), _quat_mul(flange_q, body_q), length
+    """The RG2 body frame in tool0 as ``(translation_m, quaternion_wxyz, stack_length_m)``, from the stack the
+    configuration describes (``stack.rg2_in_tool0``): it follows ``bota.mounted``."""
+    return tool_stack.rg2_in_tool0(config)
 
 
 def _plan_wrist(config, robot, assets, assets_cfg, limitations):
@@ -416,8 +398,9 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "estimate from one photo of the real bracket, not a measurement.")
     limitations.append(
         "The wrist camera's tool0 pose is derived from the configured stack and UR's flange-to-tool0 convention; "
-        "the camera and bracket prims hang from tool0 (wrist_3_link) and carry no mass, so their weight is not in "
-        "the Bota reading.")
+        "the camera and bracket prims hang from tool0 (wrist_3_link) and carry no mass themselves: their masses "
+        "are added to the RG2 body (the robot report's carried_on_rg2), so their weight is in the force/torque "
+        "reading.")
     collider = _plan_bracket_collider(config, robot, bracket, limitations)
     if collider:
         camera["physics"]["bracket_collider"] = {key: value for key, value in collider.items() if not key.startswith("_")}
@@ -433,8 +416,9 @@ def _plan_bracket_collider(config, robot, bracket, limitations):
     """Where the wrist bracket's collision approximation goes: under the RG2 body, which the bracket clamps.
 
     Shapes of one rigid body never collide with each other, so the collar cannot press on the gripper body it wraps,
-    and a push on the bracket reaches the arm through the Bota joint, as on the real stack. No mass is added: the RG2
-    body's mass, centre of mass and inertia are authored explicitly (``inertials``).
+    and a push on the bracket reaches the arm through the stack's joints, as on the real arm. The collider adds no
+    mass by itself: the RG2 body's mass, centre of mass and inertia are authored explicitly (``inertials``), with the
+    bracket's and the camera's masses added by ``robot.build_robot``.
     """
     if not bracket:
         return None
@@ -446,11 +430,13 @@ def _plan_bracket_collider(config, robot, bracket, limitations):
         return None
     body_path = robot["gripper_path"] if body == "." else f"{robot['gripper_path']}/{body}"
     limitations.append(
-        "The wrist bracket's collider (a few convex hulls from the pack) belongs to the RG2 body and adds no mass; "
+        "The wrist bracket's collider (a few convex hulls from the pack) belongs to the RG2 body; the bracket's mass "
+        "is on that body from the config, not from these shapes; "
         "it stops short of the printed part near the finger linkage, and the D415 body has no collider.")
     return {"name": "wrist_mount_collision", "prim_path": f"{body_path}/wrist_mount_collision", "body_path": body_path,
             "role": "wrist_mount", "asset_id": bracket["asset_id"], "bom_id": bracket["bom_id"],
-            "source_prim": COLLISION_SCOPE, "frame": "RG2 body frame, identity transform", "mass": "none added",
+            "source_prim": COLLISION_SCOPE, "frame": "RG2 body frame, identity transform",
+            "mass": "on the RG2 body, from wrist_camera.bracket_mass_kg",
             "filtered_pairs": [], "_path": bracket["_path"]}
 
 

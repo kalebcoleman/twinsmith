@@ -1,4 +1,7 @@
-"""Gravity check for the work cell: at rest, the simulated Bota F/T sensor must read the weight of what it carries.
+"""Gravity check for the work cell: at rest, the simulated wrist force/torque sensor must read the weight it carries.
+
+Without a Bota (the default) that is the UR5e's tool flange sensor: everything below the flange. With ``bota.mounted``
+true in the config, both readings are checked: the Bota's (everything below the sensor) and the flange's.
 
 Builds the work cell, puts the arm in two poses (tool axis down, tool axis horizontal) by a state reset
 (teleport) with matching drive targets, so it never sweeps through the bench on the way, and after it settles compares the force magnitude in the sensor frame with the engine's mass of every body below the sensor times g.
@@ -20,8 +23,9 @@ POSES = {   # degrees
     "tool_down": (0, -80, 100, -110, -90, 0),        # the config's presentation pose
     "tool_horizontal": (0, -80, 100, -10, -90, 0),   # wrist_1 turned so the tool axis lies flat
 }
-# With the tool axis (the Bota's +x) pointing down, the parent holds the load up: the force lies along -x.
-EXPECTED_AXIS = {"tool_down": (0, -1.0)}
+# With the tool axis pointing down, the robot side holds the load up: the force lies against the tool axis, which is
+# tool0's +z for the flange sensor and the Bota frame's +x for the Bota.
+EXPECTED_AXIS = {"tool_down": {"ur5e_tool_flange_sensor": (2, -1.0), "bota_rokubi": (0, -1.0)}}
 
 
 def check(reading, tolerance_fraction, tolerance_n, axis=None):
@@ -78,8 +82,12 @@ def main():
             bridge.call("sim.joints.command", {**ids, "path": root, "targets": targets})
             for _ in range(-(-args.settle_steps // 120)):
                 bridge.call("sim.simulation.step", {**ids, "steps": 120}, timeout=300)
-            result = check(bridge.call("workcell.robot_wrench", {}), args.tolerance, args.tolerance_n,
-                           EXPECTED_AXIS.get(name))
+            reading = bridge.call("workcell.robot_wrench", {})
+            flange = reading.pop("flange", None)                 # present when a Bota is mounted: check both
+            result = check(reading, args.tolerance, args.tolerance_n, EXPECTED_AXIS.get(name, {}).get(reading.get("source")))
+            if flange is not None:
+                result["flange"] = check(flange, args.tolerance, args.tolerance_n, EXPECTED_AXIS.get(name, {}).get(flange.get("source")))
+                result["pass"] = result["pass"] and result["flange"]["pass"]
             state = bridge.call("sim.joints.state", {**ids, "path": root})
             reached = dict(zip(state.get("names", ARM), state.get("positions", [])))
             result["max_joint_error_deg"] = max(abs(math.degrees(reached.get(joint, float("nan"))) - value)
@@ -88,7 +96,7 @@ def main():
         bridge.call("sim.timeline", {**ids, "action": "stop"})
     passed = all(result["pass"] for result in results.values())
     print(json.dumps({"backend": backend, "poses": results, "pass": passed}, indent=2, default=str))
-    print(f"{'PASS' if passed else 'FAIL'} ({backend}): static Bota force equals the weight it carries in "
+    print(f"{'PASS' if passed else 'FAIL'} ({backend}): static wrist force equals the weight it carries in "
           f"{sum(r['pass'] for r in results.values())}/{len(results)} poses.")
     return 0 if passed else 1
 

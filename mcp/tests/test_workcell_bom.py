@@ -271,7 +271,7 @@ def test_installed_private_pack_matches_bom_and_hashes():
     report = bom.verify_manifest(PRIVATE_PACK / "pack.yaml", rows=bom.load_bom(),
                                  root=PRIVATE_PACK, expected_id="ur5e-workcell",
                                  expected_version="v3")
-    assert report["hashes_verified"] and report["files"] == 21
+    assert report["hashes_verified"] and report["files"] == 23
     assert "materials" in report["asset_ids"] and not {"jenga_block", "finger_pad"} & set(report["asset_ids"])
     task = bom.verify_manifest(TASK_PACK / "pack.yaml", rows=bom.load_bom(TASKS / "jenga_tower.bom.csv"),
                                root=TASK_PACK, expected_id="jenga", expected_version="v1")

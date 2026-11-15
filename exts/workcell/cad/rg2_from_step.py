@@ -6,12 +6,19 @@ from a local path, checked by SHA-256 by the caller, and nothing of it is kept i
 data: nothing in it is executed.
 
 CAD axes: +Y the approach axis (fingertips at +Y), +X the finger-opening axis, -Z out of the front face (the face with
-the logo, the M3 pair 11 mm above the lower end of the body, and the Quick Changer's release button). Output frame,
-millimetres ("gripper frame"): x = CAD x, y = -CAD z (out of the front face), z = CAD y measured from the top of the
-Quick Changer tool side. The work cell's RG2 body frame (``onrobot_rg2_base_link``) is that frame turned a quarter turn
-about z: body +Y = gripper +x, body +X = gripper -y (out of the back face).
+the logo, the M3 pair 11 mm above the lower end of the body, and the tab of the Quick Changer's latch). Output frame,
+millimetres ("gripper frame"): x = CAD x, y = -CAD z (out of the front face), z = CAD y measured from the highest
+point of the CAD, which is the rim of the Quick Changer's robot side. The work cell's RG2 body frame
+(``onrobot_rg2_base_link``) is that frame turned a quarter turn about z: body +Y = gripper +x, body +X = gripper -y
+(out of the back face).
 
-Links, by the CAD's sub-assemblies: the base (Quick Changer tool side 101141, mounting bracket 101379, body shells and
+The STEP holds the Quick Changer's robot side too (sub-assembly 101820_Open, an older revision than the robot side
+OnRobot publishes on its own). It is not part of the RG2 link here: the work cell takes the robot side from OnRobot's
+own file (``part_from_step.py``). It is read for one thing, where the robot's tool flange sits: the robot side's seat
+for the flange is 2.5 mm below its rim (so the flange plane is at z = 2.5 mm in this frame), and its face toward
+the tool is 13.6 mm further, the height OnRobot's datasheet gives.
+
+Links, by the CAD's sub-assemblies: the base (Quick Changer tool side in 101141, mounting bracket 101379, body shells and
 what shows of 101848), the two outer arms (100876, 100883) with the cover plates, the two inner links (100892, 101779)
 and the two finger carriers with their fingertips and rubber pads (101803, 100905). Parts hidden inside the body
 shells, springs and connector pins are left out. The four pin axes of each side are read from the CAD's cylinders; the
@@ -43,6 +50,7 @@ SIDES = {"right": {"outer": "100876", "inner": "100892", "finger": "101803", "si
 BODY_SHELLS = ("101662", "101804")
 BLACK = ("100918", "100920", "101839", "101840",             # cover plates over the linkage
          "101542", "101676", "101543", "101682", "101544", "101673", "101547", "101778", "101550", "101777")
+ROBOT_SIDE = "101820_Open"                                   # the Quick Changer's robot side inside the RG2 STEP
 RUBBER_PREFIX = "100084"                                     # the fingertips' 1.5 mm pads
 
 
@@ -97,6 +105,8 @@ def link_of(solid):
         for kind in ("outer", "inner", "finger"):
             if parts[kind] in path:
                 return f"{side}_{kind}"
+    if ROBOT_SIDE in path:
+        return "robot_side"                                      # the Quick Changer's robot side: its own asset
     if "sodemann" in label or "101310" in path or solid["shape"].Volume < 15.0:
         return None                                              # springs, connector pins, washers
     hidden = (label not in BODY_SHELLS and box.XMin > inside_low.x and box.XMax < inside_high.x and box.YMin > inside_low.y
@@ -122,7 +132,7 @@ def material_of(solid, link):
 
 for solid in solids:
     solid["link"] = link_of(solid)
-    solid["material"] = material_of(solid, solid["link"]) if solid["link"] else None
+    solid["material"] = material_of(solid, solid["link"]) if solid["link"] not in (None, "robot_side") else None
 
 
 def pivot(first, second, near):
@@ -148,7 +158,10 @@ for side, parts in SIDES.items():
         groups = [group if group == "base" else f"{side}_{group}" for group in (first, second)]
         pivots[f"{side}_{name}"] = pivot(groups[0], groups[1], (parts["sign"] * seed[0], seed[1]))
 
-TOP = -min(solid["shape"].BoundBox.YMin for solid in solids if solid["link"] == "base")      # top of the Quick Changer tool side
+robot_side = [solid["shape"] for solid in solids if solid["link"] == "robot_side"]
+if not robot_side:
+    raise SystemExit("RG2 ERROR: the Quick Changer's robot side was not found; this is not the expected RG2 STEP")
+TOP = -min(shape.BoundBox.YMin for shape in robot_side)                                      # the rim of the robot side
 TO_GRIPPER = Matrix(1, 0, 0, 0,
                     0, 0, -1, 0,
                     0, 1, 0, TOP,
@@ -169,8 +182,15 @@ def gripper_xz(xy):
     return xy[0], xy[1] + TOP
 
 
-report = {"source": os.path.basename(SRC), "top_of_tool_side_above_cad_origin_mm": round(TOP, 3), "zero_pose_deg": round(ZERO_POSE_DEG, 4),
-          "pivots_mm": {}, "links": {}, "fingertips": {}}
+ring = max(robot_side, key=lambda shape: shape.Volume)                                       # the robot side's body
+seat = [face.CenterOfMass.y for face in ring.Faces                                           # flat faces looking at the robot
+        if face.Surface.__class__.__name__ == "Plane" and face.normalAt(0, 0).y < -0.99 and face.Area > 300.0]
+flange_z = min(seat, key=lambda y: abs(y + TOP - 2.5)) + TOP                                 # the seat for the tool flange
+report = {"source": os.path.basename(SRC), "rim_above_cad_origin_mm": round(TOP, 3), "zero_pose_deg": round(ZERO_POSE_DEG, 4),
+          "pivots_mm": {}, "links": {}, "fingertips": {},
+          "robot_side": {"flange_plane_z_mm": round(flange_z, 3), "tool_end_z_mm": round(ring.BoundBox.YMax + TOP, 3),
+                         "height_mm": round(ring.BoundBox.YMax + TOP - flange_z, 3), "diameter_mm": round(ring.BoundBox.XLength, 2),
+                         "parts": sorted(solid["label"] for solid in solids if solid["link"] == "robot_side")}}
 moves = {"base": Matrix()}
 for side, parts in SIDES.items():
     a, b, c, d = (gripper_xz(pivots[f"{side}_{name}"]) for name in "ABCD")
@@ -200,7 +220,7 @@ def mesh_of(shape):
 meshes, tips = {}, {}
 for solid in solids:
     link = solid["link"]
-    if not link:
+    if not link or link == "robot_side":
         continue
     shape = solid["shape"].transformGeometry(moves[link].multiply(TO_GRIPPER) if link != "base" else TO_GRIPPER)
     mesh = mesh_of(shape)
@@ -237,7 +257,7 @@ for entry in report["links"].values():
     entry["triangles"] = sum(entry["triangles_by_material"].values())
 for side, mesh in tips.items():
     mesh.write(os.path.join(OUT, f"fingertip_{side}.stl"))
-everything = [solid["shape"].BoundBox for solid in solids if solid["link"]]
+everything = [solid["shape"].BoundBox for solid in solids if solid["link"]]             # the robot side included: overall length
 base = [solid["shape"].BoundBox for solid in solids if solid["link"] == "base"]
 report["cad_pose"] = {"overall_size_mm": [round(max(b.XMax for b in everything) - min(b.XMin for b in everything), 2),
                                            round(max(b.YMax for b in everything) - min(b.YMin for b in everything), 2),

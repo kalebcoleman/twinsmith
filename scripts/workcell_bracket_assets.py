@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Build ``ur5e-workcell/v3``: v2 with the real wrist bracket and with the RG2 rebuilt from OnRobot's official CAD.
+"""Build ``ur5e-workcell/v3``: v2 with the real wrist bracket and with the tool stack rebuilt from the vendors' official CAD.
 
 * ``rg2``: OnRobot's official STEP (a local copy named by ``TWINSMITH_RG2_STEP``, checked by SHA-256), converted by
   ``scripts/workcell_rg2_assets.py``; see that module. The add-on finger pad proxy of v2 is not carried over: the real
   fingertips, with their rubber pads, are part of the RG2.
+* ``quick_changer`` and ``bota``: OnRobot's Quick Changer robot side and Bota Systems' Rokubi, from their official STEP
+  files (``TWINSMITH_QC_STEP``, ``TWINSMITH_BOTA_STEP``, checked by SHA-256), converted by
+  ``scripts/workcell_stack_assets.py``; see that module. The Rokubi is not on the real arm: the work cell builds it
+  only when ``bota.mounted`` is true in its config.
 
 * ``wrist_mount``: ``exts/workcell/cad/rg2_camera_bracket.py`` run by ``freecadcmd`` for the camera pose in
   ``exts/workcell/config/lab_hardware.json`` (``wrist_camera.offset_in_rg2_m``). The printed bracket clamps the RG2
   body, so the USD is in the pack's RG2 body frame and the builder places it there. The pack keeps the USD (render
   mesh plus a collision approximation of five convex hulls, which the builder attaches to the RG2 body), and, in the
   CAD frame, the STEP of both pieces as mounted and the STEP and STL of each printable piece.
-* Every other file is copied from v2 unchanged, including the D415 body.
+* Every other file is copied from v2 unchanged, including the D415 body. The vendors' STEP files are not copied.
 
 v2 is only read (its hashes are verified first); no other pack or version is read or written. The result is complete
 on its own: it holds copies, not references into v2. An existing v3 is left alone. Needs ``freecadcmd`` on PATH.
@@ -37,6 +41,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 import workcell_camera_assets as camera_assets  # noqa: E402  (STL reading, welding and the USD writer)
 import workcell_rg2_assets as rg2_assets  # noqa: E402
+import workcell_stack_assets as stack_assets  # noqa: E402
 from twinsmith import asset_packs, pack_manifest  # noqa: E402
 
 PACK, SOURCE, TARGET = "ur5e-workcell", "v2", "v3"
@@ -151,6 +156,7 @@ def main() -> int:
         print(json.dumps({f"{PACK}/{TARGET}": "exists, left alone"}))
         return 0
     step = rg2_assets.step_path()                                         # refuses before anything is built
+    stack_steps = {role: stack_assets.step_path(role) for role in stack_assets.PARTS}
     source = pack_manifest.AssetPack(root, PACK, SOURCE)                  # verifies every hash first
     folder = root / PACK / SOURCE
     manifest = pack_manifest.read_manifest(folder, PACK, SOURCE)
@@ -164,11 +170,22 @@ def main() -> int:
         (work / "rg2" / "rg2.json").write_text(json.dumps(rg2, indent=1) + "\n")
         files, records = {}, {}
         for record in manifest["files"]:
-            if not record["path"].startswith(("wrist_mount/", "rg2/", "finger_pad/")):
+            if not record["path"].startswith(("wrist_mount/", "rg2/", "finger_pad/", "quick_changer/", "bota/")):
                 files[record["path"]], records[record["path"]] = folder / record["path"], record
         files["rg2/rg2.usdc"], records["rg2/rg2.usdc"] = work / "rg2" / "rg2.usdc", rg2_assets.manifest_records()
         files["rg2/rg2.json"] = work / "rg2" / "rg2.json"
         records["rg2/rg2.json"] = {key: value for key, value in rg2_assets.manifest_records().items() if key != "asset_id"}
+        stack = {}
+        for role, path in stack_steps.items():
+            (work / f"{role}_cad").mkdir()
+            (work / role).mkdir()
+            stack_assets.run_cad(role, path, work / f"{role}_cad")
+            name = stack_assets.PARTS[role]["file"]
+            stack[role] = stack_assets.build_part(role, work / f"{role}_cad", work / role / name)
+            (work / role / f"{role}.json").write_text(json.dumps(stack[role], indent=1) + "\n")
+            files[f"{role}/{name}"], records[f"{role}/{name}"] = work / role / name, stack_assets.manifest_record(role)
+            files[f"{role}/{role}.json"] = work / role / f"{role}.json"
+            records[f"{role}/{role}.json"] = {key: value for key, value in stack_assets.manifest_record(role).items() if key != "asset_id"}
         common = dict(source=f"{CAD} (FreeCAD), for wrist_camera.offset_in_rg2_m in config/lab_hardware.json",
                       license="Locally authored lab geometry; private pack", redistributable=False, fidelity=FIDELITY)
         made = work / "wrist_mount"
@@ -182,10 +199,13 @@ def main() -> int:
             records[f"wrist_mount/{name}"] = dict(common)
         extra = dict(mimic={"driven": rg2["driven_joint"], "followers": rg2["followers"], "limits_deg": rg2["limits_deg"],
                             "note": "exact parallelogram from the CAD's pin axes: ratios are exactly -1 and 1"},
-                     qualification=f"{PACK}/{SOURCE} with the RG2 from OnRobot's official CAD and a copy of the real wrist bracket on it",
+                     qualification=f"{PACK}/{SOURCE} with the RG2, the Quick Changer's robot side and the Rokubi from the vendors' "
+                                   "official CAD, and a copy of the real wrist bracket on the RG2",
                      derived_from=f"{PACK}/{SOURCE}")
         written = asset_packs.write_version(root, PACK, TARGET, files, records, defaults={}, notes=[], extra=extra)
         print(json.dumps({"written": str(written)[:160], "rg2": {key: value for key, value in rg2.items() if key != "links"},
+                          "stack": {role: {key: value for key, value in part.items() if key not in ("parts", "left_out")}
+                                    for role, part in stack.items()},
                           "bracket": summary, "pieces": report["pieces"],
                           "interference_mm3": report["interference_mm3"], "clearance_mm": report["clearance_mm"]}, indent=1))
         return 0

@@ -15,6 +15,9 @@
   - one convex collider per link, and on each finger a second one for the fingertip (block and rubber pad) bound to
     the ``FingertipTape`` physics material, whose friction the work cell sets from ``fingertips`` in the config.
   Masses and inertias are not authored here: the work cell sets them from the config's ``inertials``.
+* The STEP also holds the Quick Changer's robot side. It is left out of the RG2 (the pack's ``quick_changer`` is built
+  from OnRobot's own robot-side file, ``scripts/workcell_stack_assets.py``); it tells where the tool flange sits: 2.5 mm
+  below the body frame's origin, with the robot side's face toward the tool 13.6 mm further.
 """
 
 from __future__ import annotations
@@ -313,7 +316,8 @@ def build_rg2(source: Path, cad: Path, dest: Path) -> dict:
         arm_length_mm=round(pivots["arm_mm"], 3), fingertip_block_mm=report["fingertips"]["right"]["block_size_mm"],
         fingertip_pad_mm=[pad["thickness_mm"], pad["width_along_y_mm"], pad["length_along_z_mm"]],
         triangles_before_decimation=report["triangles_before_decimation"], parts_left_out=len(report["left_out"]),
-        top_of_tool_side_above_datasheet_plane_mm=round(report["top_of_tool_side_above_cad_origin_mm"] - 2.0, 3))
+        flange_plane_z_mm=report["robot_side"]["flange_plane_z_mm"], robot_side_tool_end_z_mm=report["robot_side"]["tool_end_z_mm"],
+        robot_side_height_mm=report["robot_side"]["height_mm"])
     return summary
 
 

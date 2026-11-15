@@ -3,6 +3,14 @@ import json
 import math
 from pathlib import Path
 
+try:  # package import inside Kit
+    from . import stack as stack
+except ImportError:  # loaded by file path in host tests
+    import importlib.util as _importlib_util
+    _spec = _importlib_util.spec_from_file_location("workcell_stack", Path(__file__).with_name("stack.py"))
+    stack = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(stack)
+
 DEFAULT_CONFIG = Path(__file__).resolve().parents[1] / "config/lab_hardware.json"
 STATUSES = {"confirmed", "unconfirmed"}
 
@@ -27,16 +35,14 @@ def load_config(path=None):
     values, raw = read_values(path or DEFAULT_CONFIG)
     if "jenga" in values or "jenga_block" in values.get("assets", {}):
         raise ValueError("The cell configuration must not hold task objects; the Jenga tower is a task (tasks/jenga_tower.json)")
-    order = values["stack"]["order"]
-    if sorted(order) != ["bota", "quick_changer", "rg2"] or order[-1] != "rg2":
-        raise ValueError("stack.order must contain bota, quick_changer, rg2 once, with rg2 last")
+    stack.order(values)                    # the stack follows bota.mounted; a leftover stack.order is refused
+    stack.lengths(values)
+    stack.masses(values)
     if values["gravity"]["mode"] not in ("physics", "mirror_real"):
         raise ValueError("gravity.mode must be physics or mirror_real")
-    for section, key in (("bota", "length_m"), ("bota", "mass_kg"), ("quick_changer", "standoff_m"),
-                         ("world", "bench_height_m")):
-        value = values[section][key]
-        if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
-            raise ValueError(f"{section}.{key} must be finite and positive")
+    value = values["world"]["bench_height_m"]
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        raise ValueError("world.bench_height_m must be finite and positive")
     if values["overhead_mount"]["type"] != "gantry":
         raise ValueError("Only the gantry mount is implemented; clamp is a BOM alternative")
     return values, raw

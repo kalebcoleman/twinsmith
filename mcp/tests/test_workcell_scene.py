@@ -394,3 +394,14 @@ def test_scene_rows_leave_out_the_overhead_hardware_when_it_is_off(modules):
     assert {row["bom_id"]: row["quantity"] for row in scene.scene_rows(config, rows)} == {
         "robot": 1, "d415": 1, "wrist_mount": 1}
     assert rows[1]["quantity"] == 2     # the BOM rows themselves are not changed
+
+
+def test_scene_rows_leave_out_the_bota_while_it_is_not_mounted(modules):
+    """The lab owns the sensor, so the BOM lists it; the scene must hold it only when bota.mounted is true."""
+    scene, _ = modules
+    roles = ("robot", "bota", "quick_changer", "rg2")
+    rows = [{"bom_id": role, "asset_id": role, "quantity": 1} for role in roles]
+    config = {"assets": {role: role for role in roles}, "overhead_camera": {"enabled": True}, "bota": {"mounted": False}}
+    assert [row["bom_id"] for row in scene.scene_rows(config, rows)] == ["robot", "quick_changer", "rg2"]
+    config["bota"]["mounted"] = True
+    assert scene.scene_rows(config, rows) == rows
