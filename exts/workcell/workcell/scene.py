@@ -4,7 +4,7 @@ import copy
 import math
 from pathlib import Path
 
-ROLES = ("robot", "bench", "base_plate", "bota", "quick_changer", "rg2",
+ROLES = ("robot", "bench", "rail_carriage", "base_plate", "bota", "quick_changer", "rg2",
          "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf", "materials")
 # Every role's asset must exist in the pack, mounted or not, so one switch in the config is all a variant needs:
 # the Bota (bota.mounted) and the overhead camera (overhead_camera.enabled) are built only when switched on.
@@ -230,6 +230,7 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
 
     materials = UsdGeom.Scope.Define(stage, "/World/Materials")
     materials.GetPrim().GetReferences().AddReference(str(assets["materials"]))
+    robot_looks(stage, config)
     fingertip_friction(stage, config, parts)
     bench_colliders(stage, engine=engine)
     bom.verify_config_assets(config, rows)
@@ -237,6 +238,32 @@ def _finish_scene(stage, config, assets, parts, rows, engine="physx"):
     # Labelled placeholders (the Bota's unmeasured adapter plates) are not BOM hardware: they are reported, not audited.
     proxies = tuple(str(prim.GetPath()) for prim in Usd.PrimRange(stage.GetPseudoRoot()) if prim.GetCustomDataByKey("workcell:proxy"))
     return bom.audit_parts(parts, scene_rows(config, rows), stage=stage, strict=True, ignore=(ROOT, *proxies))
+
+
+def robot_looks(stage, config, root="/World/RobotAssembly/robot"):
+    """Give the robot's own materials the look the config names (``looks.robot_materials``: material name to
+    UsdPreviewSurface inputs), on the stage and never in the pack. Looks only: nothing here reaches the physics.
+    Returns the materials changed; a configured name the robot does not have is an error."""
+    from pxr import Gf, Sdf, Usd, UsdShade
+
+    wanted = (config.get("looks") or {}).get("robot_materials") or {}
+    prim = stage.GetPrimAtPath(root)
+    if not wanted or not prim:
+        return []
+    found = {item.GetName(): item for item in Usd.PrimRange(prim) if item.IsA(UsdShade.Material)}
+    missing = sorted(set(wanted) - set(found))
+    if missing:
+        raise ValueError(f"looks.robot_materials names {missing}, which the robot asset does not have (it has {sorted(found)})")
+    for name, inputs in wanted.items():
+        shaders = [UsdShade.Shader(item) for item in Usd.PrimRange(found[name]) if item.IsA(UsdShade.Shader)]
+        if len(shaders) != 1 or set(inputs) - {"diffuseColor", "metallic", "roughness"}:
+            raise ValueError(f"looks.robot_materials.{name}: one shader with diffuseColor, metallic and roughness is supported")
+        for key, value in inputs.items():
+            if key == "diffuseColor":
+                shaders[0].CreateInput(key, Sdf.ValueTypeNames.Color3f).Set(Gf.Vec3f(*map(float, value)))
+            else:
+                shaders[0].CreateInput(key, Sdf.ValueTypeNames.Float).Set(float(value))
+    return sorted(wanted)
 
 
 def fingertip_friction(stage, config, parts):
@@ -531,6 +558,51 @@ class Workcell:
         reading = read(sensors.BOTA_SOURCE)
         reading["flange"] = flange
         return reading
+
+    def rail(self, position_mm=None):
+        """The robot's linear axis in the real axis's units: read its position, or set its position target.
+
+        ``position_mm`` is the real interface's unit: millimetres, absolute from the axis's home position
+        (``interfaces.rail_position_command``); the simulated joint is in metres from the built pose, and the config's
+        ``rail`` section holds the (unconfirmed) relation between the two. Setting a target steps nothing: the
+        position drive moves the carriage as physics is stepped. Only PhysX limits the joint's speed; on Newton send
+        the target in small increments for a move at the configured speed."""
+        if self._runtime is None or self._report.get("state") != "ready":
+            raise RuntimeError("Build the workcell before using its rail")
+        import omni.usd
+        from sim_tools import physics
+        from . import rail as rail_axis
+
+        stage, config, _, _ = self._runtime
+        if omni.usd.get_context().get_stage() != stage:
+            raise RuntimeError("Workcell stage changed; quick_start is required")
+        robot = self._report["robot"]
+        if not robot.get("rail"):
+            raise ValueError("This cell's robot base is fixed: rail.moving is false in its configuration")
+        record = rail_axis.check(config)
+        target = rail_axis.from_real_mm(record, position_mm) if position_mm is not None else None
+        view = physics.view_for(robot["articulation_root"], articulation=True)
+        names = list(view.shared_metatype.dof_names)
+        if record["joint_name"] not in names:
+            raise RuntimeError(f"The simulation has no degree of freedom named {record['joint_name']}")
+        index = names.index(record["joint_name"])
+        if target is not None:
+            physics.dof_set(view, "get_dof_position_targets", "set_dof_position_targets", {index: target})
+        position = float(physics.array(view.get_dof_positions()).reshape(-1)[index])
+        velocity = float(physics.array(view.get_dof_velocities()).reshape(-1)[index])
+        now = float(physics.array(view.get_dof_position_targets()).reshape(-1)[index])
+        lower, upper = record["limits_m"]
+        return {"status": "commanded" if target is not None else "measured", "joint": record["joint_name"],
+                "position_mm": rail_axis.to_real_mm(record, position), "target_mm": rail_axis.to_real_mm(record, now),
+                "velocity_mm_s": velocity * 1000.0 * record["real_positive_direction"],
+                "limits_mm": sorted((rail_axis.to_real_mm(record, lower), rail_axis.to_real_mm(record, upper))),
+                "joint_position_m": position, "joint_target_m": now, "joint_limits_m": [lower, upper],
+                "units": "position_mm: millimetres, absolute from the axis's home position, as the real axis is commanded; "
+                         "joint_*_m: metres from the cell's built pose",
+                "mapping": "unconfirmed: where the real axis's home is on the rail and which way positive runs are assumed",
+                "speed_m_s": record["speed_m_s"],
+                "note": "A target is a step for the position drive; only PhysX limits the joint's speed. For a move at "
+                        "the configured speed on Newton, send intermediate targets."}
 
     def shutdown(self):
         self._runtime = None

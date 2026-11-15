@@ -371,7 +371,7 @@
     "mounting": {
       "value": "Vention robot plate on the carriage plate of a Vention rail (all three in the bench asset)",
       "status": "confirmed",
-      "source": "Kaleb; photo of the base, 2026-11-14 (four screws into a blue square plate, on a larger dark hole-grid plate, on a rail along one long side of the table), and the bench asset itself (Vention's CAD, VentionAssembly_393251_v88, pack file bench/), which holds the same three parts under the robot: prims ST_RB_001_0002 (plate 180 x 180 x 22 mm), MO_LM_027_0001 (plate 268 x 268 mm) and the rail with its belt (MO_LM_024)."
+      "source": "Kaleb; photo of the base, 2026-11-14 (four screws into a blue square plate, on a larger dark hole-grid plate, on a rail along one long side of the table), and the bench asset itself (Vention's CAD, VentionAssembly_393251_v88, pack file bench/), which holds the same three parts under the robot: prims ST_RB_001_0002 (plate 180 x 180 x 22 mm), MO_LM_027_0001 (plate 268 x 268 mm) and the rail with its belt (MO_LM_024). The rail is a moving axis: see rail."
     },
     "initial_joint_deg": {
       "value": [
@@ -401,6 +401,127 @@
       },
       "status": "unconfirmed",
       "source": "Height from the bench asset itself (Vention's CAD, VentionAssembly_393251_v88, pack file bench/): the top face of the robot plate ST_RB_001_0002 is 80.0 mm above the table top (its box spans z = 58 to 80 mm; the carriage plate below it 37 to 58 mm), centred within 1 mm of the robot's axis. Unconfirmed because it is the CAD's height, not a measurement in the lab: measure the base flange's underside above the table top. Until 2026-11-14 the base sat at 5 mm on a 5 mm proxy plate, inside these parts. Yaw 180 degrees about z (Kaleb, 2026-11-13): the shoulder faces the table, as on the real cell; the imported UR base_link faced away from it."
+    }
+  },
+  "rail": {
+    "moving": {
+      "value": true,
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-14: the Vention rail under the UR5e really moves; the robot's base is a seventh axis. the lab's RISL_vention_ros (https://github.com/MaxlGao/RISL_vention_ros at commit ac9c7da23cf7daeacd5c9ecc37c7d5d699c1e53b, Apache-2.0) drives it. false builds the base fixed at the built pose, with the carriage as part of the scene."
+    },
+    "actuator": {
+      "value": "Vention heavy-duty enclosed timing belt actuator, 1530 mm extrusion (MO-LM-027 family), with Vention robot plate ST-RB-001-0002 on its carriage",
+      "status": "unconfirmed",
+      "source": "Identified from the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack): carriage group MO_LM_027_0001 with a 268 x 268 mm gantry plate (MO_LM_025_0004), extrusion ST_EXT_007_0585_1530 (1530 mm), belt MO_LM_024_XXXX_1720, end blocks MO_LM_025_0001, motor and gearbox MO_SM_012_0001 at the +X end, 1777 mm overall. Vention, 'Enclosed Timing Belt Actuator' technical document (https://docs.vention.com/docs/enclosed-timing-belt-actuator) lists MO-LM-027-XXXX as the heavy-duty version (270 x 270 mm gantry, overall length = extrusion + 247.5 mm = 1777.5 mm) and names it for robot range extenders. Unconfirmed: read the part number on the actuator's label."
+    },
+    "joint_name": {
+      "value": "rail_joint",
+      "status": "confirmed",
+      "source": "Simulation: the prismatic joint between the fixed rail link and the carriage, first in the articulation's joint order."
+    },
+    "axis_in_world": {
+      "value": [
+        1,
+        0,
+        0
+      ],
+      "status": "confirmed",
+      "source": "the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack): the rail runs along the table's long edge, the cell's X axis, beside the table top's +Y edge (rail body from x = -0.890 to 0.887 m, y = -0.046 to 0.044 m); the motor is at the +X end. Matches the photos (rail along the table's long edge)."
+    },
+    "travel_m": {
+      "value": 1.27,
+      "status": "unconfirmed",
+      "source": "Vention, 'Enclosed Timing Belt Actuator' technical document (https://docs.vention.com/docs/enclosed-timing-belt-actuator): travel of the heavy-duty version = extrusion length - 260 mm = 1270 mm for the 1530 mm extrusion; that includes 15 mm for the home and end sensors, so the hard stops are 1285 mm apart. The geometry in the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack) agrees within 1 cm (1530 mm extrusion, 268 mm carriage: 1262 mm before the carriage passes the extrusion's ends). Unconfirmed for the lab's unit: the sensors can sit in any of four ports, so read the travel from the controller or measure it."
+    },
+    "limits_m": {
+      "value": [
+        -0.635,
+        0.635
+      ],
+      "status": "unconfirmed",
+      "source": "Simulation: Vention's 1270 mm travel, centred on where the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack) has the carriage (the middle of the extrusion within 1 mm), which is the pose the cell is built in. Inside what the geometry allows; not the lab's measured soft limits (Not found in the lab's five repositories (RISL_vention_ros ac9c7da2, RISL_ur 011539ab, RISL_onrobot_ros 7f86a05a, RISL_simulation d659f7d4, risl_assembly_workspace 82b9a510) or in Vention's public documentation)."
+    },
+    "default_position_m": {
+      "value": 0.0,
+      "status": "unconfirmed",
+      "source": "The joint's zero is the cell's built pose: the carriage where the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack) has it, the middle of the travel, with the robot's axis at the cell's origin. The real home position is not known. The lab's README example command is 650.0 mm, which is 15 mm from this pose if the real zero is at one end of the travel."
+    },
+    "real_zero_at_joint_m": {
+      "value": -0.635,
+      "status": "unconfirmed",
+      "source": "ASSUMPTION, not from any source: the real axis's zero (home) is at the -X end of the travel, the end away from the motor. Not found in the lab's five repositories (RISL_vention_ros ac9c7da2, RISL_ur 011539ab, RISL_onrobot_ros 7f86a05a, RISL_simulation d659f7d4, risl_assembly_workspace 82b9a510) or in Vention's public documentation: where the home sensor is. the lab's RISL_vention_ros (https://github.com/MaxlGao/RISL_vention_ros at commit ac9c7da23cf7daeacd5c9ecc37c7d5d699c1e53b, Apache-2.0) only shows that 0.0 mm is a reachable position (its test moves to 100.0 mm and back to 0.0). Read it on the real axis: home it and see where the carriage stops."
+    },
+    "real_positive_direction": {
+      "value": 1,
+      "status": "unconfirmed",
+      "source": "ASSUMPTION, not from any source: positive millimetres run toward +X (toward the motor). Not found in the lab's five repositories (RISL_vention_ros ac9c7da2, RISL_ur 011539ab, RISL_onrobot_ros 7f86a05a, RISL_simulation d659f7d4, risl_assembly_workspace 82b9a510) or in Vention's public documentation. -1 mirrors the mapping."
+    },
+    "speed_m_s": {
+      "value": 0.25,
+      "status": "unconfirmed",
+      "source": "Simulation choice, not the real value. Not found in the lab's five repositories (RISL_vention_ros ac9c7da2, RISL_ur 011539ab, RISL_onrobot_ros 7f86a05a, RISL_simulation d659f7d4, risl_assembly_workspace 82b9a510) or in Vention's public documentation (Vention gives performance curves, not one number; the lab's node sets no speed). Read the configured speed from the MachineMotion controller. Authored as the joint's velocity limit, which only PhysX applies."
+    },
+    "acceleration_m_s2": {
+      "value": 0.5,
+      "status": "unconfirmed",
+      "source": "Simulation choice, not the real value. Not found in the lab's five repositories (RISL_vention_ros ac9c7da2, RISL_ur 011539ab, RISL_onrobot_ros 7f86a05a, RISL_simulation d659f7d4, risl_assembly_workspace 82b9a510) or in Vention's public documentation. Read the configured acceleration from the MachineMotion controller. Used by callers that ramp the target; no engine applies it by itself."
+    },
+    "max_force_n": {
+      "value": 1240.0,
+      "status": "confirmed",
+      "source": "Vention, 'Enclosed Timing Belt Actuator' technical document (https://docs.vention.com/docs/enclosed-timing-belt-actuator): maximum peak axial force (Fx) 1240 N. The position drive's force limit."
+    },
+    "carriage_mass_kg": {
+      "value": 4.6,
+      "status": "unconfirmed",
+      "source": "Estimate from the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack): 1317 cm3 for the carriage group and 391 cm3 for the robot plate, as aluminium (2.7 g/cm3): 3.6 + 1.1 kg; bearings, screws and the belt clamp are not counted. Vention gives only the whole actuator's 27.31 kg. Weigh or ask Vention."
+    },
+    "rail_mass_kg": {
+      "value": 22.7,
+      "status": "unconfirmed",
+      "source": "Vention, 'Enclosed Timing Belt Actuator' technical document (https://docs.vention.com/docs/enclosed-timing-belt-actuator): 27.31 kg for the heavy-duty actuator with the 1530 mm extrusion, less the carriage estimate. The rail link is fixed to the world, so this mass moves nothing."
+    },
+    "drive": {
+      "value": {
+        "physx": {
+          "stiffness_n_per_m": 200000.0,
+          "damping_ns_per_m": 6000.0
+        },
+        "newton": {
+          "stiffness_n_per_m": 200000.0,
+          "damping_ns_per_m": 6000.0,
+          "armature_kg": 5.0
+        }
+      },
+      "status": "unconfirmed",
+      "source": "Simulation: a position drive that holds the carriage (about 27 kg with the robot) within a fraction of a millimetre and settles without overshoot; on Newton dt^2 k / armature = 0.16 at 500 Hz against the explicit-spring limit of 4. Not a model of the real motor, gearbox or belt (208 mm per motor turn, backlash 0.25 mm in Vention's document)."
+    },
+    "carriage_mount": {
+      "value": {
+        "rail_top_above_table_m": 0.035,
+        "carriage_plate": {
+          "part": "MO_LM_025_0004",
+          "size_m": [
+            0.268,
+            0.268,
+            0.023
+          ],
+          "top_above_table_m": 0.058
+        },
+        "robot_plate": {
+          "part": "ST_RB_001_0002",
+          "size_m": [
+            0.18,
+            0.18,
+            0.022
+          ],
+          "top_above_table_m": 0.08,
+          "locating_pins": 2
+        },
+        "robot_base_above_table_m": 0.08
+      },
+      "status": "unconfirmed",
+      "source": "the bench asset (Vention's CAD of the lab's bench, VentionAssembly_393251_v88, in the private pack): the 90 x 90 mm rail's top is 35 mm above the table top, the carriage's gantry plate is 268 x 268 x 23 mm, Vention's robot plate on it is 180 x 180 x 22 mm with two locating pins, and its top face, where the robot's base sits, is 80 mm above the table top. The photo of the base (2026-11-14) shows the same stack and four screws through the base. The bolt pattern was not read from the CAD, and nothing was measured in the lab."
     }
   },
   "stack": {
@@ -1040,6 +1161,19 @@
       ],
       "status": "unconfirmed",
       "source": "As above."
+    },
+    "rail_position_command": {
+      "value": {
+        "topic": "/vention/axis1_position_cmd",
+        "type": "std_msgs/msg/Float64",
+        "unit": "mm",
+        "meaning": "absolute position of axis 1 from its home position",
+        "controller_command": "SET im_move_abs_1/<mm>/",
+        "controller": "Vention MachineMotion over TCP, port 9999",
+        "simulated_as": "joint rail_joint in metres from the built pose; workcell__robot(action=\"rail\", position_mm=...) takes the real unit"
+      },
+      "status": "confirmed",
+      "source": "the lab's RISL_vention_ros (https://github.com/MaxlGao/RISL_vention_ros at commit ac9c7da23cf7daeacd5c9ecc37c7d5d699c1e53b, Apache-2.0), vention_socket_control.py: subscribes to this topic, sends the value as an absolute move of axis 1 in millimetres and polls isReady and isBusy; its README's example is 650.0. Not subscribed by the simulation. The package states no travel limits, speed, acceleration, homing or direction. Vention's current socket document (https://docs.vention.com/docs/application-programming-interface-low-level-sockets-for-machinemotion, MachineMotion 3.1 and newer) gives port 9999 and millimetres, mm/s and mm/s2, and says homing moves toward the home sensor and resets zero there; the older command set the lab's node uses was not found in Vention's public documentation."
     }
   },
   "pack": {
@@ -1112,6 +1246,11 @@
     },
     "materials": {
       "value": "materials",
+      "status": "confirmed",
+      "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
+    },
+    "rail_carriage": {
+      "value": "rail_carriage",
       "status": "confirmed",
       "source": "Logical role in private workcell pack; manifest records geometry fidelity and file provenance."
     }
@@ -1220,6 +1359,15 @@
       },
       "status": "unconfirmed",
       "source": "Derived from pack proxy dimensions (12 mm release plate): sits on the shelf, under the gantry beam. Not a measured assembly."
+    },
+    "rail_carriage": {
+      "value": {
+        "model": "vention_rail_carriage",
+        "bom_id": "rail_carriage",
+        "fidelity": "unverified"
+      },
+      "status": "unconfirmed",
+      "source": "Pack v3: the carriage of the bench's linear axis and the robot plate on it, split out of the bench asset (scripts/workcell_rail_assets.py); origin at the robot's base, the world's axes."
     }
   },
   "base_plate": {
@@ -1268,6 +1416,50 @@
       },
       "status": "unconfirmed",
       "source": "Chosen 2026-11-14 for Newton's MuJoCo-Warp at 500 Hz: armature 0.1 kg m^2 on every arm joint (as MuJoCo Menagerie's UR5e), stiffness so that dt^2 k / armature <= 2 against the explicit-spring limit of at least 4, damping near critical; validated live, see the work cell README."
+    }
+  },
+  "looks": {
+    "robot_materials": {
+      "value": {
+        "LinkGrey": {
+          "diffuseColor": [
+            0.22,
+            0.22,
+            0.23
+          ],
+          "metallic": 0.3,
+          "roughness": 0.55
+        },
+        "DefaultMaterial": {
+          "diffuseColor": [
+            0.45,
+            0.45,
+            0.46
+          ],
+          "metallic": 0.4,
+          "roughness": 0.45
+        },
+        "JointGrey": {
+          "diffuseColor": [
+            0.2,
+            0.2,
+            0.21
+          ],
+          "metallic": 0.2,
+          "roughness": 0.5
+        },
+        "URBlue": {
+          "diffuseColor": [
+            0.33,
+            0.5,
+            0.68
+          ],
+          "metallic": 0.0,
+          "roughness": 0.45
+        }
+      },
+      "status": "unconfirmed",
+      "source": "Looks only, read off the photos of the real arm (2026-11-14): grey matte link tubes, silver aluminium joint housings and base, light blue caps. Applied to the robot asset's own materials on the stage; nothing here reaches the physics."
     }
   }
 }

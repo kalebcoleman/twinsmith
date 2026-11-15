@@ -64,6 +64,9 @@ class Commands:
     def _cmd_robot_wrench(self):
         return self.workcell.read_wrench()
 
+    def _cmd_robot_rail(self, position_mm=None):
+        return self.workcell.rail(position_mm=position_mm)
+
     def _cmd_perception_status(self):
         report = self.workcell.status()
         return {"state": report.get("state"), "cameras": report.get("cameras")}

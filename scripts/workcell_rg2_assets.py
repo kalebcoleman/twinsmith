@@ -55,10 +55,12 @@ PIVOT_OF_JOINT = {"finger_joint": ("left", "A"), "right_outer_knuckle_joint": ("
 DRIVER = "finger_joint"
 FOLLOWERS = {"right_outer_knuckle_joint": 1.0, "left_inner_finger_joint": -1.0, "right_inner_finger_joint": -1.0,
              "left_finger_knuckle_joint": 1.0, "RevoluteJoint": 1.0}
-MATERIALS = {"aluminium": dict(diffuseColor=(0.70, 0.71, 0.73), metallic=1.0, roughness=0.42),       # bead-blasted, anodised
+# Linear RGB read off the photos of the real gripper (2026-11-14); looks only. A fully metallic material mirrors the
+# bright sky dome and reads as white plastic, so the metals are kept mostly diffuse.
+MATERIALS = {"aluminium": dict(diffuseColor=(0.30, 0.30, 0.31), metallic=0.35, roughness=0.55),      # bead-blasted, grey anodised
              "black": dict(diffuseColor=(0.02, 0.02, 0.022), metallic=0.0, roughness=0.5),             # moulded covers
              "rubber": dict(diffuseColor=(0.012, 0.012, 0.012), metallic=0.0, roughness=0.9),          # fingertip pads
-             "steel": dict(diffuseColor=(0.55, 0.56, 0.58), metallic=1.0, roughness=0.3)}              # pins and screws
+             "steel": dict(diffuseColor=(0.36, 0.36, 0.37), metallic=0.5, roughness=0.4)}              # pins and screws
 FINGERTIP_MATERIAL = "FingertipTape"
 
 

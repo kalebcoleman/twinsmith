@@ -14,6 +14,9 @@
   body, so the USD is in the pack's RG2 body frame and the builder places it there. The pack keeps the USD (render
   mesh plus a collision approximation of five convex hulls, which the builder attaches to the RG2 body), and, in the
   CAD frame, the STEP of both pieces as mounted and the STEP and STL of each printable piece.
+* ``bench`` and ``rail_carriage``: v2's bench (Vention's CAD of the lab's bench) split by
+  ``scripts/workcell_rail_assets.py`` into the static bench and the carriage of the linear axis the robot stands on,
+  with the robot plate; the cable carrier is left out. The vendor meshes are v2's, unchanged.
 * Every other file is copied from v2 unchanged, including the D415 body. The vendors' STEP files are not copied.
 
 v2 is only read (its hashes are verified first); no other pack or version is read or written. The result is complete
@@ -40,6 +43,7 @@ sys.path.insert(0, str(REPO / "mcp"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 import workcell_camera_assets as camera_assets  # noqa: E402  (STL reading, welding and the USD writer)
+import workcell_rail_assets as rail_assets  # noqa: E402
 import workcell_rg2_assets as rg2_assets  # noqa: E402
 import workcell_stack_assets as stack_assets  # noqa: E402
 from twinsmith import asset_packs, pack_manifest  # noqa: E402
@@ -170,11 +174,28 @@ def main() -> int:
         (work / "rg2" / "rg2.json").write_text(json.dumps(rg2, indent=1) + "\n")
         files, records = {}, {}
         for record in manifest["files"]:
-            if not record["path"].startswith(("wrist_mount/", "rg2/", "finger_pad/", "quick_changer/", "bota/")):
+            if not record["path"].startswith(("wrist_mount/", "rg2/", "finger_pad/", "quick_changer/", "bota/", "bench/")):
                 files[record["path"]], records[record["path"]] = folder / record["path"], record
         files["rg2/rg2.usdc"], records["rg2/rg2.usdc"] = work / "rg2" / "rg2.usdc", rg2_assets.manifest_records()
         files["rg2/rg2.json"] = work / "rg2" / "rg2.json"
         records["rg2/rg2.json"] = {key: value for key, value in rg2_assets.manifest_records().items() if key != "asset_id"}
+        config = json.loads((REPO / "exts/workcell/config/lab_hardware.json").read_text())
+        bench = rail_assets.build_bench(folder / "bench", work / "bench")
+        carriage = rail_assets.build_carriage(work / "bench", work / "rail_carriage" / "rail_carriage.usda", config)
+        old = {record["path"]: record for record in manifest["files"] if record["path"].startswith("bench/")}
+        for name in ("bench_render.usdc", "bench_collision.usdc"):       # v2's files, unchanged
+            files[f"bench/{name}"], records[f"bench/{name}"] = work / "bench" / name, old[f"bench/{name}"]
+        inherited = {key: value for key, value in old["bench/bench.usda"].items() if key not in ("path", "sha256", "asset_id", "changes")}
+        split = ("Pack v2's bench.usda is bench_full.usda here. bench.usda is the static bench: the carriage of the linear axis and "
+                 "the robot plate are deactivated (they are the rail_carriage asset), the cable carrier and its tray are left out, "
+                 "and the parts have looks from photos (scripts/workcell_rail_assets.py).")
+        files["bench/bench_full.usda"], records["bench/bench_full.usda"] = work / "bench" / "bench_full.usda", dict(inherited, changes=old["bench/bench.usda"]["changes"])
+        files["bench/bench_cell.usda"], records["bench/bench_cell.usda"] = work / "bench" / "bench_cell.usda", dict(inherited, changes=split)
+        files["bench/bench.usda"], records["bench/bench.usda"] = work / "bench" / "bench.usda", dict(inherited, asset_id="bench", changes=split)
+        files["rail_carriage/rail_carriage.usda"] = work / "rail_carriage" / "rail_carriage.usda"
+        records["rail_carriage/rail_carriage.usda"] = dict(inherited, asset_id="rail_carriage", changes=(
+            "The carriage of the bench's linear axis (MO_LM_027_0001) and the robot plate on it (ST_RB_001_0002), referenced from "
+            "bench/bench_full.usda, in metres, origin at the robot's base; looks from photos (scripts/workcell_rail_assets.py)."))
         stack = {}
         for role, path in stack_steps.items():
             (work / f"{role}_cad").mkdir()
@@ -200,12 +221,14 @@ def main() -> int:
         extra = dict(mimic={"driven": rg2["driven_joint"], "followers": rg2["followers"], "limits_deg": rg2["limits_deg"],
                             "note": "exact parallelogram from the CAD's pin axes: ratios are exactly -1 and 1"},
                      qualification=f"{PACK}/{SOURCE} with the RG2, the Quick Changer's robot side and the Rokubi from the vendors' "
-                                   "official CAD, and a copy of the real wrist bracket on the RG2",
+                                   "official CAD, a copy of the real wrist bracket on the RG2, and the bench split so the robot's "
+                                   "rail carriage can move",
                      derived_from=f"{PACK}/{SOURCE}")
         written = asset_packs.write_version(root, PACK, TARGET, files, records, defaults={}, notes=[], extra=extra)
         print(json.dumps({"written": str(written)[:160], "rg2": {key: value for key, value in rg2.items() if key != "links"},
                           "stack": {role: {key: value for key, value in part.items() if key not in ("parts", "left_out")}
                                     for role, part in stack.items()},
+                          "bench": bench, "rail_carriage": carriage,
                           "bracket": summary, "pieces": report["pieces"],
                           "interference_mm3": report["interference_mm3"], "clearance_mm": report["clearance_mm"]}, indent=1))
         return 0

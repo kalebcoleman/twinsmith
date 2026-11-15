@@ -10,6 +10,15 @@ the generic tower qualified (rate, elliptic cone, solver iterations, 4 mm contac
 
 import math
 
+try:  # package import inside Kit
+    from . import rail as rail_axis
+except ImportError:  # loaded by file path in host tests
+    import importlib.util as _importlib_util
+    from pathlib import Path as _Path
+    _spec = _importlib_util.spec_from_file_location("workcell_rail", _Path(__file__).with_name("rail.py"))
+    rail_axis = _importlib_util.module_from_spec(_spec)
+    _spec.loader.exec_module(rail_axis)
+
 DRIVE_KEYS = {"stiffness_nm_per_rad", "damping_nms_per_rad", "armature_kgm2"}
 ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
 
@@ -95,6 +104,20 @@ def prepare(stage, config, assembly_path, timeline):
         for attr in ("newton:armature", "physxJoint:armature"):   # both, so no resolver default decides it
             prim.CreateAttribute(attr, Sdf.ValueTypeNames.Float).Set(float(d["armature_kgm2"]))
         authored[name] = dict(d)
+    margins = stability(drives, newton["physics_hz"])
+    if rail_axis.moving(config):                                # the robot's base is a seventh axis: its drive, per engine
+        record = rail_axis.check(config)
+        name, d = record["joint_name"], record["drive"]["newton"]
+        prim = joints.get(name)
+        if prim is None or "PhysicsDriveAPI:linear" not in prim.GetAppliedSchemas():
+            raise ValueError(f"rail.joint_name names {name}, which is not a driven prismatic joint of the assembly")
+        drive = UsdPhysics.DriveAPI(prim, "linear")             # a linear drive is per stage unit: metres, no conversion
+        drive.GetStiffnessAttr().Set(d["stiffness_n_per_m"])
+        drive.GetDampingAttr().Set(d["damping_ns_per_m"])
+        for attr in ("newton:armature", "physxJoint:armature"):
+            prim.CreateAttribute(attr, Sdf.ValueTypeNames.Float).Set(float(d["armature_kg"]))
+        authored[name] = dict(d)
+        margins[name] = rail_axis.stability(record, newton["physics_hz"])
     buffers_config, buffers = prepare_buffers(stage, scene, timeline)
     # The wrist force/torque reading is a mount joint's incoming reaction; Newton computes it only when asked before Play.
     buffers_config.solver_outputs.link_incoming_joint_force = True
@@ -102,4 +125,4 @@ def prepare(stage, config, assembly_path, timeline):
     buffers["link_incoming_joint_force"] = True
     return dict(settings=settings, colliders_with_contact_gap=colliders, drives=authored, buffers=buffers,
                 materials_with_static_mu=newton_mu,
-                stability=stability(drives, newton["physics_hz"]))
+                stability=margins)

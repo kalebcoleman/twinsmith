@@ -34,6 +34,7 @@ CATALOG_HINTS = {
     "workcell.workcell_status": _READ,
     "workcell.robot_status": _READ,
     "workcell.robot_wrench": _READ,
+    "workcell.robot_rail": _SAME_AGAIN,     # sets a drive target (or only reads); sending it again changes nothing
     "workcell.perception_status": _READ,
     "workcell.jenga_status": _READ,
     "workcell.jenga_build": _DESTROYS,

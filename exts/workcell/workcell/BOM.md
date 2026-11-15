@@ -1,6 +1,6 @@
 # UR5e Jenga workcell bill of materials
 
-This is the human-readable companion to [bom.csv](bom.csv): the same 13 logical rows,
+This is the human-readable companion to [bom.csv](bom.csv): the same logical rows,
 asset IDs, quantities and units. Repeated instances share an asset ID. Geometry and
 installed-hardware confidence are separate from procurement status; see the
 [workcell README](README.md) for the external pack contract and measurement gaps.
@@ -12,6 +12,7 @@ missing prices are not zero, and no complete workcell total is available.
 | BOM / asset ID | Item / model | Quantity | Unit | Unit price (USD) | Hardware and fidelity notes |
 | --- | --- | --- | --- | --- | --- |
 | `bench` | Vention custom workbench with lab benchtop | 1 | each | Quote required | Preserved vendor mesh; top size and height need measurement |
+| `rail_carriage` | Carriage and robot plate of the bench's linear axis (Vention MO-LM-027 gantry, ST-RB-001-0002 plate) | 1 | each | Quote required | Part of the Vention bench; split out of the bench asset so the axis can move; part numbers read from the CAD |
 | `robot` | Universal Robots UR5e collaborative arm | 1 | each | Quote required | Model confirmed; vendor CAD does not qualify runtime behavior |
 | `base_plate` | UR5e mounting base plate | 1 | each | Quote required | Not built by default: the bench asset holds the real Vention plates under the robot; the 5 mm proxy is behind `base_plate.present` |
 | `bota` | Bota Rokubi BFT-ROKS-SER-M8 force/torque sensor | 1 | each | Quote required | Owned by the lab, not mounted on the arm; built only with `bota.mounted`; geometry from Bota's official STEP; model to be confirmed; adapter plates unmeasured |

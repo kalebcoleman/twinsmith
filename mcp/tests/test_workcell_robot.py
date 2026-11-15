@@ -63,7 +63,7 @@ def cell(tmp_path):
         source.SetDefaultPrim(root)
         UsdGeom.Xformable(root).AddTranslateOp().Set(Gf.Vec3d(0.23, -0.17, 0.08))
         layout = {"model": model, "bom_id": f"BOM-{role}", "fidelity": "placeholder"}
-        if role in ("finger_pad", "base_plate"):
+        if role in ("finger_pad", "base_plate", "rail_carriage"):
             cube = UsdGeom.Cube.Define(source, root_path + "/pad")
             cube.CreateSizeAttr().Set(0.01)
             UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
@@ -193,6 +193,106 @@ def test_stack_follows_the_one_switch_and_sources_are_unchanged(cell, mounted):
     assert any("placeholder" in limitation for limitation in report["limitations"])
     assert not any("marker" in str(prim.GetPath()).lower() for prim in stage.Traverse())
     assert {key: path.read_bytes() for key, path in pack.paths.items()} == originals
+
+
+RAIL = {"moving": True, "joint_name": "rail_joint", "axis_in_world": [1, 0, 0], "travel_m": 1.27, "limits_m": [-0.635, 0.635],
+        "default_position_m": 0.0, "real_zero_at_joint_m": -0.635, "real_positive_direction": 1, "speed_m_s": 0.25,
+        "acceleration_m_s2": 0.5, "max_force_n": 1240.0, "carriage_mass_kg": 4.6, "rail_mass_kg": 22.7,
+        "drive": {"physx": {"stiffness_n_per_m": 2e5, "damping_ns_per_m": 6e3},
+                  "newton": {"stiffness_n_per_m": 2e5, "damping_ns_per_m": 6e3, "armature_kg": 5.0}}}
+
+
+def _rail_cell(cell, tmp_path, moving=True):
+    """The fixture's robot with a base link of its own and a carriage asset that has a part on the rail and one above."""
+    stage, pack, config = cell
+    source = Usd.Stage.Open(str(pack.paths["pack/robot"]))
+    base = body(source, "/Asset/base_link", (0.0, 0.0, 0.0))
+    UsdPhysics.Joint.Get(source, "/Asset/root_joint").GetBody1Rel().SetTargets([base.GetPath()])
+    source.GetRootLayer().Save()
+    config["asset_layout"]["robot"]["mount_frame"] = "base_link"
+    carriage = Usd.Stage.Open(str(pack.paths["pack/rail_carriage"]))
+    for name, z in (("gantry", -0.03), ("plate", -0.005)):
+        cube = UsdGeom.Cube.Define(carriage, f"/Asset/{name}")
+        cube.CreateSizeAttr().Set(0.01)
+        cube.AddTranslateOp().Set(Gf.Vec3d(0, 0, z))
+        UsdPhysics.CollisionAPI.Apply(cube.GetPrim())
+    carriage.RemovePrim("/Asset/pad")
+    UsdGeom.Xformable(carriage.GetDefaultPrim()).ClearXformOpOrder()
+    carriage.GetRootLayer().Save()
+    config["rail"] = {**RAIL, "moving": moving, "drive": {key: dict(value) for key, value in RAIL["drive"].items()}}
+    return stage, pack, config
+
+
+def test_rail_makes_the_base_a_seventh_axis_without_moving_the_arm(cell, tmp_path):
+    """rail.moving: the arm's root joint keeps its path and fixes a rail link to the world, a driven prismatic joint
+    carries the carriage, and the carriage carries the base. The arm is where it was."""
+    stage, pack, config = _rail_cell(cell, tmp_path)
+    report = robot.build_robot(stage, pack, config)
+    json.dumps(report, allow_nan=False)
+    rail = report["rail"]
+    root_joint = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
+    assert report["articulation_root"] == report["robot_path"] + "/root_joint" and not root_joint.GetBody0Rel().GetTargets()
+    assert [str(p) for p in root_joint.GetBody1Rel().GetTargets()] == [rail["rail_link_path"]]
+    joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(rail["joint_path"]))
+    assert rail["joint_path"] == report["robot_path"] + "/rail_joint" and joint.GetAxisAttr().Get() == "X"
+    assert [joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()] == pytest.approx([-0.635, 0.635])
+    assert [[str(p) for p in rel.GetTargets()] for rel in (joint.GetBody0Rel(), joint.GetBody1Rel())] == [
+        [rail["rail_link_path"]], [rail["carriage_path"]]]
+    drive = UsdPhysics.DriveAPI(joint.GetPrim(), "linear")
+    assert [drive.GetStiffnessAttr().Get(), drive.GetDampingAttr().Get(), drive.GetMaxForceAttr().Get(),
+            drive.GetTargetPositionAttr().Get()] == pytest.approx([2e5, 6e3, 1240.0, 0.0])
+    base = world(stage, report["arm_base_link"])
+    expected = Gf.Matrix4d().SetTranslate(base.ExtractTranslation())
+    for path in (rail["rail_link_path"], rail["carriage_path"]):           # the world's axes at the base: identity joint frames
+        assert np.array(world(stage, path)) == pytest.approx(np.array(expected), abs=1e-9)
+        assert stage.GetPrimAtPath(path).HasAPI(UsdPhysics.RigidBodyAPI)
+    assert list(base.ExtractTranslation()) == pytest.approx([1, 2, 3])     # the assembly's placement, unchanged by the rail
+    carriage = stage.GetPrimAtPath(rail["carriage_path"])
+    assert UsdPhysics.MassAPI(carriage).GetMassAttr().Get() == pytest.approx(4.6)
+    assert UsdPhysics.CollisionAPI(carriage.GetChild("gantry")).GetCollisionEnabledAttr().Get() is False   # rides on the rail
+    assert UsdPhysics.CollisionAPI(carriage.GetChild("plate")).GetCollisionEnabledAttr().Get() is not False
+    assert rail["colliders_off_where_it_rides_on_the_rail"] == 1
+    mount = UsdPhysics.FixedJoint(stage.GetPrimAtPath(rail["carriage_mount_path"]))
+    frames = []
+    for side in (0, 1):
+        local = Gf.Matrix4d().SetRotate(Gf.Quatd(getattr(mount, f"GetLocalRot{side}Attr")().Get()))
+        local.SetTranslateOnly(Gf.Vec3d(getattr(mount, f"GetLocalPos{side}Attr")().Get()))
+        frames.append(local * world(stage, getattr(mount, f"GetBody{side}Rel")().GetTargets()[0]))
+    assert np.array(frames[0]) == pytest.approx(np.array(frames[1]), abs=1e-6)
+    assert rail["joint"] == "rail_joint" and rail["real_axis"]["at_default_mm"] == pytest.approx(635.0)
+    assert any(part["prim_path"] == rail["part_path"] and part["asset_id"] == "pack/rail_carriage" for part in report["parts"])
+    assert any("seventh axis" in line for line in report["limitations"])
+
+
+def test_a_fixed_base_keeps_the_carriage_as_scenery(cell, tmp_path):
+    stage, pack, config = _rail_cell(cell, tmp_path, moving=False)
+    report = robot.build_robot(stage, pack, config)
+    assert report["rail"] is None
+    root_joint = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
+    assert [str(p) for p in root_joint.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
+    assert not stage.GetPrimAtPath(report["robot_path"] + "/rail_joint")
+    carriage = stage.GetPrimAtPath(report["assembly_path"] + "/rail")
+    assert carriage and not carriage.HasAPI(UsdPhysics.RigidBodyAPI)
+    assert any("rail.moving is false" in line for line in report["limitations"])
+
+
+@pytest.mark.parametrize("fault", ["bad_limits", "carriage_has_a_body", "nothing_above_the_rail", "name_taken"])
+def test_a_bad_rail_rolls_back(cell, tmp_path, fault):
+    stage, pack, config = _rail_cell(cell, tmp_path)
+    if fault == "bad_limits":
+        config["rail"]["limits_m"] = [0.2, -0.2]
+    else:
+        source = Usd.Stage.Open(str(pack.paths["pack/rail_carriage" if fault != "name_taken" else "pack/robot"]))
+        if fault == "carriage_has_a_body":
+            UsdPhysics.RigidBodyAPI.Apply(source.GetPrimAtPath("/Asset/plate"))
+        elif fault == "nothing_above_the_rail":
+            source.RemovePrim("/Asset/plate")
+        else:
+            UsdGeom.Xform.Define(source, "/Asset/rail_joint")
+        source.GetRootLayer().Save()
+    with pytest.raises(ValueError):
+        robot.build_robot(stage, pack, config)
+    assert not stage.GetPrimAtPath("/World/RobotAssembly") and not stage.GetSessionLayer().subLayerPaths
 
 
 def test_what_the_rg2_body_carries_is_in_its_mass(cell):

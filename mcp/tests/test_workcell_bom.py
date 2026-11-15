@@ -21,7 +21,7 @@ bom = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bom)
 
 EXPECTED_IDS = {
-    "bench", "robot", "base_plate", "bota", "quick_changer", "rg2",
+    "bench", "rail_carriage", "robot", "base_plate", "bota", "quick_changer", "rg2",
     "d415", "wrist_mount", "overhead_mount", "overhead_release", "overhead_shelf",
     "jenga_block",
 }
@@ -87,7 +87,7 @@ def part(path, asset_id, bom_id):
 
 
 def camera_and_robot_parts():
-    parts = [part("/World/Bench", "bench", "bench")]
+    parts = [part("/World/Bench", "bench", "bench"), part("/World/RobotAssembly/rail", "rail_carriage", "rail_carriage")]
     for role in ("robot", "base_plate", "bota", "quick_changer", "rg2"):
         parts.append(part(f"/World/RobotAssembly/{role}", role, role))
     for name in ("wrist_camera", "overhead_camera"):
@@ -150,7 +150,7 @@ def test_audit_accepts_every_report_part_and_stage_prim():
     parts, stage = cell()
     report = bom.audit_parts(parts, rows, stage)
     assert report["ok"] and report["errors"] == []
-    assert report["parts"] == 66 and report["physical_prims"] == 66
+    assert report["parts"] == 67 and report["physical_prims"] == 67
     assert report["bom_ids"]["jenga_block"] == 54
     assert report["bom_ids"]["d415"] == 2
 
@@ -184,7 +184,7 @@ def test_audit_leaves_out_the_room_around_the_cell():
     stage.add("/World/Environment/simple_room/GroundPlane/CollisionPlane", kind="Plane", apis=("PhysicsCollisionAPI",))
     assert not bom.audit_parts(parts, rows, stage)["ok"]
     report = bom.audit_parts(parts, rows, stage, ignore=("/World/Environment",))
-    assert report["ok"] and report["physical_prims"] == 66
+    assert report["ok"] and report["physical_prims"] == 67
 
 
 def test_audit_catches_unknown_bom_id_and_asset_mismatch():
@@ -248,7 +248,7 @@ def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
     manifest = {"id": "ur5e-jenga-workcell", "version": "v1", "files": files}
     report = bom.verify_manifest(manifest, rows=rows, root=tmp_path,
                                  expected_id="ur5e-jenga-workcell", expected_version="v1")
-    assert report["hashes_verified"] and report["files"] == 14
+    assert report["hashes_verified"] and report["files"] == 15
     assert report["asset_ids"] == sorted(EXPECTED_IDS | {"materials"})
     (tmp_path / "robot/robot.usdc").write_bytes(b"changed")
     with pytest.raises(bom.BomError, match="hash changed"):
@@ -271,7 +271,7 @@ def test_installed_private_pack_matches_bom_and_hashes():
     report = bom.verify_manifest(PRIVATE_PACK / "pack.yaml", rows=bom.load_bom(),
                                  root=PRIVATE_PACK, expected_id="ur5e-workcell",
                                  expected_version="v3")
-    assert report["hashes_verified"] and report["files"] == 23
+    assert report["hashes_verified"] and report["files"] == 26
     assert "materials" in report["asset_ids"] and not {"jenga_block", "finger_pad"} & set(report["asset_ids"])
     task = bom.verify_manifest(TASK_PACK / "pack.yaml", rows=bom.load_bom(TASKS / "jenga_tower.bom.csv"),
                                root=TASK_PACK, expected_id="jenga", expected_version="v1")

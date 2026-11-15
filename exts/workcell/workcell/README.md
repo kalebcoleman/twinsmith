@@ -35,7 +35,7 @@ from `ur5e-jenga-workcell/v2`; the sections below that name `ur5e-jenga-workcell
 Machine-readable data:
 
 - BOM: `<repo>/exts/workcell/workcell/bom.csv`
-- Human-readable BOM: [BOM.md](BOM.md) (the same 13 logical rows and quantities)
+- Human-readable BOM: [BOM.md](BOM.md) (the same logical rows and quantities)
 - Hardware configuration: `<repo>/exts/workcell/config/lab_hardware.json`
 - Audit helper: `<repo>/exts/workcell/workcell/bom.py`
 - Audit test: `<repo>/mcp/tests/test_workcell_bom.py`
@@ -106,7 +106,7 @@ physical part must map to one of these rows.
 
 | Area | BOM IDs and quantity |
 | --- | --- |
-| Scene | `bench` 1 |
+| Scene | `bench` 1, `rail_carriage` 1 (the carriage of the bench's linear axis and the robot plate on it: what moves under the robot) |
 | Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1 (built: `robot`, `quick_changer`, `rg2`; `bota` only with `bota.mounted`, `base_plate` only with `base_plate.present`) |
 | Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
 | Jenga (task packs, not the cell) | `jenga_block` 54 for `jenga_tower`, 1 for `push_block` |

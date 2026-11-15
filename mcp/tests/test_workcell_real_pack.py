@@ -384,9 +384,9 @@ ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist
 POSES_DEG = {"as built (every joint at zero)": (0, 0, 0, 0, 0, 0), "tool down": (0, -80, 100, -110, -90, 0)}
 
 
-def _posed_bodies(stage, assembly, degrees):
-    """Row-vector world matrices of the assembly's rigid bodies with the arm's joints at ``degrees`` (every other joint
-    at zero), by walking the joints from the bodies that nothing moves."""
+def _posed_bodies(stage, assembly, degrees, rail_m=0.0):
+    """Row-vector world matrices of the assembly's rigid bodies with the arm's joints at ``degrees`` and the rail at
+    ``rail_m`` (every other joint at zero), by walking the joints from the bodies that nothing moves."""
     cache = UsdGeom.XformCache()
     angles = dict(zip(ARM_JOINTS, degrees))
     joints, bodies = [], [prim for prim in Usd.PrimRange(assembly) if prim.HasAPI(UsdPhysics.RigidBodyAPI)]
@@ -401,6 +401,9 @@ def _posed_bodies(stage, assembly, degrees):
         if prim.IsA(UsdPhysics.RevoluteJoint):
             axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[UsdPhysics.RevoluteJoint(prim).GetAxisAttr().Get()]
             turn.SetRotate(Gf.Rotation(axis, float(angles.get(prim.GetName(), 0.0))))
+        elif prim.IsA(UsdPhysics.PrismaticJoint):
+            axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[UsdPhysics.PrismaticJoint(prim).GetAxisAttr().Get()]
+            turn.SetTranslate(axis * float(rail_m))
         joints.append((ends[0][0], ends[1][0], _joint_pose(joint.GetLocalPos0Attr().Get(), joint.GetLocalRot0Attr().Get()),
                        _joint_pose(joint.GetLocalPos1Attr().Get(), joint.GetLocalRot1Attr().Get()), turn))
     children = {child for _, child, *_ in joints}
@@ -436,7 +439,10 @@ def _static_collision_points(stage, root, meshes=False):
     return chunks
 
 
-def bracket_clearances(cell):
+RAIL_ENDS_M = {"rail at its default": 0.0, "rail at its -X end": -0.635, "rail at its +X end": 0.635}
+
+
+def bracket_clearances(cell, rail_m=0.0):
     """{pose: {shape: {"bench" | "robot": (metres, nearest collider)}}} for the five bracket collision shapes and the
     D415 body box, against every collider of the bench (which holds the plates the robot stands on) and every robot
     body except the RG2 body the bracket belongs to."""
@@ -471,8 +477,8 @@ def bracket_clearances(cell):
 
     result = {}
     for pose, degrees in POSES_DEG.items():
-        world = _posed_bodies(stage, assembly, degrees)
-        if not any(degrees):
+        world = _posed_bodies(stage, assembly, degrees, rail_m)
+        if not any(degrees) and not rail_m:
             for path, matrix in world.items():                                           # the walk reproduces the built stage
                 assert np.allclose(np.array(matrix), np.array(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(path))), atol=1e-5), path
         placed = {name: (np.c_[points, np.ones(len(points))] @ np.array(world[body.GetPath()]))[:, :3] for name, points in shapes.items()}
@@ -618,7 +624,10 @@ def test_rg2_has_no_geometry_free_body_and_all_joint_frames_agree(cell):
         assert not count or (count.Get() or 0) <= 4, prim.GetPath()
     cache = UsdGeom.XformCache()
     for prim in Usd.PrimRange(stage.GetPrimAtPath(report["assembly_path"])):
-        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI) and str(prim.GetPath()) == report["rail"]["rail_link_path"]:
+            mass = UsdPhysics.MassAPI(prim)      # the articulation's fixed root: no shape, so its mass properties are explicit
+            assert mass.GetMassAttr().Get() > 0 and all(value > 0 for value in mass.GetDiagonalInertiaAttr().Get())
+        elif prim.HasAPI(UsdPhysics.RigidBodyAPI):
             assert any(item.IsA(UsdGeom.Gprim) for item in Usd.PrimRange(prim, Usd.TraverseInstanceProxies())), (
                 f"{prim.GetPath()} is a rigid body without geometry")
         if not prim.IsA(UsdPhysics.Joint):
@@ -751,29 +760,143 @@ def test_carried_centres_of_gravity_follow_the_bracket_model(cell):
     assert volume == pytest.approx(112.6, abs=1.0)
 
 
-def test_the_robot_stands_on_the_bench_assets_own_mounting_plates(cell):
-    """The bench asset is Vention's CAD of the lab's bench and already holds what the photo of the base shows: a rail,
-    its carriage plate and the robot plate. The robot's base sits on that plate's top face, 80 mm above the table top,
-    and no proxy plate is built."""
+def test_the_robot_stands_on_the_rails_carriage_and_the_bench_is_what_the_photos_show(cell):
+    """The bench asset is Vention's CAD of the lab's bench. Pack v3 splits it: the static bench, and the carriage of
+    its linear axis with the robot plate, which the robot's base sits on, 80 mm above the table top. No proxy plate is
+    built, and the cable carrier, which the photos of the real cell do not show, is left out."""
     config, stage, report, _, pack = cell
     bracket_clearances(cell)                                             # places the bench as the scene does
     assert config["base_plate"]["present"] is False and report["base_plate_path"] is None
     assert not stage.GetPrimAtPath(report["assembly_path"] + "/base_plate")
     cache = UsdGeom.XformCache()
-    base = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["robot_path"] + "/base_link")).ExtractTranslation()
+    base = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(report["arm_base_link"])).ExtractTranslation()
     assert list(base) == pytest.approx([0.0, 0.0, 0.08], abs=1e-6)
-    boxes = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "guide", "proxy"])
-    found = {}
-    for prim in Usd.PrimRange(stage.GetPrimAtPath("/World/Bench")):
-        for part in ("ST_RB_001_0002", "MO_LM_027_0001"):
-            if part in prim.GetName() and part not in found:
-                box = boxes.ComputeWorldBound(prim).ComputeAlignedRange()
-                found[part] = (np.array(box.GetMin()), np.array(box.GetMax()))
-    assert set(found) == {"ST_RB_001_0002", "MO_LM_027_0001"}            # the robot plate and the carriage plate under it
-    low, high = found["ST_RB_001_0002"]
-    plates = [chunk for chunk in _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench")).values()
+    bench = [prim.GetName() for prim in Usd.PrimRange(stage.GetPrimAtPath("/World/Bench"))]
+    assert not [name for name in bench if name.startswith(("ST_RB_001_0002", "MO_LM_027_0001", "MO_DC_001", "ST_GP_001_0004_325"))]
+    assert any(name.startswith("ST_EXT_007_0585_1530") for name in bench) and "MO_LM_024_XXXX_1720_133_belt" in bench   # the rail itself stays
+    carriage = stage.GetPrimAtPath(report["rail"]["carriage_path"])
+    names = [prim.GetName() for prim in Usd.PrimRange(carriage)]
+    assert any(name.startswith("MO_LM_025_0004") for name in names) and any(name.startswith("Cut_Extrude2") for name in names)
+    boxes = _static_collision_points(stage, carriage)
+    plates = [chunk for chunk in boxes.values()
               if np.ptp(chunk[:, 0]) == pytest.approx(0.18, abs=2e-3) and np.ptp(chunk[:, 1]) == pytest.approx(0.18, abs=2e-3)]
     (plate,) = plates                                                    # the robot plate's collision box, 180 mm square
     assert plate[:, 2].max() == pytest.approx(0.08, abs=5e-4) and plate[:, 2].min() == pytest.approx(0.058, abs=5e-4)
     assert np.abs(plate[:, :2].mean(0)).max() < 0.002                    # centred under the robot's axis
-    assert found["MO_LM_027_0001"][1][2] == pytest.approx(0.058, abs=1.5e-3) and high[2] >= 0.08 - 5e-4
+    gantry = [chunk for chunk in boxes.values() if np.ptp(chunk[:, 0]) == pytest.approx(0.268, abs=2e-3) and np.ptp(chunk[:, 1]) == pytest.approx(0.268, abs=2e-3)]
+    assert gantry and min(chunk[:, 2].min() for chunk in gantry) == pytest.approx(0.0375, abs=1.5e-3)      # 2 mm above the rail's top
+    assert max(chunk[:, 2].max() for chunk in gantry) == pytest.approx(0.058, abs=1.5e-3)
+    folder = Path(pack.asset(config["assets"]["bench"])).parent
+    assert {path.name for path in folder.iterdir()} == {"bench.usda", "bench_cell.usda", "bench_full.usda", "bench_render.usdc", "bench_collision.usdc"}
+
+
+def _sim_tools_ik():
+    spec = importlib.util.spec_from_file_location("realpack_ik", PACKAGE.parents[1] / "sim-tools/sim_tools/ik.py")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as error:                                         # its package imports are not needed for the chain
+        pytest.skip(f"sim_tools.ik cannot be loaded here: {error}")
+    return module
+
+
+def test_the_rail_is_a_seventh_axis_and_callers_see_exactly_this(cell):
+    """What changes for a caller. The arm's root joint keeps its path and now fixes a rail link to the world; a
+    prismatic rail_joint (metres, zero at the built pose, +X) carries the carriage, and a fixed joint holds the base on
+    it. The joint tools' IK, which reads the chain from these prims, sees seven joints from the rail link, and the six
+    arm joints when it is given the report's arm_base_link."""
+    config, stage, report, _, _ = cell
+    rail = report["rail"]
+    assert report["articulation_root"] == report["robot_path"] + "/root_joint"       # the path callers already use
+    root = UsdPhysics.Joint(stage.GetPrimAtPath(report["articulation_root"]))
+    assert root.GetPrim().HasAPI(UsdPhysics.ArticulationRootAPI) and not root.GetBody0Rel().GetTargets()
+    assert [str(path) for path in root.GetBody1Rel().GetTargets()] == [rail["rail_link_path"]]
+    joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(rail["joint_path"]))
+    assert joint and joint.GetPrim().GetName() == rail["joint"] == "rail_joint" and joint.GetAxisAttr().Get() == "X"
+    assert [joint.GetLowerLimitAttr().Get(), joint.GetUpperLimitAttr().Get()] == pytest.approx([-0.635, 0.635])
+    assert [str(p) for p in joint.GetBody0Rel().GetTargets()] == [rail["rail_link_path"]]          # parent first: Newton refuses the reverse
+    assert [str(p) for p in joint.GetBody1Rel().GetTargets()] == [rail["carriage_path"]]
+    drive = UsdPhysics.DriveAPI(joint.GetPrim(), "linear")
+    assert drive.GetStiffnessAttr().Get() == pytest.approx(config["rail"]["drive"]["physx"]["stiffness_n_per_m"])
+    assert drive.GetMaxForceAttr().Get() == pytest.approx(1240.0) and drive.GetTargetPositionAttr().Get() == 0.0
+    assert joint.GetPrim().GetAttribute("physxJoint:maxJointVelocity").Get() == pytest.approx(0.25)
+    cache = UsdGeom.XformCache()
+    for path in (rail["rail_link_path"], rail["carriage_path"]):                    # the world's axes, at the robot's base
+        matrix = cache.GetLocalToWorldTransform(stage.GetPrimAtPath(path))
+        assert np.array(matrix) == pytest.approx(np.array(Gf.Matrix4d().SetTranslate(Gf.Vec3d(0, 0, 0.08))), abs=1e-6)
+    carriage = stage.GetPrimAtPath(rail["carriage_path"])
+    assert carriage.HasAPI(UsdPhysics.RigidBodyAPI) and UsdPhysics.MassAPI(carriage).GetMassAttr().Get() == pytest.approx(4.6)
+    assert not _collision_points(stage, stage.GetPrimAtPath(rail["rail_link_path"]))               # the rail itself is the static bench
+    enabled = [prim for prim in Usd.PrimRange(carriage) if prim.HasAPI(UsdPhysics.CollisionAPI)
+               and UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Get() is not False]
+    assert 0 < len(enabled) < sum(1 for prim in Usd.PrimRange(carriage) if prim.HasAPI(UsdPhysics.CollisionAPI))
+    lowest = min(chunk[:, 2].min() for prim in enabled for chunk in [np.array(_static_collision_points(stage, prim)[str(prim.GetPath())])])
+    assert lowest == pytest.approx(0.0496, abs=1e-3)                     # the robot plate and the screws beside it: 14 mm above the rail
+    mount = UsdPhysics.FixedJoint(stage.GetPrimAtPath(rail["carriage_mount_path"]))
+    assert [str(p) for p in mount.GetBody0Rel().GetTargets()] == [rail["carriage_path"]]
+    assert [str(p) for p in mount.GetBody1Rel().GetTargets()] == [report["arm_base_link"]]
+    assert rail["limits_m"] == [-0.635, 0.635] and rail["real_axis"]["limits_mm"] == pytest.approx([0.0, 1270.0])
+    assert rail["real_axis"]["at_default_mm"] == pytest.approx(635.0) and "metres" in rail["units"]
+
+    ik = _sim_tools_ik()
+    robot_prim = stage.GetPrimAtPath(report["robot_path"])                 # where the joint tools look: beside the root joint
+    joints = [prim for prim in Usd.PrimRange(robot_prim) if prim.IsA(UsdPhysics.Joint)]
+    assert ik.find_base(joints) == rail["rail_link_path"]
+    wrist = report["robot_path"] + "/wrist_3_link"
+    whole = ik.build_chain(stage, joints, rail["rail_link_path"], wrist)
+    assert whole.names == ["rail_joint", *ARM_JOINTS] and whole.kinds[0] == "prismatic"
+    assert [whole.lower[0], whole.upper[0]] == pytest.approx([-0.635, 0.635])
+    arm = ik.build_chain(stage, joints, report["arm_base_link"], wrist)
+    assert arm.names == list(ARM_JOINTS)
+    here = np.array(cache.GetLocalToWorldTransform(stage.GetPrimAtPath(wrist)).ExtractTranslation())
+    assert whole.fk(np.zeros(7))[:3, 3] == pytest.approx(here, abs=1e-5)
+    assert whole.fk(np.array([0.2, 0, 0, 0, 0, 0, 0]))[:3, 3] == pytest.approx(here + [0.2, 0, 0], abs=1e-5)   # +X, metres
+
+
+@pytest.mark.parametrize("where", ["rail at its -X end", "rail at its +X end"])
+def test_bracket_and_camera_stay_clear_at_both_ends_of_the_rail(cell, where):
+    """The guard distances of the built pose and tool down hold with the carriage at either end of its travel, where
+    the arm is over the rail's end blocks and, at +X, its motor."""
+    clearances = bracket_clearances(cell, RAIL_ENDS_M[where])
+    for pose, shapes in clearances.items():
+        for name, kinds in shapes.items():
+            for kind, (distance, nearest) in kinds.items():
+                assert distance >= 2 * NEWTON_CONTACT_GAP_M, f"{name} is {distance * 1000:.1f} mm from {kind} ({nearest}) at {pose}, {where}"
+
+
+def test_nothing_of_the_robot_or_carriage_meets_the_bench_along_the_rail(cell):
+    """With the tool down, no collider of the arm, the tool or the carriage's robot plate comes within two contact gaps
+    of a bench collider anywhere along the travel."""
+    config, stage, report, _, _ = cell
+    bracket_clearances(cell)
+    assembly = stage.GetPrimAtPath(report["assembly_path"])
+    static = _static_collision_points(stage, stage.GetPrimAtPath("/World/Bench"))
+    links = {}
+    for prim in Usd.PrimRange(assembly):
+        if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            chunks = []
+            for shape in Usd.PrimRange(prim):
+                if shape.HasAPI(UsdPhysics.CollisionAPI) and UsdPhysics.CollisionAPI(shape).GetCollisionEnabledAttr().Get() is not False:
+                    owner = shape
+                    while owner and not owner.HasAPI(UsdPhysics.RigidBodyAPI):
+                        owner = owner.GetParent()
+                    if owner == prim:
+                        chunks += [np.array(chunk) for chunk in _static_collision_points(stage, shape).values()]
+            if chunks:
+                links[prim.GetPath()] = chunks
+    built = _posed_bodies(stage, assembly, (0, 0, 0, 0, 0, 0))
+    worst = (1.0, None)
+    for where, rail_m in RAIL_ENDS_M.items():
+        world = _posed_bodies(stage, assembly, POSES_DEG["tool down"], rail_m)
+        for path, chunks in links.items():
+            move = np.array(built[path].GetInverse() * world[path])
+            for chunk in chunks:
+                points = (np.c_[chunk, np.ones(len(chunk))] @ move)[:, :3]
+                low, high = points.min(0), points.max(0)
+                for label, other in static.items():
+                    bound = float(np.linalg.norm(np.maximum(0.0, np.maximum(other.min(0) - high, low - other.max(0)))))
+                    if bound < worst[0]:             # the gap between bounding boxes never overstates the distance
+                        distance = bound if bound >= 2 * NEWTON_CONTACT_GAP_M else max(bound, _gilbert(points, other))
+                        if distance < worst[0]:
+                            worst = (distance, f"{path.name} to {label.rsplit('/', 2)[-2]} with the {where}")
+    assert worst[0] >= 2 * NEWTON_CONTACT_GAP_M, worst

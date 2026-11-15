@@ -41,11 +41,12 @@ import workcell_camera_assets as camera_assets  # noqa: E402  (STL reading and w
 from workcell_rg2_assets import convex_hull  # noqa: E402
 
 CAD = "exts/workcell/cad/part_from_step.py"
-LOOKS = {"blue": dict(diffuseColor=(0.02, 0.27, 0.62), metallic=1.0, roughness=0.32),             # anodised ring
-         "aluminium": dict(diffuseColor=(0.70, 0.71, 0.73), metallic=1.0, roughness=0.42),
-         "steel": dict(diffuseColor=(0.55, 0.56, 0.58), metallic=1.0, roughness=0.3),
+# Linear RGB read off the photos of the real wrist (2026-11-14); looks only, kept mostly diffuse (see workcell_rg2_assets).
+LOOKS = {"blue": dict(diffuseColor=(0.01, 0.16, 0.50), metallic=0.4, roughness=0.4),              # anodised ring
+         "aluminium": dict(diffuseColor=(0.30, 0.30, 0.31), metallic=0.35, roughness=0.55),
+         "steel": dict(diffuseColor=(0.36, 0.36, 0.37), metallic=0.5, roughness=0.4),
          "black": dict(diffuseColor=(0.02, 0.02, 0.022), metallic=0.0, roughness=0.5),
-         "anodised_black": dict(diffuseColor=(0.03, 0.03, 0.035), metallic=1.0, roughness=0.45)}
+         "anodised_black": dict(diffuseColor=(0.03, 0.03, 0.035), metallic=0.4, roughness=0.5)}
 PARTS = {
     "quick_changer": dict(
         env="TWINSMITH_QC_STEP", url="https://onrobot.com/storage/quick-changer-robot-side_v2_with_cable_holder.step",
