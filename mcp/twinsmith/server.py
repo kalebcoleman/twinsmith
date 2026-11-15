@@ -1258,10 +1258,12 @@ def _register_host_tools(server: FastMCP, state: _BridgeState, groups: Iterable[
     single = []
     if "real2sim" in groups:
         from .robosim import register_robosim_tools
+        from .sam3 import register_sam3_tools
         from .sysid import register_sysid_tools
         register_robosim_tools(server)
         register_sysid_tools(server, roots=lambda: _approved_roots(state))
-        single += ["robosim", "sysid"]
+        register_sam3_tools(server)
+        single += ["robosim", "sysid", "sam3"]
     if "cad" in groups:
         from .hardware import register_hardware_tools
         register_hardware_tools(server)
@@ -1834,6 +1836,12 @@ _HELP_TOPICS = (
      "sysid, in the real2sim toolset (off by default: toolsets action=enable names=[\"real2sim\"]). It needs no simulator bridge. "
      "sysid action=status checks its MuJoCo environment; fit (a dataset folder inside an approved root, with SOURCE.md) "
      "starts a job; jobs action=status follows it; report returns nominal, fitted and bounds per parameter."),
+    ("segment or track objects in a video or a recorded RGB-D clip, and get block poses from depth (SAM 3)",
+     ("segment", "segmentation", "mask", "masks", "sam3", "sam 3", "track objects", "block pose", "rgb-d", "depth clip"),
+     "sam3, in the real2sim toolset (off by default: toolsets action=enable names=[\"real2sim\"]). It needs no simulator bridge. "
+     "sam3 action=status checks the SAM 3 environment; track (a video file, or a clip folder with rgb/, depth/ and camera.json, "
+     "with prompts such as ['blocks=wooden block']) starts a GPU job; jobs action=status follows it; report returns the masks, "
+     "overlay.mp4 and, with box_size_m and depth, a pose per box."),
     ("plan a task as a skill graph or score it on a benchmark (Graph-as-Policy, VABAR)",
      ("graph-as-policy", "skill graph", "gap ", "vabar", "benchmark", "workflow graph", "open-robot-skills"),
      "gap in the planning toolset and vabar in the eval toolset (both off by default: toolsets action=enable "

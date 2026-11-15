@@ -55,7 +55,7 @@ Toolsets control what is listed, not what is allowed: the bridge token and `TWIN
 | `sim` | off | 31 | Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs |
 | `assets` | off | 5 | Import and manage assets |
 | `cad` | off | 1 | PCB checks, fab files, renders |
-| `real2sim` | off | 2 | RoboSimStudio real-to-sim and MuJoCo sysid |
+| `real2sim` | off | 3 | RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3 video masks |
 | `planning` | off | 1 | Graph-as-Policy skill graphs |
 | `eval` | off | 1 | VABAR benchmark |
 <!-- /generated -->

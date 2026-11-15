@@ -72,6 +72,13 @@ Still open:
   passes on PhysX and Newton (2026-11-14, pack v3: 9.8492 N for the 1.004 kg below the flange; with `bota.mounted`, 10.5065 N
   at the Bota and 12.2723 N at the flange). It checks the modelled masses, not the real ones: those still need weighing.
 - [ ] Renders (cell, wrist) on Newton, kept in the repository. The overhead camera is not built (`overhead_camera.enabled`).
+- [ ] The untouched tower creeps on Newton. Measured 2026-11-15 (Isaac Sim 6.2.0, pack `v3`, arm still, after a 3 s
+  settle): the top layer of the stock `jenga_tower` task moved 0.75 mm in 20 s (0.04 mm/s, in a steady direction, the
+  lean growing 0.009 degrees per second); with the per-block spread of the first real-to-sim run 0.9 to 1.0 mm in 20 s.
+  The earlier figure (0.54 mm over 11 s) is of the same order. At this rate a tower leans about half a degree a minute
+  and will not stand through a game; every before-and-after measurement of a tower in the cell contains some of it.
+  Find which contact setting it follows (the friction cone's softness, `impratio`, the iteration count) before using
+  the cell's tower for anything slower than a single move.
 
 ### Work cell realism
 
@@ -128,6 +135,49 @@ matched the clip within the tool's tolerance. What it does not do yet:
   fitted yet: the block needs object poses from the push recordings.
 - [ ] Estimate the camera pose from the clip. The simulated view is set by hand, so only the block's mask is compared.
 - [ ] Take the pusher's path from the clip. `tune_push` searches a straight two-point path.
+- [ ] Measure the tower template's contact values on the lab's blocks. Its friction, damping ratio and mass are one
+  stock clip's best point ([where they come from](ROBOSIM.md#where-the-defaults-come-from-and-what-they-are-worth)):
+  that clip bounds friction from below only and does not identify the mass. Weigh a block, do a tilt test on the bench
+  panel and on another block, and record a block being pushed out of a tower in the cell.
+- [ ] Give the tower template a tuning action. A search is a script that drives the scene's `rollout`; through the tool
+  each change is an `update_scene` and a `rollout`.
+
+## Playing Jenga with the robot
+
+One robot turn and one person's turn run in simulation
+([the results](../exts/workcell/workcell/README.md#one-jenga-turn-look-predict-push-look-again)). What a game still needs:
+
+- [ ] A pusher that touches one block. One RG2 fingertip is 11.4 mm high in a 14 mm slot and, in the cell, dragged the
+  block under the pushed one and the tower above with it. A thin poker on a finger, or drawing the block out from the
+  other side with the gripper once it stands proud, has not been tried.
+- [ ] A lookahead that predicts the cell. It pushes with an 8 mm rod and stiffer contacts and was wrong about the one
+  push made by a factor of four to five; give it the fingertip's shape and the cell's contact settings, then test its
+  ranking over several pushes.
+- [ ] Pulling a block out and putting it on top: grasp, withdraw, place. Only a push of 25 mm was made.
+- [ ] Choosing the block: the candidates are given by hand. No rule for which blocks are loose, no game state (whose
+  turn, which blocks are legal), no decision layer (the lab's VLM planner is not connected).
+- [ ] The rescan after a turn that leaves the tower leaning, twisted or partly fallen; the one tried left it standing.
+- [ ] Anything on the real robot: the scripts talk to the simulator bridge only.
+
+## Perception for the Jenga task
+
+The [`sam3`](SAM3.md) tool finds the blocks in a video or a recorded RGB-D clip and gives each visible block a pose from
+depth. Checked on two stock clips and on the simulated wrist camera. What it does not do yet:
+
+- [ ] Read a camera, a ROS topic or a bag. A recorder has to write the clip folder first; none exists for the real D415.
+- [ ] Run on a real D415 recording. The simulated depth has no noise, no holes and no minimum distance.
+- [ ] See the blocks a face hides. From one side, two of every three blocks in every other layer are not reported; the
+  robot loop assumes they are there.
+- [ ] Validate the hand-at-the-tower signal (`sam3` zones) on real footage of a hand at the lab's tower. It is covered
+  by unit tests only; the human-turn script fakes it with a timer.
+- [ ] Calibrate a second camera without markers, against the robot or against the table and tower
+  ([what it takes](SAM3.md#a-second-camera-and-its-calibration)). No routine exists; the simulated one uses its true pose.
+- [ ] Read a face seen in part correctly. A block's long side seen in part is taken for an end, which puts its centre
+  tens of millimetres off; single views had one to three of these, and the fusion leaves them out only because other
+  views disagree.
+- [ ] Give the pack's Jenga block a look a camera can use. It is a plain one-colour box, and a tower of them renders as
+  a featureless slab that SAM 3 returns as one object. The robot loop draws each block 1.5 mm smaller in its own shade,
+  on the stage only; a block asset with rounded edges and wood grain would replace that.
 - [ ] Make `report` say when the file is complete; it returns `running` and the caller cannot tell.
 - [ ] The RoboSimStudio viewer listens on every network interface and has no localhost-only option at the tested pin
   (still none at `ba3650c`).

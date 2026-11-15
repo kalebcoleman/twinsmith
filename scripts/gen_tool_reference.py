@@ -43,7 +43,7 @@ arguments they do not declare, so a misspelled name is an error rather than bein
 bridge's own metadata takes precedence over these snapshots once discovered.
 """
 LOCAL_MODULES = ("server.py", "screen.py", "desktop_input.py", "sim_sessions.py", "isaaclab/tools.py",
-                 "robosim/tools.py", "sysid.py", "hardware.py", "gap.py", "vabar.py")
+                 "robosim/tools.py", "sysid.py", "sam3.py", "hardware.py", "gap.py", "vabar.py")
 CATALOGS_BY_NAME = ("builtins.json", "sim.json", "assets.json", "workcell.json")
 # Where each toolset's behaviour is described, relative to docs/.
 REFERENCE = {

@@ -29,6 +29,7 @@ over both.
 | [Isaac Lab](TOOLS-ISAACLAB.md) | `isaaclab__*`: discovery, jobs, guards, metrics |
 | [RoboSimStudio](ROBOSIM.md) | The `robosim` tool: real-to-sim runs in RoboSimStudio's own environment |
 | [System identification](SYSID.md) | The `sysid` tool: fit damping, friction, gains and mass to recorded trajectories with MuJoCo |
+| [SAM 3 video masks](SAM3.md) | The `sam3` tool: masks for prompted objects through a video or a recorded RGB-D clip, and box poses from depth |
 | [Hardware](HARDWARE.md) | The `hardware` tool (`cad`): KiCad checks, fab files and renders from tools beside twinsmith |
 | [Planning and evaluation](PLANNING-EVAL.md) | The `gap` and `vabar` tools: Graph-as-Policy skill graphs in simulation and VABAR benchmark runs, from pinned checkouts |
 | [Work cell](../exts/workcell/workcell/README.md) | The lab's UR5e Jenga work cell: BOM, private pack, tools. [Jenga variation contract](TOOLS-WORKCELL.md) |
