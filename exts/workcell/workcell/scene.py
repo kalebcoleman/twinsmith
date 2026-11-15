@@ -36,7 +36,7 @@ def _engine(config, mode):
             raise RuntimeError("mirror_real (gravity off on the robot) is not qualified on Newton; use physics mode or PhysX.")
         if config.get("asset_layout", {}).get("rg2", {}).get("articulation_root"):
             raise RuntimeError("A separate RG2 articulation does not load on Newton (its importer mis-lists the bodies); "
-                               "use a pack whose RG2 joins the arm, such as ur5e-jenga-workcell/v2.")
+                               "use a pack whose RG2 joins the arm, such as ur5e-workcell/v3.")
     return engine
 
 
@@ -199,7 +199,7 @@ def bench_colliders(stage, path="/World/Bench", engine="physx") -> str:
         raise ValueError("Bench pack asset has no editable mesh colliders")
     if engine == "newton":
         raise ValueError("The bench has no collision layer of its own, and its triangle meshes overflow Newton's contact "
-                         "buffer; use a pack with the split bench, such as ur5e-jenga-workcell/v2.")
+                         "buffer; use a pack with the split bench, such as ur5e-workcell/v3.")
     for prim in meshes:
         UsdPhysics.CollisionAPI.Apply(prim)
         UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr().Set("none")

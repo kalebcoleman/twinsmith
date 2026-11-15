@@ -42,7 +42,7 @@ Machine-readable data:
 
 ## Pack-backed Workcell API
 
-The integration exposes four grouped tools with eight actions through `twinsmith.bridge`, in the `sim` toolset (off by
+The integration exposes four grouped tools with nine actions through `twinsmith.bridge`, in the `sim` toolset (off by
 default: add `+sim`):
 
 | Group | Actions | Purpose |
@@ -275,8 +275,8 @@ the sensor and a second adapter plate between the flange and the Quick Changer; 
 | Flange plane to the RG2's inlet | 13.6 mm | 61.6 mm (8 + 32 + 8 + 13.6) |
 | RG2 body frame origin in tool0 | (0, 0, -2.5) mm | (0, 0, 45.5) mm |
 | Tool centre point in tool0 (centre of the fingertip pads, pads together) | (0, 0, 216.1) mm | (0, 0, 264.1) mm |
-| Wrist camera optical origin in tool0 | (33.0, 66.0, 114.5) mm | (33.0, 66.0, 162.5) mm |
-| Payload below the flange | 1.004 kg, centre of gravity (5.6, 5.6, 77.1) mm in tool0 | 1.251 kg, (4.5, 4.5, 105.1) mm |
+| Wrist camera optical origin in tool0 | (-35.0, 127.0, 99.5) mm | (-35.0, 127.0, 147.5) mm |
+| Payload below the flange | 1.004 kg, centre of gravity (0.2, 10.1, 75.9) mm in tool0 | 1.251 kg, (0.1, 8.1, 104.2) mm |
 | `workcell__robot(action="wrench")` | the UR5e's own flange sensor | the Bota's reading, with the flange reading under `flange` |
 
 The tool centre point moves along the tool axis as the fingers open: 216.1 mm with the pads together, 199.3 mm at
@@ -479,7 +479,7 @@ of this branch. Checked on Newton and PhysX unless a row says otherwise.
 | Tasks (`task="push_block"`, `task="jenga_tower"`) | objects placed in the cell's frame, in reach of the fixed base | Task files unchanged. They place objects in the cell's (world) frame and assume the rail at its default position; they neither read nor move the rail, and objects do not move with the carriage. Both build with 0 unexpected contact pairs; the `push_block` grasp passes at the default position |
 | Gripper | two driven joints: command `finger_joint` and `right_outer_knuckle_joint` together | **One driven joint: command `finger_joint` only** (-44.0 degrees closed to 26.1 degrees fully open; 0 is 75.3 mm between the pads). `right_outer_knuckle_joint` still exists, as a follower: a command to it is accepted (`status: ok`) and has no effect of its own (in the 2 s after it, all six gripper joints moved together by 0.004 degrees on Newton and 0.07 degrees on PhysX); it follows `finger_joint` |
 | Wrist force/torque read (`workcell__robot(action="wrench")`) | the simulated Bota's reading, in the sensor frame | Default source is the UR5e's own flange sensor (`source: "ur5e_tool_flange_sensor"`, frame `tool0`), carrying everything below the flange (1.004 kg). With `bota.mounted: true` the reply is the Bota's (`source: "bota_rokubi"`) with the flange reading under `flange`. Read `source` before using the numbers |
-| Tool length | flange to tool centre point with the Bota and the old Quick Changer height in the stack | 216.1 mm (`robot.tool.tcp_in_tool0_m`), 34 mm shorter; the build report carries it, do not hard-code it |
+| Tool length | flange to tool centre point with the Bota and the old Quick Changer height in the stack | 216.1 mm (`robot.tool.tcp_in_tool0_m`), 50.4 mm shorter than the 266.5 mm of the old stack and RG2 model (34.3 mm of that is the stack: no Bota, and a 13.6 mm Quick Changer in place of 15.92 mm); the build report carries it, do not hard-code it |
 | Calls that now refuse | | A `rail_joint` target outside its limits: `JOINT_LIMIT`, as for any joint (`clamp=true` uses the limit). `workcell__robot(action="rail", position_mm=...)` outside 0 to 1270: "outside the simulated travel". The same action with `rail.moving: false`: "This cell's robot base is fixed", and before the cell is built: "Build the workcell before using its rail". Nothing that worked on `main` was found to refuse now, apart from what the rows above change |
 | Not provided | | Coordinated seven-axis IK; a blocking rail move; a ROS subscriber on `/vention/axis1_position_cmd` (the config's `interfaces.rail_position_command` records the real interface, nothing listens on it) |
 

@@ -206,7 +206,7 @@ With the carriage at either end of the rail's travel the smallest of these is 11
 
 With `bota.mounted` the as-built distances are the same within 0.3 mm.
 
-The cell is built with every joint at zero: the arm lies stretched out along the bench with the tool axis about 66 mm
+The cell is built with every joint at zero: the arm lies stretched out along the bench with the tool axis about 141 mm
 above it, and the camera is on the upper side there. Turning wrist 3 at that pose swings the camera down into the
 bench, as it would on a real arm that low.
 

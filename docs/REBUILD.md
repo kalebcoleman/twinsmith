@@ -12,6 +12,7 @@ Losing the machines loses these unless they are backed up somewhere else:
 | What | Where it lives | Why it is not in Git |
 |---|---|---|
 | The source asset pack `ur5e-jenga-workcell/v2` | `<workspace>/assets/` | Vendor CAD (UR5e, RG2, Quick Changer, Vention bench) that may not be redistributed. The cell pack is built from it; without it the cell cannot be rebuilt |
+| The vendors' STEP files of the RG2, the Quick Changer and the Bota Rokubi | wherever you keep them; `TWINSMITH_RG2_STEP`, `TWINSMITH_QC_STEP` and `TWINSMITH_BOTA_STEP` name them | Vendor CAD. The cell pack `ur5e-workcell/v3` is built from them; the download pages are in `exts/workcell/config/lab_hardware.json` |
 | Secrets | `~/.config/agent-secrets/`, `~/.cache/huggingface/token` | Secrets. Re-issue them, do not copy them through chat or a repository |
 | Your own helper scripts (secret helpers, the local VLM launcher, the laptop setup) | `~/.local/bin/`, `<workspace>/tools/` | Personal machine setup, outside this repository |
 | Runs, recordings, datasets, project folders | `<workspace>/runs/`, `datasets/`, `projects/` | Outputs and work in progress |
@@ -30,7 +31,7 @@ Everything else below is rebuilt from this repository and public sources.
 ## The sequence
 
 1. **Prerequisites.** Ubuntu 22.04 or 24.04, an NVIDIA driver, `git`, `curl` and
-   [`uv`](https://docs.astral.sh/uv/). FreeCAD (`freecadcmd` on `PATH`) only to rebuild the wrist bracket. See
+   [`uv`](https://docs.astral.sh/uv/). FreeCAD (`freecadcmd` on `PATH`) only to rebuild the cell pack (the wrist bracket and the vendors' STEP files). See
    [platforms and prerequisites](LINUX-SETUP.md#platforms-and-prerequisites).
 
 2. **Workspace and checkout.** [Set up a new machine](LINUX-SETUP.md#set-up-a-new-machine), steps 1 to 3:
@@ -66,14 +67,18 @@ Everything else below is rebuilt from this repository and public sources.
    OpenCode one; the others are in [client configuration](MCP-SERVER.md#4-client-configuration).
 
 6. **Asset packs.** Restore `ur5e-jenga-workcell/v2` from your backup into `<workspace>/assets/`, then build the
-   packs the cell uses. Both scripts only read their source and leave an existing pack alone. The second one
-   downloads RealSense's D415 mesh (pinned commit, checked by SHA-256) and runs FreeCAD.
+   packs the cell uses. Every script only reads its source and leaves an existing pack alone. The second one
+   downloads RealSense's D415 mesh (pinned commit, checked by SHA-256) and runs FreeCAD. The third builds
+   `ur5e-workcell/v3`, the pack the cell reads, from `v2` and the vendors' three STEP files (each checked by SHA-256);
+   it runs FreeCAD for about ten minutes.
 
    ```bash
    cd mcp
    uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_split_packs.py
    uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_camera_assets.py
-   for pack in ur5e-workcell/v2 jenga/v1; do
+   export TWINSMITH_RG2_STEP=<file> TWINSMITH_QC_STEP=<file> TWINSMITH_BOTA_STEP=<file>
+   uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_bracket_assets.py
+   for pack in ur5e-workcell/v3 jenga/v1; do
      uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/assets.py doctor "$pack"
    done
    cd ..
