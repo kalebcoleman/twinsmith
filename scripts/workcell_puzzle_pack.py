@@ -29,6 +29,7 @@ exists is left alone. Run from ``mcp/``:
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -44,7 +45,7 @@ from twinsmith import asset_packs, pack_manifest  # noqa: E402
 COMMIT = "27f610056017d7bffc2ff56fac6d219702b781a0"
 ASSETS = "exts/ur5e-dt/assets"
 OBJECTS = f"{ASSETS}/objects"
-ASSEMBLIES = {"fmb_assembly1.json": "base1", "fmb_assembly3.json": "base3"}
+ASSEMBLIES = ("fmb_assembly1.json", "fmb_assembly3.json")     # one per base
 PACK = ("puzzles", "v1")
 # Piece -> (upstream folder, linear RGB). The colours are read off the lab photo; where upstream authors one (fmb1)
 # it agrees, except u_brown, which is maroon on the table and near black upstream.
@@ -113,8 +114,6 @@ def union_volume(boxes):
 
 def assembly(path: Path, boxes):
     """One base's assembled pieces, in the order they go in: [{"piece", "position_m", "rpy_deg"}] in the base's frame."""
-    import math
-
     def turn(rpy):
         (cr, sr), (cp, sp), (cy, sy) = [(round(math.cos(math.radians(a))), round(math.sin(math.radians(a)))) for a in rpy]
         return np.array([[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],

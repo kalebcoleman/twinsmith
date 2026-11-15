@@ -303,6 +303,7 @@ class Scan:
 
     def __init__(self, clip, run):
         from PIL import Image
+        from scipy import ndimage
 
         clip, run = Path(clip), Path(run)
         camera = json.loads((clip / "camera.json").read_text())
@@ -328,8 +329,6 @@ class Scan:
                 pose, self.frame = fixed, "table"
             pose = np.array(pose, dtype=float)
             world = points @ pose[:3, :3].T + pose[:3, 3]
-            from scipy import ndimage
-
             blind = ~valid | (world[..., 2] > CEILING_M)       # no depth, or something between the camera and the table
             valid = valid & ~blind
             self.cameras.append({"pose": pose, "fx": camera["fx"], "fy": camera["fy"], "cx": camera["cx"], "cy": camera["cy"],
@@ -593,6 +592,10 @@ def _slots(scan, pack, base, pose, gain, free):
 
 def match(scan, pack):
     """Every object of the scan against the pack. Returns the estimate (plain data)."""
+    from scipy import ndimage
+    from scipy.optimize import linear_sum_assignment
+    from scipy.spatial import cKDTree
+
     gain = _gain(scan, pack)
     every = {(o, s): fit(scan, item, shape) for o, item in enumerate(scan.objects) for s, shape in enumerate(pack.shapes)}
     fits = {key: found[0] if found else None for key, found in every.items()}
@@ -634,8 +637,6 @@ def match(scan, pack):
                    seen=slot["agree"], lift=0.0, runner_up=slot["runner_up"])
 
     # 2. Everything else: one piece per object, the cheapest pairing overall.
-    from scipy.optimize import linear_sum_assignment
-
     rows, columns = [o for o in range(len(scan.objects)) if o not in used], sorted(free)
     table = np.full((len(rows), len(columns)), 9.0)
     for i, o in enumerate(rows):
@@ -728,8 +729,6 @@ def match(scan, pack):
             top = pack.shape(piece["name"]).top(piece["pose"][:3, :3], piece["pose"][:3, 3], cell=CELL)
             if not len(top):
                 continue
-            from scipy.spatial import cKDTree
-
             near, _ = cKDTree(top).query(points, distance_upper_bound=2 * TOLERANCE_M)
             if np.isfinite(near).mean() > 0.6:
                 owner = piece["name"]
@@ -782,8 +781,6 @@ def match(scan, pack):
                     "seen": round(piece["seen"], 3), "flags": flags, "touching": []})
         if "slot" in piece:
             out[-1]["in_parent"] = {"position_m": piece["slot"]["position_m"], "rpy_deg": piece["slot"]["rpy_deg"]}
-    from scipy import ndimage
-
     family = lambda piece: piece.get("parent") or piece["name"]
     for a in range(len(pieces)):                                # footprints within 4 mm of each other, outside one assembly
         near = ndimage.binary_dilation(pieces[a]["_cells"], iterations=2)
@@ -796,7 +793,7 @@ def match(scan, pack):
 
 # ---- what follows a match -----------------------------------------------------------------------------------
 
-def difference(new, old, move_m=0.005, turn_deg=5.0):
+def difference(new, old, move_m=0.005):
     """What changed between two estimates, by piece name."""
     before, after = ({piece["name"]: piece for piece in estimate["pieces"]} for estimate in (old, new))
     moved = []
