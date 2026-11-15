@@ -53,13 +53,57 @@ objects, which are Aldrin's rescaled conversions of FMB object CAD (CC BY 4.0,
 [notices](../../../THIRD-PARTY-NOTICES.md)). Each piece is a union of axis-aligned boxes, and its colliders are those
 boxes (22 for a base, 1 to 5 for a piece), checked to fill the mesh's volume to 0.1 %: slots are real slots. In the CAD
 a piece has 1.0 to 1.4 mm of room on each side in its slot. Colours are read off a lab photo. The fiducial tags on the
-real pieces are not modelled.
+real pieces are not modelled. `pack.yaml` also records `assemblies`: per base, each piece's pose in the base's frame
+when the puzzle is assembled, in the order the pieces go in.
 
 `puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
 and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
 bound for a print with infill) and friction are `unconfirmed`. Verified: the host tests, and one build on Newton
 (Isaac Sim 6.2.0, 2026-11-15): ten pieces, 27 rigid bodies, parts audit clean. Not run yet: settling, contact and
 gripping.
+
+### Scan to scene
+
+`scripts/puzzle_scan.py` turns one RGB-D look at the table into a puzzle task: which pieces of the pack are there and
+where. It reads files and writes files, on the CPU, and needs neither the simulator nor a camera. Its input is a clip
+folder (`rgb/`, `depth/`, `camera.json`: the folder the `sam3` tool reads) and that tool's label images for it.
+
+| Command | Does |
+|---|---|
+| `match --clip C --run R --out estimate.json` | Every segment matched to a piece and given a pose |
+| `task --estimate estimate.json --out DIR` | The estimate as `DIR/task.json` and its BOM, for `quick_start(task=...)` |
+| `diff --estimate new.json --previous old.json` | Pieces added, removed and moved between two looks |
+| `score --estimate estimate.json --truth truth.json` | The estimate against known poses |
+| `synthetic --task FILE --out DIR` | A clip and perfect label images of a task's layout, ray cast from the pack's boxes |
+
+How a piece is recognised:
+
+- **Shape, from depth.** A segment's points are put in the world frame (or, for a clip with no camera pose, in a frame
+  fitted to the table) and reduced to a height map seen from above. Each shape has a height-map template for every
+  stable way it can rest, made from its collision boxes. A template is turned and slid over the segment until the
+  heights agree. Where the template expects surface and the scan shows a lower one that the camera could see, that
+  counts against it; where another object is in the way or the spot is out of view, it does not.
+- **Colour, among pieces of one shape.** The three bars, the two forks and the two U pieces differ only in colour.
+  Every piece is used at most once, and the scan's overall brightness is estimated first, so a darker or brighter
+  picture does not turn maroon into red.
+- **Slots, from the base.** A base plate is tried both ways up and at each quarter turn. For the right-way-up poses
+  each slot is checked against the scan directly, with the colour read off the surface itself, so a bar cut into three
+  fragments by the forks crossing it is still found. A piece found in a slot is given the pack's assembled pose
+  (`assemblies` in `pack.yaml`) and the base as its `parent`, so it does not start inside the base's walls.
+- **What SAM 3 left out.** Raised surface in no mask is cut into connected regions and matched like any segment.
+
+The estimate lists, besides the poses: `not_seen` (pieces of the pack it did not find), `unexplained` (segments no
+piece accounts for, with the reason), and per piece its `rest` (flat, on its side, on end, assembled), what it
+is `touching`, and `flags` such as "could be line_red", "raised 35 mm: on top of something", "upside down", "poor fit",
+and "from this view it could as well be standing another way".
+
+Checked on the CPU only, with a ray-cast camera at the wrist D415's survey pose and **perfect label images in place
+of SAM 3**: over 45 random layouts (loose, assembled with one to four pieces in, piles with pieces on end, touching
+and lying on a base), all 312 pieces were named correctly with a median position error of 0.5 mm; with 1 mm of depth
+noise, a brightness change and one mask withheld per layout, all 320. Six of six base swaps were reported as the right
+pieces removed and added. A U piece standing on end looks the same from straight above whichever end is down: its
+pose was a quarter or half turn off in 4 and 8 cases, each flagged. These numbers measure the matcher, not segmentation and
+not a rendered or real picture; that run needs the simulator and SAM 3 and has not been made.
 
 Machine-readable data:
 
