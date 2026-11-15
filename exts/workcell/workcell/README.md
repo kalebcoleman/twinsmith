@@ -57,9 +57,21 @@ real pieces are not modelled.
 
 `puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
 and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
-bound for a print with infill) and friction are `unconfirmed`. Verified: the host tests, and one build on Newton
-(Isaac Sim 6.2.0, 2026-11-15): ten pieces, 27 rigid bodies, parts audit clean. Not run yet: settling, contact and
-gripping.
+bound for a print with infill) and friction are `unconfirmed`.
+
+Measured on Newton (2026-11-15, Isaac Sim 6.2.0, one run; the scripts and reports are in the puzzle project, not in
+this repository): ten pieces, 27 rigid bodies, parts audit clean, no contact-buffer warning. Each piece's mesh lies on
+its collision boxes exactly. Over 3 s of settling no piece moved more than 0.06 mm from where the task put it, and no
+pair of pieces overlapped by more than 0.05 mm. The RG2 gripped the yellow fork by its centre tab and drew it out of
+the green base: the fork rose 118.5 mm of the 120 mm asked, slipped 0.4 mm in the gripper on the way and 0.2 mm more
+over a 3 s hold, and hung 0.1 degrees tilted; the base and its other pieces shifted 0.4 mm together and nothing
+overlapped. Each fingertip pressed with 40 N, the force the lab's RG2 driver commands with every move (the pack caps
+the finger drive at 1 N m, about 9 N at this width; with that grip the same lift slipped 0.2 mm). Fingertip friction,
+the piece's mass and the printed dimensions are still estimates.
+
+An earlier run of this lift slipped 9 mm and hung 2.3 degrees tilted. That was the script, not the grip: it sent the
+arm a new joint target every 50 ms, and Newton's stiff drives jerked the gripper at each one. Send interpolated
+targets every 10 ms or faster while something is held.
 
 Machine-readable data:
 
@@ -422,6 +434,18 @@ anywhere.
 Looks follow the photos and change nothing in the physics: grey anodised aluminium and black covers on the RG2, a
 blue Quick Changer ring, the UR's grey tubes, silver housings and light blue caps (`looks.robot_materials`, applied to
 the robot asset's own materials on the stage), a black rail, a dark blue carriage plate and a blue robot plate.
+
+Light is a demo preset, not the lab's: a dome and one key light (`lighting` in the configuration). The key light is
+tilted 35 degrees from vertical (`lighting.key_direction`, the direction it travels; `key_angle_deg` sets how soft a
+shadow's edge is), from beyond the table's far edge toward the robot. Pointing straight down, as it did until
+2026-11-15, an object resting on the bench cast its shadow under itself: the arm had a shadow and a block had none.
+
+**Rebuilding in one simulator process uses GPU memory that does not come back.** Measured on 2026-11-15 (Isaac Sim
+6.2.0, Newton, `task="puzzle_table"`): six `quick_start` rebuilds added 1.1 GB, about 0.19 GB each, with or without a
+camera capture; twelve captures on one stage added 0.19 GB once. In a run of about 36 rebuilds over 70 minutes GPU
+memory grew from 5 to 14 GB, Kit logged `[Fatal] [omni.rtx] Out of resource descriptors!`, and scene calls then timed
+out. The cause is inside Kit's renderer and is not fixed here: restart the simulator every 20 or so rebuilds, or move
+objects in place instead of rebuilding.
 
 ## The rail: the robot's base is a seventh axis
 
