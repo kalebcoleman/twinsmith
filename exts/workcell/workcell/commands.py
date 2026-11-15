@@ -25,6 +25,9 @@ def summarize(report):
     if "jenga" in report:
         summary["jenga"] = {key: report["jenga"][key] for key in ("block_count", "layers", "variation_profile", "variation_seed")
                             if key in report["jenga"]}
+    if "puzzle" in report:
+        summary["puzzle"] = {"piece_count": report["puzzle"]["piece_count"],
+                             "pieces": {piece["name"]: piece["prim_path"] for piece in report["puzzle"]["pieces"]}}
     summary["parts"] = len(report.get("parts") or [])
     audit = report.get("bom_audit") or {}
     summary["bom_audit"] = {"ok": audit.get("ok"), "errors": (audit.get("errors") or [])[:5]}

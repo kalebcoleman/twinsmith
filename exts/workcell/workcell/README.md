@@ -26,11 +26,54 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 | `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2` (superseded): RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and a placeholder bracket on the wrist 3 housing |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
 | `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
+| `exts/workcell/tasks/puzzle_table.json` + `.bom.csv` | Task: the lab's two 3D-printed assembly puzzles, one assembled and one in pieces. Asset pack `puzzles/v1` ([puzzle tasks](#puzzle-tasks)) |
 
-`workcell__cell(action="quick_start")` builds the base cell alone; `task="jenga_tower"` or `task="push_block"` (or an
-absolute task file) loads that task's objects on top, and the parts audit then checks the cell's BOM rows plus the
-task's. A cell configuration that holds task objects is refused. `scripts/workcell_split_packs.py` writes the two packs
-from `ur5e-jenga-workcell/v2`; the sections below that name `ur5e-jenga-workcell` describe that source pack.
+`workcell__cell(action="quick_start")` builds the base cell alone; `task="jenga_tower"`, `task="push_block"` or
+`task="puzzle_table"` (or an absolute task file) loads that task's objects on top, and the parts audit then checks the
+cell's BOM rows plus the task's. A cell configuration that holds task objects is refused. `scripts/workcell_split_packs.py`
+writes the cell's pack and the Jenga pack from `ur5e-jenga-workcell/v2`; the sections below that name
+`ur5e-jenga-workcell` describe that source pack.
+
+### Puzzle tasks
+
+A task is of one kind, named by its parameter section: `jenga` or `puzzle`. A `puzzle` task places base plates with
+slots and the pieces that go into them, each as one rigid body:
+
+- `assets` maps one role per piece to an asset of the task's pack. `puzzle.pieces` is a list; each piece has a `name`,
+  its `asset` role, `position_m` and `rpy_deg` (fixed-axis roll, pitch, yaw), and optionally `parent`, the name of an
+  earlier piece whose frame the pose is in. The pieces assembled into a base name it as their parent, so moving the
+  base moves the assembly. Without a parent the pose is in the world (z = 0 is the bench top).
+- An asset brings its own collision shapes and its solid volume (`puzzle:volumeM3` on its root). Mass is that volume
+  times `puzzle.density_kg_m3`; `static_friction` and `dynamic_friction` are one physics material for all pieces.
+- The BOM has one row per asset, with the number of pieces drawn from it.
+
+`puzzles/v1` is written by `scripts/workcell_puzzle_pack.py <checkout>` from a checkout of
+`github.com/inbarajaldrin/isaac-sim-mcp` at the commit the script pins: the `fmb1` (red base) and `fmb3` (green base)
+objects, which are Aldrin's rescaled conversions of FMB object CAD (CC BY 4.0,
+[notices](../../../THIRD-PARTY-NOTICES.md)). Each piece is a union of axis-aligned boxes, and its colliders are those
+boxes (22 for a base, 1 to 5 for a piece), checked to fill the mesh's volume to 0.1 %: slots are real slots. In the CAD
+a piece has 1.0 to 1.4 mm of room on each side in its slot. Colours are read off a lab photo. The fiducial tags on the
+real pieces are not modelled.
+
+`puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
+and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
+bound for a print with infill) and friction are `unconfirmed`.
+
+Measured on Newton (2026-11-15, Isaac Sim 6.2.0, three runs; the scripts and reports are in the puzzle project, not
+in this repository): ten pieces, 27 rigid bodies, parts audit clean, no contact-buffer warning. Each piece's mesh lies
+on its collision boxes exactly. Over 3 s of settling no piece moved more than 0.06 mm from where the task put it, and
+no pair of pieces overlapped by more than 0.05 mm. The RG2 gripped the yellow fork by its centre tab and drew it out
+of the green base: the fork rose 118.5 mm of the 120 mm asked, slipped 0.4 mm in the gripper on the way and 0.2 mm
+more over a 3 s hold, and hung 0.1 to 0.5 degrees tilted; the base and its other pieces shifted 0.2 to 0.4 mm together
+and nothing overlapped. Each fingertip pressed with 40 N, the force the lab's RG2 driver commands with every move (the
+pack caps the finger drive at 1 N m, about 9 N at this width; with that grip the same lift slipped 0.2 mm, one run).
+Fingertip friction, the piece's mass and the printed dimensions are still estimates. Once, in the first build after a
+simulator start, the red bar sat 0.10 mm into its slot's floor after the arm had moved to look; two repeats did not
+show it.
+
+An earlier run of this lift slipped 9 mm and hung 2.3 degrees tilted. That was the script, not the grip: it sent the
+arm a new joint target every 50 ms, and Newton's stiff drives jerked the gripper at each one. Send interpolated
+targets every 10 ms or faster while something is held.
 
 Machine-readable data:
 
@@ -110,6 +153,7 @@ physical part must map to one of these rows.
 | Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1 (built: `robot`, `quick_changer`, `rg2`; `bota` only with `bota.mounted`, `base_plate` only with `base_plate.present`) |
 | Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
 | Jenga (task packs, not the cell) | `jenga_block` 54 for `jenga_tower`, 1 for `push_block` |
+| Puzzles (task pack, not the cell) | one each for `puzzle_table`: `base1`, `base3`, `line_green`, `line_brown`, `line_red`, `inverted_u_yellow`, `u_orange`, `u_brown`, `fork_orange`, `fork_yellow` |
 
 Both cameras use the single `d415` logical asset; the BOM records two physical units. A partial tower may instantiate
 fewer blocks than the BOM quantity, but each instantiated block maps to `jenga_block`.
@@ -392,6 +436,18 @@ anywhere.
 Looks follow the photos and change nothing in the physics: grey anodised aluminium and black covers on the RG2, a
 blue Quick Changer ring, the UR's grey tubes, silver housings and light blue caps (`looks.robot_materials`, applied to
 the robot asset's own materials on the stage), a black rail, a dark blue carriage plate and a blue robot plate.
+
+Light is a demo preset, not the lab's: a dome and one key light (`lighting` in the configuration). The key light is
+tilted 35 degrees from vertical (`lighting.key_direction`, the direction it travels; `key_angle_deg` sets how soft a
+shadow's edge is), from beyond the table's far edge toward the robot. Pointing straight down, as it did until
+2026-11-15, an object resting on the bench cast its shadow under itself: the arm had a shadow and a block had none.
+
+**Rebuilding in one simulator process uses GPU memory that does not come back.** Measured on 2026-11-15 (Isaac Sim
+6.2.0, Newton, `task="puzzle_table"`): six `quick_start` rebuilds added 1.1 GB, about 0.19 GB each, with or without a
+camera capture; twelve captures on one stage added 0.19 GB once. In a run of about 36 rebuilds over 70 minutes GPU
+memory grew from 5 to 14 GB, Kit logged `[Fatal] [omni.rtx] Out of resource descriptors!`, and scene calls then timed
+out. The cause is inside Kit's renderer and is not fixed here: restart the simulator every 20 or so rebuilds, or move
+objects in place instead of rebuilding.
 
 ## The rail: the robot's base is a seventh axis
 

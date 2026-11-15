@@ -49,15 +49,15 @@ def pin(relative, name):
 
 
 def wanted_packs():
-    """Pack id/version of the cell and of every task file, read from the repository's own definitions."""
+    """(pack id/version, required) of the cell and of every task file, read from the repository's own definitions.
+    A pack only tasks marked ``"optional": true`` use is not required."""
     files = [REPO / "exts/workcell/config/lab_hardware.json", *sorted((REPO / "exts/workcell/tasks").glob("*.json"))]
-    packs = []
+    packs = {}
     for path in files:
-        section = json.loads(path.read_text())["pack"]
-        name = f"{section['id']['value']}/{section['version']['value']}"
-        if name not in packs:
-            packs.append(name)
-    return packs
+        raw = json.loads(path.read_text())
+        name = f"{raw['pack']['id']['value']}/{raw['pack']['version']['value']}"
+        packs[name] = packs.get(name, False) or not raw.get("optional", False)
+    return list(packs.items())
 
 
 def pack_state(root, name):
@@ -131,9 +131,9 @@ def collect():
         found[0].split()[0] if found else "none found: python3 scripts/env.py find")
 
     root = Path(os.environ.get("TWINSMITH_ASSET_ROOT") or space / "assets").expanduser()
-    for name in wanted_packs():
+    for name, required in wanted_packs():
         ok, detail = pack_state(root, name)
-        add("assets", name, "PASS" if ok else "FAIL", detail)
+        add("assets", name, "PASS" if ok else "FAIL" if required else "WARN", detail + ("" if ok or required else " (optional task pack)"))
     ok, detail = pack_state(root, SOURCE_PACK)
     add("assets", SOURCE_PACK, "PASS" if ok else "WARN", detail + ("" if ok else " (private source of the cell pack; keep a backup)"))
 

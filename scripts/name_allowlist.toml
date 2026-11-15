@@ -39,6 +39,11 @@ pattern = "husarion"
 path = "mcp/tests/test_workcell_*.py"
 reason = "Tests that the work cell refuses the Husarion RG2 model."
 
+[[allow]]
+pattern = "ur5e-dt"
+path = "scripts/workcell_puzzle_pack.py"
+reason = "A folder inside the upstream repository the puzzle pack is read from; the path cannot be spelled another way."
+
 # --- The checks themselves must spell the names they look for
 
 [[allow]]

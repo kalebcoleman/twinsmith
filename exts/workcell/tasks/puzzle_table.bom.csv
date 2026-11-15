@@ -1,0 +1,11 @@
+bom_id,area,item,model,quantity,unit,asset_id,unit_price,currency,price_status,price_source,hardware_status,source,notes
+base3,puzzle,Puzzle base plate (green),161 x 161 x 35 mm print,1,each,base3,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+line_brown,puzzle,Puzzle bar (maroon),25.9 x 140 x 25.9 mm print,1,each,line_brown,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+line_red,puzzle,Puzzle bar (red),25.9 x 140 x 25.9 mm print,1,each,line_red,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+fork_orange,puzzle,Puzzle fork (orange),109.2 x 70 x 21 mm print,1,each,fork_orange,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+fork_yellow,puzzle,Puzzle fork (yellow),109.2 x 70 x 21 mm print,1,each,fork_yellow,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+base1,puzzle,Puzzle base plate (red),161 x 161 x 35 mm print,1,each,base1,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+line_green,puzzle,Puzzle bar (dark green),25.9 x 140 x 25.9 mm print,1,each,line_green,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+inverted_u_yellow,puzzle,Puzzle inverted U (yellow),112.7 x 70 x 21 mm print,1,each,inverted_u_yellow,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+u_orange,puzzle,Puzzle U (orange),70 x 70 x 21 mm print,1,each,u_orange,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements
+u_brown,puzzle,Puzzle U (maroon),70 x 70 x 21 mm print,1,each,u_brown,,USD,quote_required,,unconfirmed,Lab-printed part; geometry from Aldrin's CAD,Printed dimensions mass and friction await measurements

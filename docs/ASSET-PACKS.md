@@ -343,3 +343,6 @@ The examples above use `ur5e-jenga-workcell`, the source pack. The work cell rea
 `ur5e-workcell/v3` (the base cell: robot, gripper stack, wrist camera, bench with its rail, mounting hardware) and
 `jenga/v1` (the Jenga block that the task files place). `scripts/workcell_split_packs.py`,
 `scripts/workcell_camera_assets.py` and `scripts/workcell_bracket_assets.py` write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).
+A third, optional pack, `puzzles/v1`, holds the lab's 3D-printed assembly puzzles for the `puzzle_table` task;
+`scripts/workcell_puzzle_pack.py` writes it from a checkout of its upstream repository
+([puzzle tasks](../exts/workcell/workcell/README.md#puzzle-tasks)).
