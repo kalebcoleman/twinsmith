@@ -59,6 +59,7 @@ A project's `twinsmith.json` is a different file, read for asset packs and the I
 | `TWINSMITH_ROBOSIM_ROOT` | `<workspace>/tools/robosimstudio` | host | The RoboSimStudio checkout the `robosim` tool runs. See [ROBOSIM.md](ROBOSIM.md). |
 | `TWINSMITH_GAP_ROOT` | `<workspace>/tools/graph-as-policy` | host | The Graph-as-Policy checkout the `gap` tool runs; the skill library is the `open-robot-skills` folder beside it. See [PLANNING-EVAL.md](PLANNING-EVAL.md). |
 | `TWINSMITH_VABAR_ROOT` | `<workspace>/tools/vabar` | host | The VABAR checkout the `vabar` tool runs. See [PLANNING-EVAL.md](PLANNING-EVAL.md). |
+| `TWINSMITH_SAM3_ROOT` | `<workspace>/tools/sam3` | host | The folder whose `.venv` (torch and `facebookresearch/sam3` at the pinned commit, for the SAM 3.1 checkpoint) the `sam3` tool runs. See [SAM3.md](SAM3.md). |
 | `TWINSMITH_SYSID_ROOT` | `<workspace>/tools/sysid` | host | The folder whose `.venv` (MuJoCo 4.0.1 with its `sysid` extra) the `sysid` tool runs. See [SYSID.md](SYSID.md). |
 
 Toolsets are visibility preferences, not security: the token and read-only mode are enforced by the bridge.

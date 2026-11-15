@@ -1413,3 +1413,24 @@ def test_take_scores_against_the_real_rss_functions(tmp_path):
         refused = subprocess.run([str(RSS_ROOT / ".venv/bin/python"), "-I", str(script), str(request)], cwd=tmp_path,
                                  capture_output=True, text=True, timeout=120)
         assert refused.returncode != 0 and "seed or a mask" in refused.stderr, (key, refused.stderr[-500:])
+
+
+def test_a_tower_is_started_from_data_pushed_by_block_name_and_not_tuned_by_tune_push(fake):
+    bridge = fake[0]
+    described = bridge.call("scene_template", shape="tower")
+    assert described["ok"] and described["shape"] == "tower" and described["mask_key"] == "tower=wood"
+    assert "72" in described["size_meaning"] and {"layers", "missing", "blocks", "hold", "table_friction"} <= set(described["parameters"])
+    assert "LAYERS = 18" in Path(described["path"]).read_text() and "not measurements" in described["note"]
+    first = bridge.call("start", name="tower", device="cpu", template={"shape": "tower", "missing": ["L07_1"]}, wait_s=10)
+    run = first["run"]
+    assert first["ok"] and "MISSING = ['L07_1']" in (Path(first["run_dir"]) / "scene.py").read_text()
+    pushed = complete(bridge, "rollout", run, take="p1", push={"block": "L08_1", "distance": 0.03, "seconds": 3})
+    assert pushed["push"] == {"block": "L08_1", "distance": 0.03, "seconds": 3.0, "direction": 1}
+    assert (pushed["steps"], pushed["duration_s"]) == (200, 4.0)             # the push and a second after it, at the fake's 50 Hz
+    assert "not a block of this tower" in bridge.call("rollout", run=run, take="p2", push={"block": "L07_1", "distance": 0.03, "seconds": 3})["error"]
+    assert "other kind" in bridge.call("rollout", run=run, take="p3", push={"waypoints": [[0, 0, 0], [1, 0, 0.1]]})["error"]
+    assert "tune_push fits one object" in bridge.call("tune_push", run=run, keys=["tower=wood"])["error"]
+    updated = complete(bridge, "update_scene", run, template={"friction": 0.3})
+    assert updated["template"]["missing"] == ["L07_1"] and updated["template"]["friction"] == 0.3
+    single = start(fake)["run"]                                              # a scene from a file takes either form
+    assert complete(bridge, "rollout", single, take="p4", push={"block": "L08_1", "distance": 0.03, "seconds": 1})["push"]["block"] == "L08_1"

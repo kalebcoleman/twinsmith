@@ -21,7 +21,7 @@ rows for the server you have installed, with the current state of each.
 | **`sim`** | off | Isaac Sim and Isaac Lab: scenes, physics, sensors, code in Kit, ROS 2, the work cell, Lab jobs | `files`, `isaaclab__checkpoint_register`, `isaaclab__inspect`, `isaaclab__launch`, `isaaclab__metrics`, `reload_tools`, `run_python`, `run_script`, `sim__arm`, `sim__camera`, `sim__controller`, `sim__graph`, `sim__joints`, `sim__lidar`, `sim__light`, `sim__logs`, `sim__material`, `sim__occupancy_map`, `sim__physics`, `sim__prim`, `sim__quick_start`, `sim__ros2_tf`, `sim__simulation`, `sim__stage`, `sim__timeline`, `sim__ui`, `sim__viewport`, `workcell__cell`, `workcell__jenga`, `workcell__perception`, `workcell__robot` |
 | **`assets`** | off | Import and manage assets | `assets__import_path`, `assets__library`, `assets__mesh`, `assets__pack`, `assets__validate` |
 | **`cad`** | off | PCB checks, fab files, renders | `hardware` |
-| **`real2sim`** | off | RoboSimStudio real-to-sim and MuJoCo sysid | `robosim`, `sysid` |
+| **`real2sim`** | off | RoboSimStudio real-to-sim, MuJoCo sysid and SAM 3.1 video masks | `robosim`, `sam3`, `sysid` |
 | **`planning`** | off | Graph-as-Policy skill graphs | `gap` |
 | **`eval`** | off | VABAR benchmark | `vabar` |
 <!-- /generated -->
@@ -39,8 +39,9 @@ rows for the server you have installed, with the current state of each.
   [README](../exts/workcell/workcell/README.md)), Isaac Lab jobs (`isaaclab__*`) and `run_script`, which runs any script as a
   host job. It also lists the tools a project's own Kit extension registers under a namespace this repository does not
   catalogue, once that extension connects.
-- `real2sim` holds two grouped tools, each running in its own Python environment and needing no Kit bridge: `robosim`
-  runs RoboSimStudio ([ROBOSIM.md](ROBOSIM.md)) and `sysid` fits model parameters with MuJoCo ([SYSID.md](SYSID.md)).
+- `real2sim` holds three grouped tools, each running in its own Python environment and needing no Kit bridge: `robosim`
+  runs RoboSimStudio ([ROBOSIM.md](ROBOSIM.md)), `sysid` fits model parameters with MuJoCo ([SYSID.md](SYSID.md)) and
+  `sam3` gives SAM 3.1 masks, and box poses from depth, for a video or a recorded RGB-D clip ([SAM3.md](SAM3.md)).
 - `cad` holds `hardware`: KiCad checks, fab files and renders from the tools beside twinsmith (KiCad, KiKit, Blender);
   it needs no Kit bridge and never uploads or orders. See [HARDWARE.md](HARDWARE.md).
 - `planning` holds `gap` (Graph-as-Policy, simulation only) and `eval` holds `vabar` (the VABAR benchmark). Each runs a
@@ -126,8 +127,8 @@ characters of what `tools/list` returns. Tokens are estimated as characters divi
 | Profile | Toolsets | Listed tools |
 |---|---|--:|
 | `default` | `core` | 6 |
-| `all` | `core`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 47 |
-| `all,+computer` | `core`, `computer`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 54 |
+| `all` | `core`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 48 |
+| `all,+computer` | `core`, `computer`, `sim`, `assets`, `cad`, `real2sim`, `planning`, `eval` | 55 |
 <!-- /generated -->
 
 Measured on 2026-11-13. Each `default,+name` row is `core` plus that one toolset.

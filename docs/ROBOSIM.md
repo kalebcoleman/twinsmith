@@ -79,7 +79,7 @@ The whole flow is data: no scene file is written by hand. Times are seconds, len
 
 | key | meaning |
 |---|---|
-| `shape` | `tee` (default), `box` or `jenga` |
+| `shape` | `tee` (default), `box` or `jenga`; `tower` has [its own keys](#the-tower-template) |
 | `size` | tee `[bar_length, stem_length, thickness, height]`; box and jenga `[x, y, height]`; metres |
 | `position`, `yaw` | `[x, y]` on the table (metres) and radians about +z; tee yaw 0 has the bar far, the stem toward the camera |
 | `color` | `red`, `orange`, `yellow`, `green`, `blue`, `wood`, `"#rrggbb"` or `[r, g, b]` in 0–1 |
@@ -194,6 +194,77 @@ the template's `push` routine or to read `ROLLOUT['push']` in your own routine. 
 `ShapeSpec.add_to(...)` (`specs/asset.py`); the template's `TeeShape` overrides it. Mass is rescaled
 for the whole compound (`scene/build/bodies.py` `set_body_mass`). `shape="box"` is one box and `shape="jenga"` a
 flat 72 x 24 x 14 mm block. Dimensions are the template's `size`, written as the `TEE_*` and `BOX_HALF` constants.
+
+## The tower template
+
+`shape="tower"` is a Jenga tower: 18 layers of three 72 x 24 x 14 mm blocks, each layer across the one below, every
+block its own free rigid body, on a static table. It is a second scene text (`mcp/twinsmith/robosim/tower.py`) behind
+the same actions: `scene_template`, `start`, `update_scene` and `rollout` take it as plain data. `tune_push` and
+`compare_take` do not apply (they follow one coloured object).
+
+| Key | Meaning, default |
+|---|---|
+| `size` | One block `[length, width, height]`, metres; `[0.072, 0.024, 0.014]` |
+| `layers` | Layers of three, 18 (at most 40). A block is named `L<layer>_<slot>`, layers from 0 at the table, slot 1 the middle. An even layer's blocks lie along x, an odd layer's along y |
+| `position`, `yaw` | The tower's axis on the table and its turn |
+| `missing` | Blocks left out of the regular tower, by name |
+| `blocks` | Fitted poses instead of the regular tower: `[{"name", "layer", "x", "y", "yaw", "section"}]`, x and y from the tower's axis. A clip's tower is built this way |
+| `mass` | kg per block, 0.013 |
+| `friction`, `table_friction` | Block on block 0.392; block on table 0.539 |
+| `damping_ratio` | Contact damping ratio, 0.5 to 1, default 0.737. MuJoCo has no restitution coefficient; this stands in for it |
+| `variation` | Per-block spread `{"size_mm": [0.3, 0.3, 0.1], "mass_frac": 0.05, "friction_frac": 0.1, "seed": 0}`, cut at two sigma |
+| `hold` | A scripted hand: `{"block", "path": [[seconds, along, up], ...], "release_s", "axis_only"}`. The block follows the path (metres along its long side, and up) until the release time |
+| `push` | The finger: `{"block", "distance", "seconds", "direction"}`. A 60 x 8 x 8 mm rod pushes the block's end along its long side |
+| `camera` | `{"eye", "target", "fov_y"}` |
+
+Routines: `push` (the default; `rollout(push={"block": "L08_1", "distance": 0.03, "seconds": 3})`), `pull` (the
+template's `hold`) and `settle`. Every rollout writes, beside the scene, `traj-<take>.npz` (time, the pose of every
+block at every control step, names and half sizes) and `push-<take>.json`, which `rollout` returns as `push_applied`:
+
+| Field | Meaning |
+|---|---|
+| `tower.lean_deg` | How far the line from the lowest layer's centre to the highest layer's centre turned |
+| `tower.standing` | No block other than the pushed or held one dropped half a block height or tipped past 20 degrees |
+| `tower.max_other_shift_m`, `mean_other_shift_m`, `top_shift_m`, `max_other_tip_deg` | What the other blocks did |
+| `pushed_m`, `pusher_tracked` | How far the pushed block moved along the push, and whether the finger kept to its path |
+| `contact` | The friction and damping values written into the solver for this rollout |
+
+Numerics are fixed and stated in the scene file: 2 ms physics steps (125 Hz control, 4 substeps), 50 solver
+iterations, an elliptic friction cone, a 4 ms contact time constant. MuJoCo takes the larger of two surfaces'
+friction, so the table is given contact priority and a block on it uses `table_friction`.
+
+**A script can tune against it without rebuilding.** The scene file defines `rollout(sim, params, steps)`, which
+resets, applies `params` (`friction`, `table_friction`, `damping_ratio`, `shift` for start offsets of a block or a
+section, `hold`, `push`) to the built scene and returns the trajectory. Through the tool, the same loop is
+`update_scene(template={"friction": ...})` and `rollout`, at a rebuild (about 8 s) per change.
+
+### Where the defaults come from, and what they are worth
+
+From one real-to-sim run on one clip (2026-11-14, a stock slow-motion clip of a retail Jenga set toppling, 197
+rollouts on Newton's MuJoCo-Warp; the run's own scene, with 75 x 25 x 15 mm blocks). The clip pinned down the fall's
+timing and two start conditions. It bounded block-on-block friction from below only (0.2 is worse; 0.3 to 0.55
+cannot be told apart), preferred block-on-table friction above 0.4, placed the damping ratio at 0.7 to 0.85, and did
+not identify the mass. **The defaults are that run's best point: consistent with one clip, not measured, and not from
+the lab's blocks.**
+
+The same clip again with this template (2026-11-15, cuda:0, four repeats per row; the clip's score terms, lower tilt
+and frame error and higher overlap are better):
+
+| Run | Block (mm) | Tilt RMSE (deg) | Collapse onset (real: frame 53) | Outline overlap, clip mean | Overlap, blocks at rest | Total score |
+|---|---|---|---|---|---|---|
+| First run, its own scene | 75 x 25 x 15 | 0.46 to 0.50 | 54 | 0.76 to 0.77 | 0.57 to 0.63 | 4.19 to 4.68 |
+| Template, first run's parameters | 75 x 25 x 15 | 0.41 to 0.52 | 54 | 0.76 to 0.78 | 0.57 to 0.62 | 4.25 to 4.67 |
+| Template, first run's parameters | 72 x 24 x 14 | 1.90 to 1.96 | 50 | 0.73 to 0.74 | 0.59 to 0.63 | 5.09 to 5.73 |
+| Template, tuned again (60 rollouts) | 72 x 24 x 14 | 0.46 to 0.50 | 54 | 0.75 to 0.77 | 0.60 to 0.64 | 3.76 to 4.81 |
+
+- At the first run's block size the template reproduces the first run: the scene code is equivalent.
+- With the lab's block and nothing else changed it is **worse**: a smaller tower falls sooner (three frames early),
+  and the lab block is flatter than a retail one (14 : 72 against 15 : 75), so a tower of them is 2.8 percent lower
+  than the one in the clip.
+- Tuned again from that point (CMA-ES, 60 rollouts) it is **as good as the first run and no better**: every term is
+  inside the first run's run-to-run spread, with the mean outline overlap about 0.01 lower. What moved is the clip's
+  time scale (5.53 to 5.29) and one start offset. Friction and damping moved inside the ranges the clip cannot tell
+  apart (0.44, 0.54, 0.71), so they are no better known than before.
 
 ## Timing
 

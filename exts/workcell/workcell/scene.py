@@ -442,6 +442,9 @@ class Workcell:
             physics.CreateGravityMagnitudeAttr().Set(9.81)
             light = UsdLux.DistantLight.Define(stage, "/World/Light")
             light.CreateIntensityAttr().Set(config["lighting"]["key_intensity"])
+            light.CreateAngleAttr().Set(config["lighting"]["key_angle_deg"])
+            travel = Gf.Vec3d(*config["lighting"]["key_direction"]).GetNormalized()        # a distant light shines along its -Z
+            light.AddOrientOp(UsdGeom.XformOp.PrecisionDouble).Set(Gf.Rotation(Gf.Vec3d(0, 0, -1), travel).GetQuat())
             dome = UsdLux.DomeLight.Define(stage, "/World/DomeLight")
             dome.CreateIntensityAttr().Set(config["lighting"]["dome_intensity"])
             bench = UsdGeom.Xform.Define(stage, "/World/Bench")

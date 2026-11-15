@@ -32,12 +32,12 @@ def test_each_toolset_alone_and_disabled_registers_nothing(name):
         assert all(toolsets.owner(tool) != name for tool in disabled._tool_manager._tools)
 
 
-def test_real2sim_is_off_by_default_and_registers_robosim_and_sysid():
+def test_real2sim_is_off_by_default_and_registers_robosim_sysid_and_sam3():
     assert "real2sim" not in toolsets.DEFAULT and "real2sim" in config.select("all")
-    assert not {"robosim", "sysid"} & set(build()._tool_manager._tools)
+    assert not {"robosim", "sysid", "sam3"} & set(build()._tool_manager._tools)
     alone = build("default,+real2sim")
-    assert {name for name in alone._tool_manager._tools if toolsets.owner(name) == "real2sim"} == {"robosim", "sysid"}
-    assert toolsets.MEMBERS["real2sim"] == {"robosim", "sysid"}
+    assert {name for name in alone._tool_manager._tools if toolsets.owner(name) == "real2sim"} == {"robosim", "sysid", "sam3"}
+    assert toolsets.MEMBERS["real2sim"] == {"robosim", "sysid", "sam3"}
 
 
 def test_only_core_is_on_by_default_and_status_lists_no_planned_toolsets():
@@ -64,7 +64,7 @@ LISTED = {
             "workcell__cell", "workcell__robot", "workcell__perception", "workcell__jenga",
             "isaaclab__launch", "isaaclab__inspect", "isaaclab__metrics", "isaaclab__checkpoint_register", "run_script"},
     "assets": {"assets__import_path", "assets__library", "assets__mesh", "assets__pack", "assets__validate"},
-    "real2sim": {"robosim", "sysid"},
+    "real2sim": {"robosim", "sysid", "sam3"},
     "cad": {"hardware"},
     "planning": {"gap"},
     "eval": {"vabar"},
@@ -153,11 +153,11 @@ def test_live_visibility_uses_same_selection():
 
 # Estimated tokens of each toolset on top of core, and of all: the measured size plus about 5 percent. Measured
 # 2026-11-13 with scripts/measure_tool_list.py: default (core) 1,586; computer 4,807; sim 17,876 (with ROS 2, the
-# work cell and Isaac Lab); assets 4,283; cad 2,018; real2sim 3,050; planning 1,981; eval 2,110; all 23,387;
-# all,+computer 26,607.
+# work cell and Isaac Lab); assets 4,283; cad 2,018; planning 1,981; eval 2,110. Measured again 2026-11-15 with
+# sam3 (647) in real2sim: real2sim 3,717; all 24,379; all,+computer 27,600.
 BUDGETS = {"default": 1670, "default,+computer": 5050, "default,+sim": 18770, "default,+assets": 4500,
-           "default,+cad": 2120, "default,+real2sim": 3210, "default,+planning": 2080, "default,+eval": 2220,
-           "all": 24560, "all,+computer": 27940}
+           "default,+cad": 2120, "default,+real2sim": 3900, "default,+planning": 2080, "default,+eval": 2220,
+           "all": 25600, "all,+computer": 28980}
 
 
 @pytest.mark.parametrize("profile,budget", BUDGETS.items())

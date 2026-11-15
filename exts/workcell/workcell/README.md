@@ -680,6 +680,131 @@ pose (tool down, across the block's 24 mm side), Newton only, block friction and
 
 ![-X end: start, after the rail move, pre-grasp, holding](../../../docs/media/workcell-rail-acceptance-minus.jpg)
 
+## One Jenga turn: look, predict, push, look again
+
+[`scripts/jenga_robot_loop.py`](../../../scripts/jenga_robot_loop.py) runs one robot turn at the tower against a
+disposable simulator on Newton (`--port <port> --task <tower task file> --out <folder> --mutate-stage --discard-changes
+--allow-concurrent-gpu`). Simulation only; nothing in it reaches a real robot. It uses three things outside the cell:
+the [`sam3`](../../../docs/SAM3.md) tool for the blocks' poses from the wrist camera, the `robosim`
+[tower template](../../../docs/ROBOSIM.md#the-tower-template) as the lookahead, and a Kit-side recorder
+([`jenga_robot_loop_kit.py`](../../../scripts/jenga_robot_loop_kit.py)) that writes colour, depth and the camera's
+pose.
+
+1. **Rail, then arm.** The rail is parked with its own blocking move (a trapezoid of targets, then a check that it
+   holds). The arm is then solved from the UR base (six joints) so that the wrist D415 faces the tower from 0.45 m.
+2. **Look.** `sam3` finds the blocks in the clip and gives each visible block a pose in the world; the blocks are put
+   into layers and slots. The push is aimed at the block the camera found, not at where the task file put it.
+3. **Lookahead.** The tower template pushes each candidate block on Newton's MuJoCo-Warp; the candidate with the least
+   predicted lean among towers that stay standing is chosen.
+4. **Push.** One fingertip of the open RG2 pushes the block slowly while the wrist camera records.
+5. **Look again and compare** what the cell's tower did with what the lookahead predicted and what the camera saw.
+
+Two things the cell forced, both worth knowing before a real game:
+
+- **The RG2 cannot poke one block with its fingers closed.** The two fingertips together are 22.8 x 20.5 mm against a
+  block end of 24 x 14 mm. One fingertip is 11.4 x 20.5 mm (measured on the stage from its collision shape). The script
+  opens the gripper, turns it so the fingers are one above the other, pushes with the lower one and lets the upper one
+  pass over the top of the tower. That works only for a block in the upper third of the tower (layer 12 of 0 to 17 and
+  up), and it leaves 1.3 mm above and below the fingertip.
+- **The pack's block cannot be told apart in a picture.** It is a plain one-colour box with sharp edges, so a tower
+  renders as a featureless slab and SAM 3 returns it as one object. The script draws each block 1.5 mm smaller in its
+  own shade, on the stage's session layer only (the block's own mesh stays the collider). With that SAM 3 finds the
+  blocks. A block asset with rounded edges and grain would replace this.
+
+**Result (2026-11-15, Isaac Sim 6.2.0 on Newton, pack `v3`, one run; a second run repeated every number within 0.1 mm;
+made with SAM 3, before the `sam3` tool moved to SAM 3.1).** On the recorded clips of this run SAM 3.1 finds 35 of the
+36 blocks of the first look, the five candidates among them, and loses the blocks in the moving clip of the push
+([the comparison](../../../docs/SAM3.md#sam-31-against-sam-3)).
+The tower is the `jenga_tower` task with the first real-to-sim run's block values (13 g, friction 0.392, per-block
+spread), which are one clip's best point and not measurements. "Real" below is this cell, standing in for the lab.
+
+| | Value |
+|---|---|
+| Rail | parked at 435.0 mm (joint -0.20 m), reached 435.0001 mm |
+| Blocks found by the camera before the push | 36 of the 36 a face-on view shows (27 ends, 9 sides), 18 layers |
+| Block centre from the camera against the simulator | median 0.93 mm, largest 1.19 mm |
+| Lookahead, predicted lean per candidate | L12_0 1.05, L12_2 1.99, L14_1 3.73, L12_1 5.20, L16_1 6.00 degrees; all standing; chosen L12_0 (about 2 minutes a candidate beside the simulator) |
+| Aim: perceived end face against the true one | 1.11 mm; fingertip reached its asked end point within 0.2 mm after a 1.2 mm correction for the arm's droop |
+| Wrist clip of the push | 132 frames; SAM 3 followed 45 to 47 blocks through it, each with a pose in most frames |
+
+| What the push did | Lookahead | Cell ("real") | Camera, before and after |
+|---|--:|--:|--:|
+| Pushed block along the push (25 mm asked) | 25.1 mm | 21.3 mm at rest (27.1 mm while held) | 21.3 mm |
+| Tower lean | 1.05 degrees | 4.87 degrees | |
+| Top layer's shift | 4.5 mm | 20.4 mm | 20.5 mm |
+| Largest shift of another block | 7.0 mm | 23.0 mm | 23.0 mm |
+| Tower stands | yes | yes | |
+
+**The lookahead was wrong about this push by a factor of four to five, and the cell says why.** In the cell the tower
+from layer 11 up went with the pushed block (the block under it included, 17 mm), and the layers below sheared a
+little under it. The contact report at the end of the push shows the fingertip pressing on the block *below* the pushed
+one with 0.42 N along the push, and nothing on the pushed block itself: a fingertip 11.4 mm high in a 14 mm slot acts
+on its neighbours in this cell. The lookahead pushes with an 8 x 8 mm rod that touches one block. So the prediction is
+of another pusher, and the ranking of candidates was not tested (one push was made). The camera, on the other hand,
+measured what happened to within 0.1 mm of the simulator's own numbers.
+
+The cell's tower also creeps on its own (0.05 mm/s at the top, see [open items](../../../docs/OPEN-ITEMS.md#work-cell-on-newton));
+over the 33 s between the two looks that is at most 1.7 mm and 0.4 degrees of the cell's numbers.
+
+Not done: more than one push, a push on PhysX, a pusher as thin as the lookahead's, the lookahead with the cell's own
+fingertip and contact settings, and anything on the real robot.
+
+## A person's turn: watch, look again from all sides, rebuild the twin
+
+[`scripts/jenga_human_turn.py`](../../../scripts/jenga_human_turn.py) is the other half of a game, with the same
+arguments and the same rules (simulation only).
+
+1. **Watch pose.** The arm holds the wrist D415 on the tower from the robot's own side of it, above it and 0.6 m away:
+   the tower and a hand at it are in the picture, and the arm is not between the person and the tower.
+2. **Waiting.** A scripted turn draws one block out of the tower and carries it off, with a stand-in hand that only a
+   camera sees. **The hand-present signal is the script's own timer.** Finding a real hand is `sam3`'s
+   [zone](../../../docs/SAM3.md#is-a-hand-at-the-tower-zones), which is to be validated on real camera footage, not here.
+3. **Rescan.** Rail and arm take the camera to the tower's two faces along the rail, to the face toward the rail and
+   to a view from above (each view: fold the arm, park the rail, point the camera). A camera enabled in
+   [`scripts/jenga_cameras.json`](../../../scripts/jenga_cameras.json) is recorded too: any RGB-D camera that stands
+   still, given by its intrinsics, depth scale and pose in the world. The file's `tripod` example is off by default and
+   is not part of the pack or of `lab_hardware.json`; what calibrating a real one takes is in
+   [SAM3.md](../../../docs/SAM3.md#a-second-camera-and-its-calibration).
+4. **Fuse and rebuild.** `sam3(action="fuse")` merges every view into one pose per block. The blocks become the
+   `robosim` tower template's `blocks`, and the twin's tower is started from them on Newton's MuJoCo-Warp.
+
+**Result (2026-11-15, Isaac Sim 6.2.0 on Newton, pack `v3`, the tower in the middle of the bench, `tripod` enabled,
+one run; made with SAM 3).** The recorded looks of this run through SAM 3.1 rebuild the same 53 blocks, a median
+0.71 mm (largest 2.4 mm) from the simulator's ([the comparison](../../../docs/SAM3.md#sam-31-against-sam-3)). The scripted turn took block L15_1 (the middle block of layer 15) in 10 s; the rest of the tower moved by
+at most 8.9 mm and stood.
+
+| View | Camera | Blocks found | Block centre against the simulator at that moment: median, largest |
+|---|---|--:|---|
+| tripod (0.59 m, the far corner) | fixed, 1280 x 800, depth in mm | 53 | 1.06 mm, 33 mm |
+| front | wrist D415 | 35 | 0.96 mm, 1.2 mm |
+| above | wrist D415 | 36 (35 with a pose) | 1.27 mm, 13 mm |
+| rail side | wrist D415 | 38 (37) | 0.86 mm, 30 mm |
+| back | wrist D415 | 37 | 0.89 mm, 1.2 mm |
+
+The large values are faces read wrongly: a block's long side seen in part looks like an end, which puts its centre
+tens of millimetres off. The fusion and the tower-building step leave them out: 58 fused boxes, of which 3 contradicted
+their layer's direction and one was the removed block lying on the bench 0.25 m away, seen and set aside.
+
+| The twin against the cell's tower | Value |
+|---|---|
+| Blocks | 53 in the twin, 53 in the tower; none missed, none made up; the removed block is absent |
+| Position in the plane | median 0.85 mm, largest 2.08 mm |
+| Yaw | median 0.12 degrees, largest 0.79 degrees |
+| Height as the cameras saw it | median 0.16 mm, largest 0.64 mm |
+| Height in the twin | median 1.9 mm, largest 3.3 mm too high: the template stacks layers at 14 mm, and the cell's softer contacts let its tower sink |
+| Settling the twin for 2 s | stands; largest block shift 2.6 mm |
+| The two cameras on the blocks both saw (52) | median 1.5 mm apart, largest 2.8 mm |
+| Wrist views alone | the same 53 blocks, median position error 0.56 mm |
+
+Reading it: the rescan rebuilt the tower completely and to about a millimetre. The wrist camera's four views were
+enough for this tower; the fixed camera added a second look at 52 blocks and nothing new. Its numbers are worse than
+the wrist's because the cell's tower creeps (2.5 mm at the top during the 45 s rescan) and the fixed camera's look was
+the first, so the fused result is of a tower that moved while it was being measured. The fixed camera's pose is the
+simulator's own, so its agreement with the wrist camera is the method's floor, not a calibration result.
+
+Not done: a real hand, a real second camera or its calibration, a turn that leaves the tower leaning or partly
+fallen, a block left half out, and re-running the lookahead on the rebuilt twin.
+
 ## Physical fidelity
 
 The current candidate contains:
