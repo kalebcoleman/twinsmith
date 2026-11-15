@@ -1,6 +1,6 @@
 """sam3: prompt and source checks, the wrapper around a fake launcher, and the driver's geometry (numpy only).
 
-The SAM 3 model itself is not run here: it needs the bundle's environment, its weights and a GPU.
+The SAM 3.1 model itself is not run here: it needs the tool's own environment, its weights and a GPU.
 """
 
 import asyncio
@@ -68,6 +68,9 @@ def test_a_clip_with_depth_needs_matching_frames_and_a_usable_camera(tmp_path):
     assert code(lambda: check_source(str(clip(tmp_path / "c", camera={"fx": 600.0})))) == "CAMERA_INVALID"
     assert code(lambda: check_source(str(clip(tmp_path / "d", camera=dict(CAMERA, fx=0))))) == "CAMERA_INVALID"
     assert code(lambda: check_source(str(clip(tmp_path / "e", camera=dict(CAMERA, world_from_camera=[[1, 0, 0]]))))) == "CAMERA_INVALID"
+    assert code(lambda: check_source(str(clip(tmp_path / "g", camera=dict(CAMERA, depth_scale=0))))) == "CAMERA_INVALID"
+    assert code(lambda: check_source(str(clip(tmp_path / "h", camera=dict(CAMERA, fps="30"))))) == "CAMERA_INVALID"
+    assert check_source(str(clip(tmp_path / "i", camera=dict(CAMERA, depth_scale=0.0001, fps=10))))["camera"]["depth_scale"] == 0.0001
     moving = dict(CAMERA, frames=[{"world_from_camera": [[1.0, 0, 0, 0], [0, 1.0, 0, 0], [0, 0, 1.0, 0], [0, 0, 0, 1.0]]}] * 2)
     assert code(lambda: check_source(str(clip(tmp_path / "f", camera=moving)))) == "CAMERA_INVALID"   # 2 poses, 3 frames
 

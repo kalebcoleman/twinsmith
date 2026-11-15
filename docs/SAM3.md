@@ -132,8 +132,8 @@ object is in it when its own box overlaps it and, where both have a depth point,
 optical axis, so a hand close to the camera and far in front of the tower does not count.
 
 Each object row of the zoned prompt gets `in_zone`, and `report` returns per zone `frames_present`,
-`first_present_frame`, `last_present_frame` and `present_in_last_frame`. The robot loop waits on this: it goes on only
-after a hand has been seen at the tower and two checks in a row have found none.
+`first_present_frame`, `last_present_frame` and `present_in_last_frame`. A robot loop can wait on this and go on only
+after a hand has been seen at the tower and two checks in a row have found none; neither Jenga script does so yet.
 
 It is a per-clip answer, not a live one: a check is a job that loads the model (about 20 s) before it reads the
 frames. Without depth it is a test in the picture only.

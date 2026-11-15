@@ -293,12 +293,12 @@ class HumanTurn(Loop):
         bridge.call("stop", run=twin["run"])
         robosim_result(bridge, twin["run"])
 
-        table, missed, extra = compare(rows, axis, in_tower)
+        table, missed, made_up = compare(rows, axis, in_tower)
         column = lambda key: [abs(row[key]) for row in table]
         self.record["fusion"] = {key: fused[key] for key in ("fused_json", "views", "boxes", "seen_by_one_view", "largest_spread_m", "detections")}
         self.record["twin"] = {
             "robosim_run": twin["run"], "engine": "Newton MuJoCo-Warp (cuda:0)", "blocks": len(rows), "blocks_in_the_real_tower": len(in_tower),
-            "missed": missed, "made_up": extra, "removed_block_absent": args.remove not in rows,
+            "missed": missed, "made_up": made_up, "removed_block_absent": args.remove not in rows,
             "seen_away_from_the_tower": [[round(v, 3) for v in box["position_world_m"]] for box in loose],
             "boxes_left_out_as_contradicting_the_tower": len(contradicting),
             "xy_error_mm": {"median": round(float(np.median(column("xy_error_mm"))), 2), "max": max(column("xy_error_mm"))},

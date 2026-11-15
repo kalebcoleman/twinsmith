@@ -80,7 +80,10 @@ def test_rotation_and_quaternion_agree(loop):
     for rotation in (np.eye(3), np.array([[0.0, 0.0, 1.0], [0.0, -1.0, 0.0], [1.0, 0.0, 0.0]]),
                      np.array([[0.0, 0.0, 1.0], [-1.0, 0.0, 0.0], [0.0, -1.0, 0.0]])):
         w, x, y, z = loop.rotation_quat(rotation)
-        assert np.allclose(loop.quat_rotation(x, y, z, w), rotation) and w * w + x * x + y * y + z * z == pytest.approx(1.0)
+        back = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                         [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        assert np.allclose(back, rotation) and w * w + x * x + y * y + z * z == pytest.approx(1.0)
 
 
 def fused(centre, along="x", views=("front",), detections=1):

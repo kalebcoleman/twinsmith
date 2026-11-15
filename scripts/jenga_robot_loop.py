@@ -69,12 +69,6 @@ def rotation_quat(r):
     return [float(v) for v in q]
 
 
-def quat_rotation(x, y, z, w):
-    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
-
-
 def tower_change(start, end, moved=()):
     """What a push did to the rest of a tower, from {name: 4 x 4 pose} before and after: the same quantities as the
     robosim tower template's ``tower_state``."""
@@ -257,12 +251,12 @@ class Loop:
         return folder
 
     # ---- perception and prediction ----------------------------------------------------------------
-    def segment(self, clip, name, prompts=("tower=tower of wooden blocks", "blocks=wooden block"), zone=None):
+    def segment(self, clip, name, prompts=("tower=tower of wooden blocks", "blocks=wooden block")):
         """Run the sam3 tool on a recorded clip; returns its run folder and report. A ``blocks`` prompt gets box poses."""
         sam3 = Sam3(job_status=jobs.runs_status)
         run = f"{self.out.name}-{name}-{time.strftime('%H%M%S')}"
         boxes = {"blocks": list(BLOCK)} if any(prompt.startswith("blocks=") for prompt in prompts) else None
-        started = sam3.call("track", source=str(clip), name=run, prompts=list(prompts), box_size_m=boxes, zone=zone,
+        started = sam3.call("track", source=str(clip), name=run, prompts=list(prompts), box_size_m=boxes,
                             allow_concurrent_gpu=self.args.allow_concurrent_gpu)
         if not started.get("ok"):
             raise SystemExit(f"sam3 refused: {started.get('error')} {started.get('hint', '')}")

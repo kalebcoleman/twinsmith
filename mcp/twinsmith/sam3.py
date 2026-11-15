@@ -168,6 +168,9 @@ def check_source(source, every=1) -> dict:
             if any(isinstance(camera[key], bool) or not isinstance(camera[key], (int, float)) or not math.isfinite(camera[key])
                    for key in ("fx", "fy", "cx", "cy")) or camera["fx"] <= 0 or camera["fy"] <= 0:
                 raise ValueError("fx, fy, cx and cy must be finite numbers, fx and fy positive")
+            if any(isinstance(camera[key], bool) or not isinstance(camera[key], (int, float)) or not math.isfinite(camera[key])
+                   or camera[key] <= 0 for key in ("depth_scale", "fps") if key in camera):
+                raise ValueError("depth_scale and fps, when given, must be positive finite numbers")
         except (OSError, ValueError, KeyError, TypeError) as error:
             raise sibling.Refusal("CAMERA_INVALID", f"A clip with depth/ needs camera.json with fx, fy, cx, cy in pixels: {error}") from None
         if "world_from_camera" in camera:
