@@ -1105,6 +1105,16 @@
       "value": 1100.0,
       "status": "unconfirmed",
       "source": "Placeholder demo preset, not the lab's lighting: a soft dome with a weak key light, so the arm casts no hard shadow into the wrist view."
+    },
+    "key_direction": {
+      "value": [0.45, 0.35, -0.82],
+      "status": "unconfirmed",
+      "source": "Placeholder demo preset, not the lab's lighting. The direction the key light travels in the world frame: 35 degrees from vertical, from beyond the table's far edge and to one side, toward the robot. Straight down, an object resting on the bench casts its shadow under itself and none shows; this way objects on the bench shadow the bench and each other, and the arm's shadow falls toward the rail."
+    },
+    "key_angle_deg": {
+      "value": 3.0,
+      "status": "unconfirmed",
+      "source": "Placeholder demo preset, not the lab's lighting: the key light's angular size, which sets how soft a shadow's edge is."
     }
   },
   "interfaces": {
