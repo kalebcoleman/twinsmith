@@ -95,7 +95,9 @@ Everything else below is rebuilt from this repository and public sources.
    ```
 
    `workcell__cell(action="quick_start")` builds the base cell; `task="push_block"` or `task="jenga_tower"` adds
-   that task's objects ([work cell](../exts/workcell/workcell/README.md)).
+   that task's objects ([work cell](../exts/workcell/workcell/README.md)). `task="puzzle_table"` needs the optional
+   `puzzles/v1` pack: pull it, or build it with `scripts/workcell_puzzle_pack.py`
+   ([puzzle tasks](../exts/workcell/workcell/README.md#puzzle-tasks)).
 
 8. **Optional tools, `full` tier only.** Each has its own setup page and a pinned commit that the server checks:
 

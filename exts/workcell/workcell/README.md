@@ -26,11 +26,40 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 | `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2` (superseded): RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and a placeholder bracket on the wrist 3 housing |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
 | `exts/workcell/tasks/push_block.json` + `.bom.csv` | Task: one loose block for the RG2 to push. Asset pack `jenga/v1` |
+| `exts/workcell/tasks/puzzle_table.json` + `.bom.csv` | Task: the lab's two 3D-printed assembly puzzles, one assembled and one in pieces. Asset pack `puzzles/v1` ([puzzle tasks](#puzzle-tasks)) |
 
-`workcell__cell(action="quick_start")` builds the base cell alone; `task="jenga_tower"` or `task="push_block"` (or an
-absolute task file) loads that task's objects on top, and the parts audit then checks the cell's BOM rows plus the
-task's. A cell configuration that holds task objects is refused. `scripts/workcell_split_packs.py` writes the two packs
-from `ur5e-jenga-workcell/v2`; the sections below that name `ur5e-jenga-workcell` describe that source pack.
+`workcell__cell(action="quick_start")` builds the base cell alone; `task="jenga_tower"`, `task="push_block"` or
+`task="puzzle_table"` (or an absolute task file) loads that task's objects on top, and the parts audit then checks the
+cell's BOM rows plus the task's. A cell configuration that holds task objects is refused. `scripts/workcell_split_packs.py`
+writes the cell's pack and the Jenga pack from `ur5e-jenga-workcell/v2`; the sections below that name
+`ur5e-jenga-workcell` describe that source pack.
+
+### Puzzle tasks
+
+A task is of one kind, named by its parameter section: `jenga` or `puzzle`. A `puzzle` task places base plates with
+slots and the pieces that go into them, each as one rigid body:
+
+- `assets` maps one role per piece to an asset of the task's pack. `puzzle.pieces` is a list; each piece has a `name`,
+  its `asset` role, `position_m` and `rpy_deg` (fixed-axis roll, pitch, yaw), and optionally `parent`, the name of an
+  earlier piece whose frame the pose is in. The pieces assembled into a base name it as their parent, so moving the
+  base moves the assembly. Without a parent the pose is in the world (z = 0 is the bench top).
+- An asset brings its own collision shapes and its solid volume (`puzzle:volumeM3` on its root). Mass is that volume
+  times `puzzle.density_kg_m3`; `static_friction` and `dynamic_friction` are one physics material for all pieces.
+- The BOM has one row per asset, with the number of pieces drawn from it.
+
+`puzzles/v1` is written by `scripts/workcell_puzzle_pack.py <checkout>` from a checkout of
+`github.com/inbarajaldrin/isaac-sim-mcp` at the commit the script pins: the `fmb1` (red base) and `fmb3` (green base)
+objects, which are Aldrin's rescaled conversions of FMB object CAD (CC BY 4.0,
+[notices](../../../THIRD-PARTY-NOTICES.md)). Each piece is a union of axis-aligned boxes, and its colliders are those
+boxes (22 for a base, 1 to 5 for a piece), checked to fill the mesh's volume to 0.1 %: slots are real slots. In the CAD
+a piece has 1.0 to 1.4 mm of room on each side in its slot. Colours are read off a lab photo. The fiducial tags on the
+real pieces are not modelled.
+
+`puzzle_table` assembles the green-base puzzle (two bars, then two forks standing across them) and lays the red base
+and its four pieces loose beside it. Where things lie on the bench is a demo layout; density (solid PLA, an upper
+bound for a print with infill) and friction are `unconfirmed`. Verified: the host tests, and one build on Newton
+(Isaac Sim 6.2.0, 2026-11-15): ten pieces, 27 rigid bodies, parts audit clean. Not run yet: settling, contact and
+gripping.
 
 Machine-readable data:
 
@@ -110,6 +139,7 @@ physical part must map to one of these rows.
 | Robot | `robot` 1, `base_plate` 1, `bota` 1, `quick_changer` 1, `rg2` 1 (built: `robot`, `quick_changer`, `rg2`; `bota` only with `bota.mounted`, `base_plate` only with `base_plate.present`) |
 | Cameras | `d415` 2, `wrist_mount` 1, `overhead_mount` 1, `overhead_release` 1, `overhead_shelf` 1 (built: one `d415` and `wrist_mount`; the overhead rows only with `overhead_camera.enabled`) |
 | Jenga (task packs, not the cell) | `jenga_block` 54 for `jenga_tower`, 1 for `push_block` |
+| Puzzles (task pack, not the cell) | one each for `puzzle_table`: `base1`, `base3`, `line_green`, `line_brown`, `line_red`, `inverted_u_yellow`, `u_orange`, `u_brown`, `fork_orange`, `fork_yellow` |
 
 Both cameras use the single `d415` logical asset; the BOM records two physical units. A partial tower may instantiate
 fewer blocks than the BOM quantity, but each instantiated block maps to `jenga_block`.

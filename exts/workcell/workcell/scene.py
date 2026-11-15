@@ -407,14 +407,14 @@ class Workcell:
             loaded = tasks.load(task)
             loaded["pack"].verify_dependencies()
             config, rows = tasks.merged(config, loaded), rows + loaded["rows"]
-            assets = {**assets, "jenga_block": loaded["asset"]}
+            assets = {**assets, **loaded["assets"]}
         engine = _engine(config, mode)
         room_url = rooms.resolve(environment)       # checked (reachable) before the stage is replaced
         import omni.usd
         import omni.timeline
         from sim_tools.stage_open import stage_has_unsaved_work
         from pxr import Gf, UsdGeom, UsdLux, UsdPhysics
-        from . import robot, cameras, jenga
+        from . import robot, cameras, tasks
 
         if not callable(getattr(robot, "build_robot", None)) or not callable(getattr(cameras, "build_cameras", None)):
             raise RuntimeError("workcell robot and camera builders are not installed")
@@ -453,9 +453,9 @@ class Workcell:
             robot_report = robot.build_robot(stage, pack, config)
             _configure_robot_gravity(stage, robot_report["assembly_path"], mode == "mirror_real")
             camera_report = cameras.build_cameras(stage, assets, config, robot_report)
-            block_report = jenga.build(stage, assets["jenga_block"], config) if loaded else None
+            task_report = tasks.build(stage, assets, config, loaded) if loaded else None
             parts = ([{"prim_path": "/World/Bench", "asset_id": config["assets"]["bench"], "bom_id": "bench"}]
-                     + robot_report["parts"] + camera_report["parts"] + (block_report["parts"] if loaded else []))
+                     + robot_report["parts"] + camera_report["parts"] + (task_report["parts"] if loaded else []))
             missing = {row["asset_id"] for row in scene_rows(config, rows)} - {part["asset_id"] for part in parts}
             if missing:
                 raise ValueError(f"Physical assets missing from BOM part mappings: {sorted(missing)}")
@@ -479,14 +479,14 @@ class Workcell:
                             "task": {"name": loaded["name"], "file": loaded["path"],
                                      "pack": {key: loaded["pack"].manifest[key] for key in ("id", "version")}}
                             if loaded else None,
-                            **({"jenga": block_report} if loaded else {}),
+                            **({loaded["kind"]: task_report} if loaded else {}),
                             "bom_audit": audit, **({"newton": newton_report} if newton_report else {}),
                             **({"bench_top": top_report} if top_report else {}),
                             **({"environment": room_report} if room_report else {}),
                             **({"contact": contact_report} if contact_report else {}),
                             "limitations": [line for line in robot_report["limitations"]
                                             if not (engine == "newton" and "drives are preserved" in line)]
-                            + camera_report["limitations"] + (block_report["limitations"] if loaded else [])
+                            + camera_report["limitations"] + (task_report["limitations"] if loaded else [])
                             + (NEWTON_LIMITATIONS if engine == "newton" else [])}
             self._runtime = (stage, config, assets, rows)
         except Exception as exc:

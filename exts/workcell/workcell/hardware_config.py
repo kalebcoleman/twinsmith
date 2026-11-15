@@ -33,7 +33,7 @@ def read_values(path):
 def load_config(path=None):
     """The base cell: robot, gripper stack, wrist camera, bench and mounting hardware. No task objects."""
     values, raw = read_values(path or DEFAULT_CONFIG)
-    if "jenga" in values or "jenga_block" in values.get("assets", {}):
+    if "jenga" in values or "puzzle" in values or "jenga_block" in values.get("assets", {}):
         raise ValueError("The cell configuration must not hold task objects; the Jenga tower is a task (tasks/jenga_tower.json)")
     stack.order(values)                    # the stack follows bota.mounted; a leftover stack.order is refused
     stack.lengths(values)

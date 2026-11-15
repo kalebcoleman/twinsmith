@@ -1,0 +1,243 @@
+{
+  "schema": 1,
+  "optional": true,
+  "description": "Task pack: the lab's two 3D-printed assembly puzzles on the bench. The green-base puzzle is assembled; the red base and its four pieces lie loose beside it. Loaded on top of the base cell with quick_start task=puzzle_table. Optional: the cell and the Jenga tasks do not need its pack.",
+  "pack": {
+    "id": {
+      "value": "puzzles",
+      "status": "confirmed",
+      "source": "Kaleb, 2026-11-15: the puzzles are a task pack of their own, loaded like the Jenga pack. Built by scripts/workcell_puzzle_pack.py."
+    },
+    "version": {
+      "value": "v1",
+      "status": "confirmed",
+      "source": "Aldrin's fmb1 and fmb3 objects at github.com/inbarajaldrin/isaac-sim-mcp@27f610056017, flattened with their box colliders."
+    }
+  },
+  "assets": {
+    "base3": {
+      "value": "base3",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "line_brown": {
+      "value": "line_brown",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "line_red": {
+      "value": "line_red",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "fork_orange": {
+      "value": "fork_orange",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "fork_yellow": {
+      "value": "fork_yellow",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "base1": {
+      "value": "base1",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "line_green": {
+      "value": "line_green",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "inverted_u_yellow": {
+      "value": "inverted_u_yellow",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "u_orange": {
+      "value": "u_orange",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    },
+    "u_brown": {
+      "value": "u_brown",
+      "status": "confirmed",
+      "source": "Logical role in the puzzles pack; its manifest records each file's upstream source, licence and size."
+    }
+  },
+  "puzzle": {
+    "pieces": {
+      "value": [
+        {
+          "name": "base3",
+          "asset": "base3",
+          "position_m": [
+            -0.13,
+            -0.44,
+            0.0175
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "line_brown",
+          "asset": "line_brown",
+          "parent": "base3",
+          "position_m": [
+            0.0255,
+            0.0,
+            0.02345
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "line_red",
+          "asset": "line_red",
+          "parent": "base3",
+          "position_m": [
+            -0.0255,
+            0.0,
+            0.02345
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "fork_orange",
+          "asset": "fork_orange",
+          "parent": "base3",
+          "position_m": [
+            0.0,
+            0.036,
+            0.035
+          ],
+          "rpy_deg": [
+            -90,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "fork_yellow",
+          "asset": "fork_yellow",
+          "parent": "base3",
+          "position_m": [
+            0.0,
+            -0.036,
+            0.035
+          ],
+          "rpy_deg": [
+            -90,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "base1",
+          "asset": "base1",
+          "position_m": [
+            0.07,
+            -0.44,
+            0.0175
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "line_green",
+          "asset": "line_green",
+          "position_m": [
+            0.24,
+            -0.5,
+            0.01295
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "inverted_u_yellow",
+          "asset": "inverted_u_yellow",
+          "position_m": [
+            0.06,
+            -0.61,
+            0.0105
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "u_orange",
+          "asset": "u_orange",
+          "position_m": [
+            -0.06,
+            -0.61,
+            0.0105
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "name": "u_brown",
+          "asset": "u_brown",
+          "position_m": [
+            -0.16,
+            -0.61,
+            0.0105
+          ],
+          "rpy_deg": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "status": "unconfirmed",
+      "source": "Demo layout, not a lab measurement. Assembled poses in the green base's frame are from github.com/inbarajaldrin/isaac-sim-mcp@27f610056017 exts/ur5e-dt/assets/fmb_assembly3.json (lines at their resting height of 23.45 mm, the fork's 1 degree of recorded pitch dropped); where the bases and the loose pieces lie on the bench is chosen for reach and the wrist camera's view."
+    },
+    "density_kg_m3": {
+      "value": 1240.0,
+      "status": "unconfirmed",
+      "source": "Solid PLA, as Aldrin's fmb3 collider files author it. An upper bound: a print with infill is lighter. Weigh the pieces."
+    },
+    "static_friction": {
+      "value": 0.4,
+      "status": "unconfirmed",
+      "source": "Aldrin's PLA material in the fmb3 collider files (0.40 static / 0.35 dynamic); not measured."
+    },
+    "dynamic_friction": {
+      "value": 0.35,
+      "status": "unconfirmed",
+      "source": "As above."
+    }
+  },
+  "documentation": {
+    "bom_csv": {
+      "value": "puzzle_table.bom.csv",
+      "status": "confirmed",
+      "source": "BOM rows this task adds to the cell, next to this file."
+    }
+  }
+}

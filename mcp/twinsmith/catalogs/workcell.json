@@ -25,7 +25,7 @@
         },
         "task": {
           "type": "string",
-          "description": "Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block) or an absolute task file. Omitted: the base cell only, with no objects."
+          "description": "Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block; puzzle_table: two assembly puzzles) or an absolute task file. Omitted: the base cell only, with no objects."
         },
         "environment": {
           "type": "string",
@@ -75,7 +75,7 @@
           "required": false,
           "default": null,
           "has_default": false,
-          "description": "Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block) or an absolute task file. Omitted: the base cell only, with no objects."
+          "description": "Task objects to load on top of the base cell: a task name (jenga_tower: the 54-block tower; push_block: one loose Jenga block; puzzle_table: two assembly puzzles) or an absolute task file. Omitted: the base cell only, with no objects."
         },
         {
           "name": "environment",

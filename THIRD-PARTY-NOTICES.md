@@ -37,6 +37,7 @@ Files:
 - `<asset-folder>/<pack>/fmb_assembly1.json`
 - `<asset-folder>/<pack>/fmb_assembly2.json`
 - `<asset-folder>/<pack>/fmb_assembly3.json`
+- `<asset-folder>/puzzles/v1/` (the `fmb1` and `fmb3` pieces, flattened by `scripts/workcell_puzzle_pack.py`)
 
 Source: *FMB: A Functional Manipulation Benchmark for Generalizable Robotic
 Learning*, Jianlan Luo, Charles Xu, Xinyang Geng, Gilbert Feng, Kuan Fang,

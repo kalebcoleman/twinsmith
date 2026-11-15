@@ -112,6 +112,14 @@ def block_count(config):
     return len(poses) if poses is not None else _layers(config) * 3
 
 
+def quantities(config):
+    """How many blocks the task draws from its one asset: what its BOM must list."""
+    if set(config["assets"]) != {"jenga_block"}:
+        raise ValueError("A Jenga task needs exactly the asset role jenga_block")
+    realize(config)
+    return {config["assets"]["jenga_block"]: block_count(config)}
+
+
 def realize(config, profile=None, seed=None):
     """Validate and sample the whole tower without USD imports or stage edits."""
     settings = config["jenga"]

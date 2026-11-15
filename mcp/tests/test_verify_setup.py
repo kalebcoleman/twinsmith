@@ -23,7 +23,7 @@ def test_workspace_order(tmp_path):
 
 
 def test_wanted_packs_come_from_the_cell_and_task_files():
-    assert verify.wanted_packs() == ["ur5e-workcell/v3", "jenga/v1"]
+    assert verify.wanted_packs() == [("ur5e-workcell/v3", True), ("jenga/v1", True), ("puzzles/v1", False)]
 
 
 def test_pins_are_read_from_the_code():
