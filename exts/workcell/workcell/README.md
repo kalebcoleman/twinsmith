@@ -193,6 +193,10 @@ piece. It talks to one simulator bridge on this machine and cannot reach a real 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
 seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
+The keep-out boxes of the gripper and the camera (`scripts/puzzle_assembly.py`), the layouts' blind region and the
+measured runs below are of `ur5e-workcell/v3`. On a cell built from another pack the run stops after building it, unless
+`--unqualified-cell-pack` is given; `metrics.json` then records `cell_pack_qualified: false`, and nothing measured
+below describes that run.
 The demo's settings are `scripts/puzzle_build.json`: the puzzle, where the base goes, the speeds, and one grasp per
 piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a width).
 

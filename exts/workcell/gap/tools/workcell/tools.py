@@ -83,7 +83,7 @@ class State(TypedDict):
     ee_pose: Se3Pose
     gripper: dict
     bodies: dict
-    slots: dict
+    goals: dict
 
 
 @tool(name="workcell.survey", summary="Find every piece of the puzzle on the table (wrist camera, SAM 3.1, scan to scene).",

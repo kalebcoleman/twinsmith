@@ -386,7 +386,8 @@ class Session:
         """Close on something ``width_m`` wide until the drive stalls at ``force_n`` per fingertip. One motor closes
         both fingers, and the pads ride on arms of length ARM_M: by virtual work a drive torque T presses each pad
         with T / (2 ARM_M cos(arm angle)), so the torque cap is set for the asked force at this width. Returns the
-        pad gap reached."""
+        pad gap reached. The finger drive's stiffness and torque cap stay as set here, also after ``open_to`` and
+        ``Checkpoint.restore``: the scene keeps them until the cell is built again."""
         if not RG2_FORCE_N[0] <= force_n <= RG2_FORCE_N[1]:
             raise ValueError(f"The RG2 grips with {RG2_FORCE_N[0]:g} to {RG2_FORCE_N[1]:g} N, not {force_n:g}")
         torque = 2 * ARM_M * math.cos(ZERO_RAD + finger_for_gap(width_m)) * force_n

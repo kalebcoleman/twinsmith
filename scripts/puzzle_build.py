@@ -19,7 +19,7 @@ Nothing here reaches a real robot: every call goes to the simulator bridge on th
 starts GPU jobs (SAM 3.1) beside the simulator.
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
-        --allow-concurrent-gpu [--table-camera] [--colours <colours.json>] [--perception oracle]
+        --allow-concurrent-gpu [--table-camera] [--colours <colours.json>] [--perception oracle] [--unqualified-cell-pack]
 """
 
 import argparse
@@ -116,13 +116,19 @@ class Build:
         with self.log.step("build stage"):
             task = puzzle_scan.write_task(assembly.layout_estimate(self.pack, layout), self.out / "task", "puzzle_build.py, a random layout")
             built = self.cell.build(task, self.config["start_joint_deg"], 0.05, self.args.discard_changes)
+            name, qualified = assembly.cell_pack(built.get("pack"))
+            if not qualified and not self.args.unqualified_cell_pack:
+                raise SystemExit(f"The cell was built from {name}, but the gripper and camera keep-out boxes, the layouts' blind region and "
+                                 f"the measured runs are of {assembly.KEEP_OUT_PACK}: a grasp checked here may put the camera into a piece. "
+                                 "Pass --unqualified-cell-pack to run anyway; metrics.json then says so. The stage has been replaced.")
             if self.args.table_camera:
                 self.cell.add_camera("table", self.config["table_camera"])
             self.cell.start_film(self.out / "film", fps=5)
         with self.log.step("park rail", rail_mm=self.config["rail_mm"]) as row:
             self.say("parking the rail")
             row["result"] = rail = self.cell.park_rail(self.config["rail_mm"])
-        return {"backend": built["backend"], "cell_pack": built["pack"], "rigid_bodies": built["newton"]["rigid_bodies"], "rail": rail}
+        return {"backend": built["backend"], "cell_pack": built["pack"], "cell_pack_qualified": qualified,
+                "keep_out_measured_on": assembly.KEEP_OUT_PACK, "rigid_bodies": built["newton"]["rigid_bodies"], "rail": rail}
 
     def say(self, caption):
         self.doing = self.cell.caption = caption
@@ -513,25 +519,47 @@ class Build:
         env.update(gap.model_env(False, gap.owner_vlm())[1], WORKCELL_SKILLS_PORT=str(server.getsockname()[1]))
         runner = subprocess.Popen([str(python), str(REGISTRY / "puzzle_graph.py"), "run", str(graph), "--trace-dir", str(trace)],
                                   env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(self.out))
-        server.settimeout(120)
-        link, _ = server.accept()
-        link.settimeout(None)
-        stream = link.makefile("rw")
-        for line in stream:
-            request = json.loads(line)
+        output = None
+        try:
+            server.settimeout(120)
             try:
-                if request["tool"] not in self.TOOLS:
-                    raise Refused(f"no such tool: {request['tool']}")
-                reply = {"ok": True, "result": getattr(self, request["tool"])(**request.get("inputs", {}))}
-            except (Refused, cell.MoveFailed) as error:
-                self.say(f"refused: {error}")
-                reply = {"ok": False, "error": str(error)}
-            stream.write(json.dumps(reply) + "\n")
-            stream.flush()
-        output = runner.communicate(timeout=120)[0]
-        (self.out / "gap_run.log").write_text(output)
+                link, _ = server.accept()
+            except TimeoutError:
+                runner.kill()
+                output = runner.communicate()[0]
+                raise SystemExit(f"The graph's runner did not connect within 120 s (its output is in gap_run.log): {output[-800:]}") from None
+            link.settimeout(None)
+            with link, link.makefile("rw") as stream:
+                for line in stream:
+                    request = json.loads(line)
+                    try:
+                        if request["tool"] not in self.TOOLS:
+                            raise Refused(f"no such tool: {request['tool']}")
+                        reply = {"ok": True, "result": getattr(self, request["tool"])(**request.get("inputs", {}))}
+                    except (Refused, cell.MoveFailed) as error:
+                        self.say(f"refused: {error}")
+                        reply = {"ok": False, "error": str(error)}
+                    stream.write(json.dumps(reply) + "\n")
+                    stream.flush()
+            output = runner.communicate(timeout=120)[0]
+        finally:                                            # whatever stopped the run, the runner does not outlive it and its output is kept
+            server.close()
+            if runner.poll() is None:
+                runner.kill()
+            if output is None:
+                output = runner.communicate()[0]
+            (self.out / "gap_run.log").write_text(output or "")
         result = next((json.loads(line[8:]) for line in output.splitlines() if line.startswith("RESULT: ")), {"success": False, "error": output[-600:]})
         return result
+
+    def abandon(self):
+        """A run that stopped early: close the film's recorders in Kit, so their render products do not stay on the
+        simulator. The frames filmed so far are kept. Says nothing when the bridge itself is what failed."""
+        if self.cell.film:
+            try:
+                self.cell.stop_film()
+            except Exception:  # noqa: BLE001 - the error that stopped the run is the one to show
+                pass
 
     # ---- what a reader wants ----------------------------------------------------------------------
     def finish(self, started):
@@ -605,6 +633,9 @@ def main():
     parser.add_argument("--table-camera", action="store_true", help="draw the config's table camera, for the video")
     parser.add_argument("--mutate-stage", action="store_true", help="required: this run replaces the open stage")
     parser.add_argument("--discard-changes", action="store_true", help="let quick_start drop unsaved edits")
+    parser.add_argument("--unqualified-cell-pack", action="store_true",
+                        help=f"run on a cell pack other than {assembly.KEEP_OUT_PACK}, the one the gripper and camera keep-out boxes were "
+                             "measured on; metrics.json records cell_pack_qualified false")
     parser.add_argument("--allow-concurrent-gpu", action="store_true", help="required with sam3: SAM 3.1 runs on the simulator's GPU")
     args = parser.parse_args()
     if not args.mutate_stage or (args.perception == "sam3" and not args.allow_concurrent_gpu):
@@ -615,6 +646,16 @@ def main():
                        [*config["base_target"]["position_m"], pack.shape(config["base"]).rests[0].drop])
     layout = assembly.scatter(pack, config["base"], target, np.random.default_rng(args.seed))
     build, started = Build(args, config, pack), time.time()
+    try:
+        record = run(build, args, config, layout, started)
+    except BaseException:
+        build.abandon()
+        raise
+    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
+
+
+def run(build, args, config, layout, started):
+    """Build the cell, author the graph, serve it and write the run's records; returns ``metrics.json``'s content."""
     record = {"seed": args.seed, "layout": {name: at.tolist() for name, at in layout.items()}, "cell": build.start(layout)}
     graph = build.out / "graph"
     plan = build.out / "plan.json"
@@ -628,7 +669,7 @@ def main():
     record.update(build.finish(started))
     (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")
     record["viewer"] = str(puzzle_viewer.build(build.out))
-    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
+    return record
 
 
 if __name__ == "__main__":

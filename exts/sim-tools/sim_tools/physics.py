@@ -477,7 +477,8 @@ def step(stage, steps):
     ``step_sim`` recaptures the graph when the timestep or the substep count changes and keeps ``state_0`` in one
     buffer, and a captured step replays the same kernels. Measured on 6.2.0.0 with the UR5e work cell (22 bodies,
     801 shapes): 0.45 ms a step against 7.6 ms uncaptured, the same end state to 1e-8 after 500 steps (two uncaptured
-    runs differ by as much), and joint gains written between steps take effect.
+    runs differ by as much), and joint gains written between steps take effect. A step that raises drops the graph, so
+    the next one captures afresh: the release keeps whatever was captured before the failure.
 
     Older releases keep the direct path. Newton <=6.0.1 increments its clock while skipping the solver when its
     internal playing flag is false, so that flag is set for the step. Their capture code also skips the first
@@ -493,7 +494,11 @@ def step(stage, steps):
     identity = runtime_identity()
     native = newton_stage(stage)
     if identity["release"] in CAPTURE_KEPT:
-        sm.step(steps=steps)
+        try:
+            sm.step(steps=steps)
+        except BaseException:
+            native.graph = None     # a step that failed while capturing leaves a cut-off graph, which later steps would replay
+            raise
         return
     playing = native.playing
     capture = native.cfg.use_cuda_graph

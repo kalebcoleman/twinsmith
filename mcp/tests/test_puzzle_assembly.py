@@ -150,6 +150,12 @@ def test_a_line_is_solved_in_one_piece_and_a_carry_returns_to_the_posture_the_ce
         arm.ik(session.pose(start[:3, :3], [1.5, 0.0, 0.3]))
 
 
+def test_only_the_pack_the_keep_out_boxes_were_measured_on_is_qualified():
+    assert assembly.cell_pack({"id": "ur5e-workcell", "version": "v3", "qualification": "x"}) == ("ur5e-workcell/v3", True)
+    assert assembly.cell_pack({"id": "ur5e-workcell", "version": "v4"}) == ("ur5e-workcell/v4", False)
+    assert assembly.cell_pack(None) == ("None/None", False)                   # a build that names no pack is not qualified
+
+
 def test_the_demo_grips_within_the_rg2_specification():
     config = json.loads((ROOT / "scripts/puzzle_build.json").read_text())
     low, high = session.RG2_FORCE_N

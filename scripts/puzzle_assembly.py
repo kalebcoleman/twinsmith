@@ -9,7 +9,7 @@ assembled poses:
 * ``choose_grasps``: a grasp is defined on the CAD, in the piece's own frame: a point, a closing axis, an approach
   axis and the width gripped. Every way that grasp can be held (the piece's own symmetries, the gripper turned half
   round) is checked at the pick and in the slot against the pieces, the table and a keep-out model of the gripper,
-  and the ones that fit are returned, best first.
+  and the ones that fit are returned, best first. The keep-out model is of one cell pack (``KEEP_OUT_PACK``).
 * ``scatter``: a random layout of one puzzle's pieces lying loose with its base off to the side, for testing.
 
 Frames: a pose is 4 x 4, world (or base) from the piece, for column vectors. The gripper frame is the one of
@@ -36,6 +36,14 @@ FINGER_KEEP_OUT = (((0.0, 0.0114), (-0.0103, 0.0103), (-0.015, 0.015)),         
 # its bracket.
 BODY_KEEP_OUT = (((-0.042, 0.042), (-0.038, 0.044), (-0.262, -0.070)),
                  ((-0.058, 0.042), (-0.150, -0.027), (-0.147, -0.113)))
+KEEP_OUT_PACK = "ur5e-workcell/v3"     # the cell pack those boxes were measured on; another pack's camera sits elsewhere
+
+
+def cell_pack(built):
+    """``(name, qualified)`` of the pack a cell was built from (quick_start's ``pack``: ``{"id", "version"}``): its
+    name as ``id/version``, and whether the keep-out boxes above were measured on it."""
+    name = f"{(built or {}).get('id')}/{(built or {}).get('version')}"
+    return name, name == KEEP_OUT_PACK
 
 
 def pose(turn, at):

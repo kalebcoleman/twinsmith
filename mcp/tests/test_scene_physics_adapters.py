@@ -49,7 +49,8 @@ def test_paused_step_restores_backend_controls_even_after_partial_failure(
         physics.step(object(), 17)
     assert calls == [17]
     assert not native.playing and native.cfg.use_cuda_graph
-    assert native.graph is (captured if kept else None)   # a release that steps directly drops the graph its steps made stale
+    # a release that steps directly drops the graph its steps made stale; one that keeps capture drops it when a step fails
+    assert native.graph is (captured if kept and not fail else None)
     assert physics.CAPTURE_KEPT == ("6.2.0.0",)
 
 
