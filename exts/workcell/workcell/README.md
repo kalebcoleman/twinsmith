@@ -203,7 +203,7 @@ piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a 
 | Survey | Wrist D415 straight down from 0.6 m. The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
 | Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
 | Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers |
-| Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. A try that does not seat the piece is repeated once with the grasp corrected by how the piece sat in the hand over the slot; then go or abort |
+| Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
 | Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
 | Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
 
@@ -255,37 +255,55 @@ project, not this repository):
 
 | Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Lookahead | Simulated | Wall |
 |---|---|---|---|---|---|---|---|
-| seed 5 | yes | 4 of 4 | 0.41 to 0.94 mm | 0.48, 0.86 mm | go for all; three after a second try | 175.0 s | 31 min |
-| seed 1 | yes | 4 of 4 | 0.80 to 1.13 mm | 0.80, 1.63 mm | go for all; two after a second try | 172.0 s | 31 min |
-| seed 3 | yes | 4 of 4 | 1.29 to 1.42 mm | 0.93, 2.22 mm | go for all; two after a second try | 166.3 s | 29 min |
+| seed 5 | yes | 4 of 4 | 0.51 to 1.10 mm | 0.56, 0.86 mm | go for all, each on its first try | 173.1 s | 329 s |
+| seed 1 | yes | 4 of 4 | 0.48 to 1.08 mm | 0.92, 1.28 mm | go for all, each on its first try | 163.9 s | 331 s |
+| seed 3 | yes | 4 of 4 | 0.76 to 1.20 mm | 0.84, 2.22 mm | go for all, each on its first try | 166.4 s | 340 s |
 
-All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 mm apart on the
-25.9 mm bars and 19.3 to 19.4 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The graph
-ended in success three times with fifteen of fifteen checkpoints passed; the stock reach check read 0.8 to 1.2 mm and
-the grip check `held` every time. The vision-language model (Qwen3-VL-32B, served locally) counted five parts where
-the scan had five and answered yes to "complete" on all three.
+All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.7 mm apart on
+the 25.9 mm bars and 19.2 to 19.5 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The
+graph ended in success three times with fifteen of fifteen checkpoints passed. The vision-language model
+(Qwen3-VL-32B, served locally) counted five parts where the scan had five and answered yes to "complete" on all three.
 
-What the lookahead did: a fork is picked lying flat and turned upright in the hand, where it sits 2.3 to 6.2 mm from
-the grasp as defined. Its first simulated try jammed in all six cases (the fork 16 mm from its slot, other pieces
-pushed 16 to 28 mm); the second try, with the grasp corrected by how the fork sat in the hand, seated it in all six,
-and the real insertion used that grasp. A bar needed the second try once.
+What the lookahead does for a fork: picked lying flat and turned upright in the hand, it sits 2.4 to 5.6 mm from the
+grasp as defined. Lowered from the grasp as defined it jams (it did in the first simulated try of all six forks, 16 mm
+from the slot with other pieces pushed 16 to 28 mm, while the correction was only applied in a second try). Corrected
+over the slot before lowering, it seats in the first try, and the real insertion uses the same grasp.
 
-Where the wall time went (the viewer's last panel; seed 5, and the other two within 5 percent of it): 1863 s of wall
-time for 175 s of simulated time, 10.6 times slower than real time.
+Where the wall time goes (the viewer's last panel), and what was done about it. On the same three layouts the first
+measurement was 1768 to 1863 s of wall time for 166 to 175 s simulated, 10.6 times slower than real time, 84 percent
+of it inside the solver. Three changes, each checked on the three layouts, brought that to 329 to 340 s, 1.9 to 2.0
+times slower than real time:
+
+| Change | Wall, seeds 5, 1, 3 | What it is |
+|---|---|---|
+| Before | 1863, 1840, 1768 s | |
+| Newton's captured CUDA graph kept for paused steps on 6.2.0.0 | 400, 414, 391 s | `sim_tools.physics.step` stepped the solver uncaptured, a workaround for faults of 6.0 and 6.1 that 6.2.0.0's own step no longer has. A step went from 7.6 ms to 0.45 ms; solver time per layout from about 1550 s to about 34 s |
+| The lookahead corrects the place in its first try | 347, 347, 357 s | No second try: 4 tries per layout, down from 6 or 7 |
+| Joint targets written without reading them back | 329, 331, 340 s | The loop in Kit read the target array from the GPU before each row: 3 ms a row |
+
+No physics setting changed: timestep, substeps, solver, contacts, collision shapes and grip force are as before.
+The captured step was checked three ways before the full runs: 500 steps of a moving arm end in the same state to
+1e-8 with and without capture (two uncaptured runs differ by as much); a gripper closing at 3 N and at 40 N, the gains
+set between steps, follows the same path in both to the 0.01 mm logged; and one fork pick and insertion differs between
+the two no more than two uncaptured runs of it do. On the full layouts the same pieces seat, and the final errors
+moved by -0.66 to +0.69 mm with no bias. That is the pipeline's own repeatability, not a tighter bound: two runs of
+unchanged code on these layouts differed by up to 0.61 mm, because a piece comes to rest anywhere within its slot's
+play, and the survey reads the symmetric base either way round from one run to the next.
+
+Seed 5 now, 329 s for 173 s simulated:
 
 | Seconds | Share | Spent on |
 |---|---|---|
-| 1570 | 84% | Inside the solver: 4.2 s per simulated second at 500 Hz. 847 s of it is the lookaheads, which simulate 201 s that the build's clock does not count |
-| 144 | 8% | Waiting for SAM 3.1, six looks at 24 s |
-| 82 | 4% | Rendering: 1863 frames from two cameras (the film and the lookahead clips), 0.044 s each |
-| 35 | 2% | Bridge calls beyond the solver and the renderer: 1098 calls |
-| 15 | 1% | Matching the scan to the CAD |
-| 17 | 1% | Choosing grasps (2 s), the vision-language model (3 s), the graph's own work and the rest |
+| 144 | 44% | Waiting for SAM 3.1: six looks at 24 s, most of it the job starting and loading its model each time |
+| 74 | 22% | Calls into Kit beyond the solver and the renderer (866 calls): writing targets, sampling joints, moving data |
+| 60 | 18% | Rendering 1424 frames from two cameras (the film and the lookahead clips) |
+| 25 | 8% | Inside the solver: 0.09 s per simulated second |
+| 16 | 5% | Matching the scan to the CAD |
+| 10 | 3% | Grasp choice, the vision-language model, the graph's own work and the rest |
 
-So the factor of ten is the solver's 4.2, about doubled by simulating every pick ahead once or twice, plus the looks.
-Rendering and the bridge are not where the time goes: moving the joint targets into Kit (one call per move, not one
-per 10 ms) had already taken the bridge from most of the time to 2 percent. Why the solver is at 4.2 was not
-examined; `sim_tools.physics.step` steps Newton with its CUDA graph capture off, which is the first thing to measure.
+The next thing to shorten is therefore the looks (a SAM 3.1 process that stays up between them), not the physics.
+Simulating a lookahead in a cloned scene of only the nearby pieces, or starting it during the approach, would save
+little now: the four lookaheads take 63 to 69 s of wall time together, of which 10 s is the solver.
 
 Limits. One run per layout is three builds, not a success rate, and earlier runs of the same layouts stopped for
 reasons that were then fixed: a base that is the same after half a turn was read the other way round after the first

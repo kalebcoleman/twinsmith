@@ -467,15 +467,22 @@ def newton_stage(stage):
     return native
 
 
-def step(stage, steps):
-    """Use the unified counter/callback path, with the older paused-step fix.
+CAPTURE_KEPT = ("6.2.0.0",)     # releases whose own Newton step is used as it is, CUDA graph capture included
 
-    Newton <=6.0.1 increments its clock while skipping the solver when its
-    internal playing flag is false. Temporarily allow that synchronous native
-    operation, without changing the timeline or yielding to the app loop.
-    Older capture code also skips the first captured step and bakes in dt.
-    Direct solver stepping avoids both issues; invalidate its cached graph
-    because direct steps may swap state buffers referenced by that graph.
+
+def step(stage, steps):
+    """Advance physics from a pause, without changing the timeline or yielding to the app loop.
+
+    On the releases in CAPTURE_KEPT Newton steps as it does in play, with its captured CUDA graph: that release's
+    ``step_sim`` recaptures the graph when the timestep or the substep count changes and keeps ``state_0`` in one
+    buffer, and a captured step replays the same kernels. Measured on 6.2.0.0 with the UR5e work cell (22 bodies,
+    801 shapes): 0.45 ms a step against 7.6 ms uncaptured, the same end state to 1e-8 after 500 steps (two uncaptured
+    runs differ by as much), and joint gains written between steps take effect.
+
+    Older releases keep the direct path. Newton <=6.0.1 increments its clock while skipping the solver when its
+    internal playing flag is false, so that flag is set for the step. Their capture code also skips the first
+    captured step and bakes in dt; stepping the solver directly avoids both, and the cached graph is dropped because
+    direct steps may swap state buffers it refers to.
     """
     sm = manager()
     if sm.get_active_physics_engine() != "newton":
@@ -485,6 +492,9 @@ def step(stage, steps):
 
     identity = runtime_identity()
     native = newton_stage(stage)
+    if identity["release"] in CAPTURE_KEPT:
+        sm.step(steps=steps)
+        return
     playing = native.playing
     capture = native.cfg.use_cuda_graph
     try:

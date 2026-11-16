@@ -20,13 +20,15 @@ from twinsmith.project_assets import AssetError
 def test_paused_step_restores_backend_controls_even_after_partial_failure(
     monkeypatch, release, fail
 ):
+    captured = object()
     native = SimpleNamespace(
-        playing=False, cfg=SimpleNamespace(use_cuda_graph=True), graph=object()
+        playing=False, cfg=SimpleNamespace(use_cuda_graph=True), graph=captured
     )
+    kept = release in physics.CAPTURE_KEPT                 # this release's own step is used, graph capture included
     calls = []
 
     def run(*, steps):
-        assert not native.cfg.use_cuda_graph
+        assert native.cfg.use_cuda_graph is kept and (native.graph is captured) is kept
         if release in ("6.0.0.0", "6.0.0.1", "6.0.1.0"):
             assert native.playing  # old native solver otherwise silently skips work
         calls.append(steps)
@@ -46,7 +48,9 @@ def test_paused_step_restores_backend_controls_even_after_partial_failure(
     else:
         physics.step(object(), 17)
     assert calls == [17]
-    assert not native.playing and native.cfg.use_cuda_graph and native.graph is None
+    assert not native.playing and native.cfg.use_cuda_graph
+    assert native.graph is (captured if kept else None)   # a release that steps directly drops the graph its steps made stale
+    assert physics.CAPTURE_KEPT == ("6.2.0.0",)
 
 
 def test_invalid_runtime_view_refuses_no_usd_or_other_backend_fallback(monkeypatch):

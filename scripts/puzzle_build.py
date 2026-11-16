@@ -349,6 +349,13 @@ class Build:
             defined = np.linalg.inv(hold["in_piece"])
             self.metrics[piece]["in_hand_shift_mm"] = round(1000 * min(float(np.linalg.norm((defined @ assembly.pose(turn, shift) @ hold["in_hand"])[:3, 3]))
                                                                        for turn, shift in self.pack.shape(piece).symmetries), 2)
+        if self.ahead and piece not in self.adjust:         # simulating ahead: the twin shows how the piece sits in the hand, so the
+            self.adjust[piece] = hold["in_hand"]            # place is corrected by it before lowering, and the real pick starts with it
+            hold["place"] = hold["seat"] @ hold["in_hand"]
+            path.update(over=self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), width),
+                        place=self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width))
+            with self.log.step("correct", piece, waypoints=[waypoint("over", path["over"])]):
+                self.cell.gripper_line(path["over"], speeds["approach_m_s"])
         with self.log.step("lower", piece, waypoints=[waypoint("place", path["place"])], speed_m_s=speeds["insert_m_s"]) as row:
             self.say(f"{piece}: inserting along the slot axis at {speeds['insert_m_s'] * 1000:g} mm/s")
             try:
@@ -378,9 +385,10 @@ class Build:
 
     @stepped("lookahead")
     def lookahead(self, piece):
-        """Simulate the pick and the insertion ahead on Newton, from where the scan says the pieces are. A try in
-        which the arm is blocked is repeated with the next way of holding the piece; one that does not seat it is
-        repeated once with the grasp as the piece sat in the hand over the slot. Then go or abort. The stage is put
+        """Simulate the pick and the insertion ahead on Newton, from where the scan says the pieces are. Over the
+        slot the try reads how the piece sits in the hand and corrects the place by it before lowering; the real pick
+        then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece.
+        Then go or abort. The stage is put
         back as it was. Every try is filmed as a clip of its own, ``lookahead/<piece>_<try>``."""
         self.say(f"{piece}: lookahead on Newton")
         if self.args.no_lookahead:
@@ -418,13 +426,10 @@ class Build:
                 self.cell.rewind()
                 if row["go"] or hold is None:
                     break
-                if "error" in row:                          # blocked on the way: hold it another way
-                    self.avoid.setdefault(piece, set()).add(hold["way"])
-                    self.adjust.pop(piece, None)
-                elif piece in self.adjust or "in_hand" not in hold:
+                if "error" not in row:
                     break
-                else:
-                    self.adjust[piece] = hold["in_hand"]
+                self.avoid.setdefault(piece, set()).add(hold["way"])    # blocked on the way: hold it another way
+                self.adjust.pop(piece, None)
         finally:
             self.cell.restore()
             self.ahead, self.placed, self.held = False, placed, None

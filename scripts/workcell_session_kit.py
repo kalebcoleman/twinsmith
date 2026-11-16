@@ -152,9 +152,12 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
     ``sample`` the joint positions are read. Returns ``{"shot": frames per recorder, "samples": [[count, position
     per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping and filming."""
     view, out = physics.view_for(articulation, articulation=True), {"shot": 0, "samples": [], "physics_s": 0.0, "render_s": 0.0}
+    targets = physics.dof_row(view, view.get_dof_position_targets())        # read once: reading it back before every row cost 3 ms a row
     for row in rows:
         if row:
-            physics.dof_set(view, "get_dof_position_targets", "set_dof_position_targets", {int(index): value for index, value in row.items()})
+            for index, value in row.items():
+                targets[0, int(index)] = value
+            physics.dof_write(view, "set_dof_position_targets", targets)
         left = steps
         while left:
             count = min([left] + ([every - done % every] if film else []) + ([sample - done % sample] if sample else []))
