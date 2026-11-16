@@ -25,6 +25,45 @@ def test_it_builds_v3_from_v2_and_touches_no_other_pack():
     assert "ur5e-jenga-workcell" not in source and "jenga" not in source
 
 
+def test_v3_keeps_its_own_bracket_whatever_the_configuration_holds(tmp_path, monkeypatch):
+    """v3 was built at a photo-estimated pose with the model of that day: the calibrated pose belongs to v4."""
+    assert bracket.V3_POSE == {"offset_in_rg2_m": [0.127, 0.035, 0.102], "rotation_in_rg2_deg": [39.0, 0.0, -90.0]}
+    assert bracket.V3_POSE["offset_in_rg2_m"] != CONFIG["wrist_camera"]["offset_in_rg2_m"]["value"]
+    frozen = (ROOT / bracket.CAD_V3).read_text()
+    assert bracket.CAD_V3 != bracket.CAD and "FROZEN MODEL OF PACK ``ur5e-workcell/v3``" in frozen
+    defaults = {name: float(value) for name, value in re.findall(r'env\("(CAM_[XYZ]_MM|TILT_DEG)", (-?[\d.]+)\)', frozen)}
+    assert defaults == {"CAM_X_MM": 35.0, "CAM_Y_MM": -127.0, "CAM_Z_MM": 102.0, "TILT_DEG": 39.0}
+    assert "PITCH_DEG" not in frozen and "YAW_DEG" not in frozen
+    calls = []
+
+    def fake_cad(out, camera_mm, tilt_deg, back_mm, body_cx_mm, rotation=None, cad=bracket.CAD):
+        calls.append((camera_mm, tilt_deg, rotation, cad))
+        raise RuntimeError("stop before FreeCAD")
+
+    monkeypatch.setattr(bracket, "run_cad", fake_cad)
+    monkeypatch.setattr(bracket, "d415_extent", lambda path: (-10.2, 34.95))
+    for v3, folder in ((True, "old"), (False, "new")):
+        (tmp_path / folder).mkdir()
+        with pytest.raises(RuntimeError, match="stop before FreeCAD"):
+            bracket.build_bracket(tmp_path / folder, tmp_path / "d415.usdc", v3=v3)
+    assert calls[0] == ([35.0, -127.0, 102.0], 39.0, None, bracket.CAD_V3)
+    assert calls[1][3] == bracket.CAD and calls[1][2] == CONFIG["wrist_camera"]["rotation_in_rg2_deg"]["value"]
+    assert calls[1][0] == pytest.approx(bracket.camera_pose(CONFIG)[0])
+    source = (ROOT / "scripts/workcell_bracket_assets.py").read_text()
+    assert 'build_bracket(work, source.asset("d415"), v3=True)' in source
+
+
+def test_a_collision_piece_without_volume_is_refused_by_name():
+    pytest.importorskip("scipy")
+    counts, indices = bracket.hull_faces("box", np.array([[x, y, z] for x in (0, 1) for y in (0, 2) for z in (0, 3)], float))
+    assert counts == [3] * 12 and len(indices) == 36
+    flat = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0.5, 0.5, 0]], float)
+    with pytest.raises(SystemExit, match="collision piece plate_support has no convex hull"):
+        bracket.hull_faces("plate_support", flat)
+    with pytest.raises(SystemExit, match="collision piece truss has no convex hull"):
+        bracket.hull_faces("truss", np.zeros((0, 3)))
+
+
 def test_cad_frame_to_the_packs_rg2_body_frame():
     """The pack's RG2 body has +Y along the finger-opening axis and +X out of the back face."""
     assert bracket.to_body([1.0, 0.0, 0.0]).tolist() == [0.0, 1.0, 0.0]        # finger-opening axis
@@ -120,6 +159,8 @@ def test_calibrated_pack_preserves_source_and_vendor_files(tmp_path, monkeypatch
     assert target.asset("wrist_mount").is_file()
     assert target.manifest["mimic"] == {"preserved": True}
     assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in source.iterdir()}
+    record = next(item for item in target.manifest["files"] if item.get("asset_id") == "wrist_mount")
+    assert "triangulated convex hull" in record["changes"] and "not measured geometry" in record["changes"]
     monkeypatch.setattr(calibrated.bracket, "build_bracket", lambda *args: pytest.fail("existing v4 was rebuilt"))
     calibrated.main()
     assert "left alone" in capsys.readouterr().out

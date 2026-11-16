@@ -75,7 +75,7 @@ REQUIRED_CONFIG_PATHS = (
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
     "wrist_camera.body_size_m", "wrist_camera.color_intrinsics", "wrist_camera.calibration",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
-    "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.color_intrinsics", "overhead_camera.ros_namespace",
+    "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
     "overhead_mount.height_m", "overhead_mount.removable", "overhead_mount.printed_shelf_size_m",
     "robot.reach_m",
@@ -119,7 +119,9 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         "The shipped pack uses vendor housing geometry and optical offsets, not a D455 substitute.",
         "Extrinsics come from config; wrist_camera.calibration records measured provenance and limits when available.",
         "Colour intrinsics use color_intrinsics when supplied, otherwise nominal FOV; the projection is "
-        "an ideal pinhole without lens distortion.",
+        "an ideal pinhole without lens distortion. The principal point is authored as USD aperture offsets and "
+        "checked against USD's own frustum; that the renderer draws it at the reported cx, cy is not measured "
+        "from rendered pixels.",
         "Rendered depth is single-pinhole distance_to_image_plane, not D415 stereo or IR depth; "
         "no projector, noise or stereo matching is modelled.",
         "ROS topics are proposed realsense2_camera 4.x names, not published or verified; no ROS graph "

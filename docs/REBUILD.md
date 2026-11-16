@@ -70,7 +70,10 @@ Everything else below is rebuilt from this repository and public sources.
    packs the cell uses. Every script only reads its source and leaves an existing pack alone. The second one
    downloads RealSense's D415 mesh (pinned commit, checked by SHA-256) and runs FreeCAD. The third builds
    `ur5e-workcell/v3`, the source of the calibrated pack, from `v2` and the vendors' three STEP files (each checked by SHA-256);
-   it runs FreeCAD for about ten minutes. The fourth copies v3 into v4 and rebuilds only the camera bracket
+   it runs FreeCAD for about ten minutes. Its wrist bracket is v3's own: the frozen model
+   `exts/workcell/cad/rg2_camera_bracket_v3.py` at v3's photo-estimated camera pose, which the script pins, not the
+   measured pose now in the configuration. A rebuilt v3 has the same geometry as the first one but not the same file
+   hashes (FreeCAD writes a time into each STEP file). The fourth copies v3 into v4 and rebuilds only the camera bracket
    around the measured optical pose, using FreeCAD without another download.
 
    ```bash

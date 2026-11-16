@@ -103,4 +103,6 @@ It exports STEP/STL and `bracket.json`; defaults match the shipped full optical 
 `CAM_Z_MM`, `TILT_DEG`, `PITCH_DEG`, `YAW_DEG`, `BACK_MM` and `BODY_CX_MM` allow explicit overrides.
 The builder accepts tilt 0–45 degrees and pitch/yaw deviations below 5 degrees from [tilt, 0, -90].
 The legacy v2-to-v3 builder remains available for rebuilding the vendor geometry; the calibrated builder needs
-no vendor download. These models are simulation approximations, not validated manufacturing drawings.
+no vendor download. `rg2_camera_bracket_v3.py` beside the current model is the frozen model of pack v3 (the photo-only
+39 degree / 127 mm pose): the v2-to-v3 builder runs it at that pinned pose, so a rebuilt v3 keeps v3's bracket. The
+current model does not cover that pose, and the frozen one does not cover the measured pitch and yaw. These models are simulation approximations, not validated manufacturing drawings.

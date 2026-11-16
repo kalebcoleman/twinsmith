@@ -22,7 +22,7 @@ The base cell holds no task objects. What a task adds is a **task pack** loaded 
 | `exts/workcell/config/lab_hardware.json` | The base cell: robot, gripper stack, wrist camera (mount pose and intrinsics under `wrist_camera`), bench, mounting hardware. Asset pack `ur5e-workcell/v4` |
 | `exts/workcell/workcell/bom.csv` | The base cell's BOM |
 | `scripts/workcell_calibrated_camera_assets.py` | Build calibrated pack `ur5e-workcell/v4` from verified `v3`, replacing only the wrist bracket; existing versions are untouched |
-| `scripts/workcell_bracket_assets.py`, `exts/workcell/cad/rg2_camera_bracket.py` | Build pack `ur5e-workcell/v3` from `v2`: the wrist bracket becomes a parametric copy of the real printed one, a two-piece clamp on the RG2 body with a truss arm and a plate for the D415 ([parameters, sources and what to measure](../cad/README.md)). The pack keeps the USD, a STEP of the assembly and a STEP and STL of each printable piece |
+| `scripts/workcell_bracket_assets.py`, `exts/workcell/cad/rg2_camera_bracket_v3.py` | Build pack `ur5e-workcell/v3` from `v2`, with v3's own bracket: the frozen v3 model at v3's pinned photo-estimated camera pose, not the pose now in the configuration (`exts/workcell/cad/rg2_camera_bracket.py` is the v4 model). The wrist bracket becomes a parametric copy of the real printed one, a two-piece clamp on the RG2 body with a truss arm and a plate for the D415 ([parameters, sources and what to measure](../cad/README.md)). The pack keeps the USD, a STEP of the assembly and a STEP and STL of each printable piece |
 | `scripts/workcell_rg2_assets.py`, `scripts/workcell_stack_assets.py`, `exts/workcell/cad/rg2_from_step.py`, `exts/workcell/cad/part_from_step.py` | Called by the script above: the RG2, the Quick Changer's robot side and the Bota Rokubi from the vendors' official STEP files, read from local copies checked by SHA-256 ([the tool stack](#the-tool-stack-as-on-the-real-arm)) |
 | `scripts/workcell_camera_assets.py`, `exts/workcell/cad/wrist_bracket.py` | Build pack `ur5e-workcell/v2` (superseded): RealSense's own D415 mesh (fetched at a pinned commit, checked by SHA-256, Apache-2.0) in the colour optical frame, and a placeholder bracket on the wrist 3 housing |
 | `exts/workcell/tasks/jenga_tower.json` + `.bom.csv` | Task: the tower, 54 blocks of nominal 72 x 24 x 14 mm. Asset pack `jenga/v1` |
@@ -235,7 +235,7 @@ conflicting measurements.
 
 | Status | Meaning |
 | --- | --- |
-| `confirmed` | Measured, or stated by the lab owner or a datasheet |
+| `confirmed` | Measured, or stated by the lab owner or a datasheet. It says where the value comes from, not how accurate it is: the wrist camera pose is `confirmed` as the recorded 2026-11-16 hand-eye result, with its limits in `wrist_camera.calibration`, and has no independent accuracy check |
 | `unconfirmed` | Best current value; must be measured before fabrication or fidelity claims |
 | `conflict` | Sources disagree; the configured value is the default, alternatives are recorded |
 | `placeholder` | Stand-in geometry or physics value, not a hardware statement |
@@ -938,7 +938,12 @@ configuration or a design envelope and are not vendor drawings.
 `wrist_camera.color_intrinsics` (also accepted under `overhead_camera`) holds `width`, `height`, `fx`, `fy`, `cx`,
 and `cy`. When present it overrides `color_fov_deg`; its resolution must match `resolution` exactly, with no implicit
 rescaling or fallback on invalid values. The builder authors USD film offsets as well as focal length and apertures,
-so the optical projection and reported CameraInfo use the same principal point. Without it, older configurations
+so the authored USD camera and the reported CameraInfo describe the same principal point: a test projects points
+through the USD frustum and compares them with K. That is USD's own camera math, not rendered pixels. Whether the RTX
+renderer draws the principal point at the reported `cx`, `cy` (17.1 px left of and 8.2 px above the image centre for
+the wrist camera) has not been measured from a rendered image: the one stopped-stage viewport comparison was by eye.
+Until a rendered pixel check is recorded, treat pixel-to-ray results from rendered frames as unverified to that amount.
+Without it, older configurations
 still derive a centred pinhole from the nominal FOV. Lens distortion is not modeled: compare undistorted real images
 using the same K, not raw distorted pixels. The separate measured extrinsics and their limits are retained in `wrist_camera.calibration`.
 

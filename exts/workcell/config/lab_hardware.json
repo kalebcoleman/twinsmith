@@ -889,7 +889,7 @@
         0.09273948509468993
       ],
       "status": "confirmed",
-      "source": "Measured estimate from 2026-11-16 ChArUco hand-eye fit (15 views). Converted from UR controller flange/tool0-from-COLOR_OPTICAL through the shipped RG2 stack (no Bota); see calibration for frames, hashes and accuracy limits. Not independently validated metric accuracy."
+      "source": "Measured estimate from 2026-11-16 ChArUco hand-eye fit (15 views). Converted from UR controller flange/tool0-from-COLOR_OPTICAL through the shipped RG2 stack (no Bota); see calibration for frames, hashes and accuracy limits. Not independently validated metric accuracy. Status confirmed means this is the recorded calibration result, converted without rounding; it is not an accuracy statement (classical and refined flange Z differ by about 11 mm)."
     },
     "offset_in_tool0_alternatives_m": {
       "value": {
@@ -919,7 +919,7 @@
         -89.90040720811024
       ],
       "status": "confirmed",
-      "source": "Measured estimate from the same full-precision hand-eye matrix; extrinsic XYZ degrees in the RG2 frame, retaining its small pitch and yaw terms. USD camera Rx(180) is applied separately. See calibration for accuracy limits."
+      "source": "Measured estimate from the same full-precision hand-eye matrix; extrinsic XYZ degrees in the RG2 frame, retaining its small pitch and yaw terms. USD camera Rx(180) is applied separately. Status confirmed means the recorded calibration result, not independently validated accuracy; see calibration for accuracy limits."
     },
     "mount_position": {
       "value": "clamped to the RG2 body, off its back face",

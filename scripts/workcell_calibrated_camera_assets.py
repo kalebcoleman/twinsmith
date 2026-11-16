@@ -15,6 +15,11 @@ import workcell_bracket_assets as bracket
 from twinsmith import asset_packs, pack_manifest
 
 PACK, SOURCE, TARGET = 'ur5e-workcell', 'v3', 'v4'
+USD_CHANGES = ('Both printed pieces as one render mesh in the RG2 body frame, plus a collision approximation of five convex '
+               'hulls under /Asset/Collision, which the work cell builder attaches to the RG2 body. Each hull is the '
+               'triangulated convex hull of one piece of the CAD model (collar, front bar extension, truss, plate support, '
+               'camera plate): the truss hull fills its window and the hulls overlap each other at the plate. '
+               'They are approximations of the photo-estimated bracket, not measured geometry.')
 
 
 def main():
@@ -42,6 +47,7 @@ def main():
                                  fidelity='Photo-estimated clamp/truss/plate around measured optical pose; not manufacturer bracket CAD')
             if path.suffix == '.usdc':
                 records[name]['asset_id'] = 'wrist_mount'
+                records[name]['changes'] = USD_CHANGES
         extra = {key: value for key, value in manifest.items() if key not in ('id', 'version', 'files', 'defaults', 'notes')}
         extra.update(derived_from=f'{PACK}/{SOURCE}', qualification='v3 with a rebuilt wrist bracket at the 2026-11-16 measured camera pose; geometry remains approximate')
         result = asset_packs.write_version(root, PACK, TARGET, files, records,
