@@ -212,6 +212,158 @@ named the masks, nothing else), so the colour step is fitted to this picture; th
 the masks; there is no ground truth, and a 1 to 4 mm agreement of outlines is not an accuracy; the slots' clearance is
 1.0 to 1.4 mm a side. The simulator's own figures above were not run again with these changes; the CPU tests were.
 
+### Building a puzzle
+
+`scripts/puzzle_build.py` has the simulated UR5e assemble one puzzle of the pack on Newton: the pieces lie loose on the
+table and the base off to one side; the robot finds them, slides the base to the middle, and picks and inserts each
+piece. It talks to one simulator bridge on this machine and cannot reach a real robot.
+
+    python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
+        --allow-concurrent-gpu --table-camera --colours <colours.json>
+
+It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
+say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
+seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
+The keep-out boxes of the gripper and the camera, and what the closed gripper hides in the wrist camera's own picture
+(both in `scripts/puzzle_assembly.py`), and the measured runs below are of `ur5e-workcell/v4`, the pack with the
+calibrated wrist camera. On a cell built from another pack the run stops after building it, unless
+`--unqualified-cell-pack` is given; `metrics.json` then records `cell_pack_qualified: false`, and nothing measured
+below describes that run.
+The demo's settings are `scripts/puzzle_build.json`: the puzzle, where the base goes, the speeds, and one grasp per
+piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a width).
+
+| Step | How |
+|---|---|
+| Layout | `puzzle_assembly.scatter`: the pieces flat at random inside what the wrist camera sees from the survey pose, apart from each other, the base 0.24 to 0.32 m to one side, the middle and the way there free. Built as a task by `quick_start`, once per layout |
+| Rail, then arm | The rail is parked with its own blocking move. After that only the six arm joints move, solved from the UR base where the rail has put it (read from `sim__arm(action="fk")`) with the UR5e's closed-form solution (`workcell_session.ur_ik`; its forward kinematics agree with the simulator's to 5 micrometres). A straight line is solved waypoint by waypoint, each near the one before; a large move goes to the solution nearest the posture the cell was built in, with elbow and wrist clear of the table. `sim__arm(action="ik")` solves nearest the arm's pose now and takes no seed: along a turning line its answers jumped (the arm ended 90 degrees from its targets), and after a level insertion it led the elbow onto the table |
+| Survey | Wrist D415 straight down from 0.72 m, gripper closed. At the calibrated camera pose the gripper fills the top middle of the picture and its fingertips end at the picture's centre, so the point looked at is 90 mm to the robot's side of the middle of the table: the base in the middle is then wholly in view, and a layout puts no piece where the gripper hides the table (`puzzle_assembly.hidden_on_table`). The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
+| Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
+| Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers. Slid, it slips in the fingers and stops short, by 3 to 20 mm: the look that follows measures where it stopped, and a base more than 10 mm (and less than 50 mm) from the middle is slid once more from there |
+| Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
+| Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
+| Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
+
+The run is a Graph-as-Policy workflow. `exts/workcell/gap` is a skill registry (made with `gap registry init` and
+`gap skills new`): the tool bundle `workcell` (eleven tools, each a call to the running `puzzle_build.py`) and the
+skills `surveying-puzzle-pieces`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
+authors the workflow with `gap.builder`, one subgraph per skill and per piece, and runs it with `gap.execute` through a
+small connector. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
+(`verify_reach`, `verify_grip`), and after each placement a checkpoint compares the piece with its slot in the
+simulator's truth. Two more subgraphs ask the owner's vision-language model (`[planning] vlm_url`, through
+open-robot-skills' `vlm` bundle) for a second opinion: how many parts it counts after the survey, and whether the
+puzzle looks complete at the end. Those answers are recorded and decide nothing: SAM 3.1 and the CAD match do.
+The graph's trace (`<out>/trace/dag_trace.json`, `node_data/`) has every node's inputs and outputs.
+
+Outputs in `<out>`: `metrics.json` (per piece: named correctly, gripped, seated, final pose error against the CAD,
+what the lookahead said; the graph's result and checkpoints), `build.mp4` (the table camera and the wrist camera side
+by side, captioned), `key_*.png`, `look_*_masks.png` (each look with its SAM 3.1 masks), the graph, `run_log.json`
+and `viewer/`.
+
+#### The step viewer
+
+`<out>/viewer/index.html` replays the run: what was planned, then what was done. It is a static page (open the file;
+no server, nothing from the network), built at the end of the run by `scripts/puzzle_viewer.py` from the run's own
+records, and `python3 scripts/puzzle_viewer.py <out>` builds it again for any finished run without a simulator.
+
+| Panel | Shows |
+|---|---|
+| The build | The table camera's and the wrist D415's film at the simulation's own speed (5 frames per simulated second), with one clock for the whole page |
+| Future | Every Newton lookahead try as its own clip, failed first tries included. With "play each lookahead before its step" on, the build pauses at a lookahead, its tries play here, and the build goes on when one says go |
+| The workflow | The Graph-as-Policy graph: subgraphs with their skills, inner nodes, exits taken; each node grey, amber, green or red as it is not reached, running, finished or failed at the time shown, from the graph's trace |
+| Steps | Every step in order (survey, base placement, lookahead and its tries, approach, close, lift, carry, lower, release, retreat, rescan, checkpoint) with its start, its simulated and wall duration and its result. Clicking one goes there |
+| The step | Its plan: the grasp as defined on the CAD and which way of holding was taken, the waypoints (hover, pick, lift, carry, over the slot, place, retreat) with where the gripper points, its result, where its wall time went, and its clip |
+| Joints and gripper | The six arm joints, the rail, the pad gap and the commanded grip force over time, for the build or for the lookahead try on show |
+| Perception | Per look: the wrist picture with the SAM 3.1 masks, and the table from above with the scan's estimate drawn over the simulator's truth. The truth is there to score the estimate and is labelled so; the robot never reads it |
+| Where the wall time went | Per kind of step and in all: seconds in the solver, rendering, bridge calls beyond those two, SAM 3.1, the scan's matching, grasp choice and the rest; and what lies outside the steps |
+
+What the run records for it is `run_log.json`: the steps (`scripts/step_log.py`: each with its plan, simulated and
+wall time, frame and sample ranges, and its share of the counters), the joints sampled every 50 ms inside Kit, the
+looks, and each lookahead try's own clip, samples and captions. `viewer/timing.json` is the time breakdown alone.
+
+The page is panels over one value. `viewer.js` keeps a registry (`Viewer.panel(id, {title, mount, update})`); the
+run names the panels to show (`panels` in `run.js`), and `Viewer.load(run)` mounts them afresh, so a page fed a
+growing run shows it live and a page with other panels (a lab display) reads the same records. Neither is built yet:
+today the page is written once, when the run ends. The grip force plotted is the commanded limit, not a measurement.
+
+Measured (2026-11-16, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v4` and `puzzles/v1`, the green puzzle: a base,
+two bars, two forks; one run on each of three layouts; the runs, their videos and their viewers are in the puzzle
+project, not this repository):
+
+| Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Base after its slide | Lookahead | Simulated | Wall |
+|---|---|---|---|---|---|---|---|---|
+| seed 5 | yes | 4 of 4 | 0.28 to 0.94 mm | 0.51, 0.94 mm | 3.9 mm from the middle | go for all, each on its first try | 171.4 s | 330 s |
+| seed 1 | yes | 4 of 4 | 0.48 to 0.93 mm | 0.47, 1.36 mm | 13.3 mm, then 3.3 mm after a second slide | go for all, each on its first try | 197.6 s | 381 s |
+| seed 3 | yes | 4 of 4 | 0.74 to 1.13 mm | 0.70, 1.40 mm | 18.6 mm, then 3.2 mm after a second slide | go for all, each on its first try | 187.6 s | 373 s |
+
+All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.6 mm apart on
+the 25.9 mm bars and 19.2 to 19.5 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The
+graph ended in success three times; fifteen of seventeen checkpoints passed, the two that did not being the base's
+first stop in seeds 1 and 3, which the second slide put right. The vision-language model (Qwen3-VL-32B, served
+locally) counted five parts where the scan had five and answered yes to "complete" on all three.
+
+These three runs replace the ones made on `ur5e-workcell/v3` (final errors 0.48 to 1.20 mm, survey errors up to
+2.22 mm, 164 to 173 s simulated), and three things differ from them. The camera keep-out box was measured again on the
+v4 cell: the D415's body reaches 93 mm to the gripper's -x side, 72 to 108 mm to its -y side and 102 to 147 mm above
+the pad centre. The survey looks from 0.72 m in place of 0.6 m, for the reason in the table above, so a pixel is
+0.78 mm on the table, not 0.65 mm; the survey errors did not grow. And with the new hidden region seeds 1 and 3 draw
+other layouts than before, with the base 0.28 and 0.29 m from the middle: over that distance it stopped 13 and 19 mm
+short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
+was added. On v3 the same move had stopped 3 to 8 mm short and passed.
+
+What the lookahead does for a fork: picked lying flat and turned upright in the hand, it sits 2.4 to 5.6 mm from the
+grasp as defined. Lowered from the grasp as defined it jams (it did in the first simulated try of all six forks, 16 mm
+from the slot with other pieces pushed 16 to 28 mm, while the correction was only applied in a second try). Corrected
+over the slot before lowering, it seats in the first try, and the real insertion uses the same grasp.
+
+Where the wall time goes (the viewer's last panel), and what was done about it, measured on `ur5e-workcell/v3` before
+the calibrated camera. On the same three layouts the first
+measurement was 1768 to 1863 s of wall time for 166 to 175 s simulated, 10.6 times slower than real time, 84 percent
+of it inside the solver. Three changes, each checked on the three layouts, brought that to 329 to 340 s, 1.9 to 2.0
+times slower than real time:
+
+| Change | Wall, seeds 5, 1, 3 | What it is |
+|---|---|---|
+| Before | 1863, 1840, 1768 s | |
+| Newton's captured CUDA graph kept for paused steps on 6.2.0.0 | 400, 414, 391 s | `sim_tools.physics.step` stepped the solver uncaptured, a workaround for faults of 6.0 and 6.1 that 6.2.0.0's own step no longer has. A step went from 7.6 ms to 0.45 ms; solver time per layout from about 1550 s to about 34 s |
+| The lookahead corrects the place in its first try | 347, 347, 357 s | No second try: 4 tries per layout, down from 6 or 7 |
+| Joint targets written without reading them back | 329, 331, 340 s | The loop in Kit read the target array from the GPU before each row: 3 ms a row |
+
+No physics setting changed: timestep, substeps, solver, contacts, collision shapes and grip force are as before.
+The captured step was checked three ways before the full runs: 500 steps of a moving arm end in the same state to
+1e-8 with and without capture (two uncaptured runs differ by as much); a gripper closing at 3 N and at 40 N, the gains
+set between steps, follows the same path in both to the 0.01 mm logged; and one fork pick and insertion differs between
+the two no more than two uncaptured runs of it do. On the full layouts the same pieces seat, and the final errors
+moved by -0.66 to +0.69 mm with no bias. That is the pipeline's own repeatability, not a tighter bound: two runs of
+unchanged code on these layouts differed by up to 0.61 mm, because a piece comes to rest anywhere within its slot's
+play, and the survey reads the symmetric base either way round from one run to the next.
+
+Seed 5 then (on v3; on v4 it is 330 s for 171 s simulated), 329 s for 173 s simulated:
+
+| Seconds | Share | Spent on |
+|---|---|---|
+| 144 | 44% | Waiting for SAM 3.1: six looks at 24 s, most of it the job starting and loading its model each time |
+| 74 | 22% | Calls into Kit beyond the solver and the renderer (866 calls): writing targets, sampling joints, moving data |
+| 60 | 18% | Rendering 1424 frames from two cameras (the film and the lookahead clips) |
+| 25 | 8% | Inside the solver: 0.09 s per simulated second |
+| 16 | 5% | Matching the scan to the CAD |
+| 10 | 3% | Grasp choice, the vision-language model, the graph's own work and the rest |
+
+The next thing to shorten is therefore the looks (a SAM 3.1 process that stays up between them), not the physics.
+Simulating a lookahead in a cloned scene of only the nearby pieces, or starting it during the approach, would save
+little now: the four lookaheads take 63 to 69 s of wall time together, of which 10 s is the solver.
+
+Limits. One run per layout is three builds, not a success rate, and earlier runs of the same layouts stopped for
+reasons that were then fixed: a base that is the same after half a turn was read the other way round after the first
+placement (the robot now keeps the reading it placed the base with); the wrist's last joint wound past its 360 degree
+limit over successive large moves (a large move now unwinds it); and the bridge's unseeded solver, as in the table
+above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from the CAD pose although the lookahead had
+said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
+run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
+layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
+against the pieces before a move; the arm's links are not. The base slips in the fingers when slid, and why it slips
+more from one side of the table than the other was not found; the second slide corrects it and does not explain it.
+Nothing here has seen a real camera or a real robot.
+
 Machine-readable data:
 
 - BOM: `<repo>/exts/workcell/workcell/bom.csv`
