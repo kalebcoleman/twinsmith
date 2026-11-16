@@ -40,7 +40,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcp"))
 import puzzle_assembly as assembly  # noqa: E402
 import puzzle_scan  # noqa: E402
+import puzzle_viewer  # noqa: E402
 import workcell_session as cell  # noqa: E402
+from step_log import StepLog, stepped  # noqa: E402
 from twinsmith import gap  # noqa: E402
 from twinsmith.isaaclab import jobs  # noqa: E402
 from twinsmith.robosim.bridge import _ffmpeg_exe  # noqa: E402
@@ -66,6 +68,13 @@ def shifted(at, offset):
     return out
 
 
+def waypoint(name, at):
+    """A gripper pose of a plan as the run's log keeps it: where the pad centres' frame is, and which way the
+    gripper points and closes."""
+    return {"name": name, "xyz": [round(float(v), 5) for v in at[:3, 3]], "approach": [round(float(v), 4) for v in at[:3, 2]],
+            "closing": [round(float(v), 4) for v in at[:3, 0]]}
+
+
 def se3(at):
     """A pose as Graph-as-Policy's Se3Pose."""
     w, x, y, z = cell.matrix_quat(at[:3, :3])
@@ -88,7 +97,8 @@ class Build:
         self.paths = {name: f"{PUZZLE}/{name}" for name in self.names}
         self.estimate, self.placed, self.held, self.looks, self.marks, self.adjust, self.avoid = {}, [], None, 0, [], {}, {}
         self.metrics = {name: {"attempts": 0} for name in self.slots}
-        self.ahead = False                                  # true while simulating ahead: nothing is recorded
+        self.ahead = False                                  # true while simulating ahead: no metric is recorded
+        self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
         self.started = time.time()
 
     # ---- the world --------------------------------------------------------------------------------
@@ -103,19 +113,20 @@ class Build:
 
     def start(self, layout):
         """Build the cell with the layout, park the rail and start filming."""
-        task = puzzle_scan.write_task(assembly.layout_estimate(self.pack, layout), self.out / "task", "puzzle_build.py, a random layout")
-        built = self.cell.build(task, self.config["start_joint_deg"], 0.05, self.args.discard_changes)
-        if self.args.table_camera:
-            self.cell.add_camera("table", self.config["table_camera"])
-        self.cell.start_film(self.out / "film", fps=5)
-        self.say("parking the rail")
-        rail = self.cell.park_rail(self.config["rail_mm"])
+        with self.log.step("build stage"):
+            task = puzzle_scan.write_task(assembly.layout_estimate(self.pack, layout), self.out / "task", "puzzle_build.py, a random layout")
+            built = self.cell.build(task, self.config["start_joint_deg"], 0.05, self.args.discard_changes)
+            if self.args.table_camera:
+                self.cell.add_camera("table", self.config["table_camera"])
+            self.cell.start_film(self.out / "film", fps=5)
+        with self.log.step("park rail", rail_mm=self.config["rail_mm"]) as row:
+            self.say("parking the rail")
+            row["result"] = rail = self.cell.park_rail(self.config["rail_mm"])
         return {"backend": built["backend"], "cell_pack": built["pack"], "rigid_bodies": built["newton"]["rigid_bodies"], "rail": rail}
 
     def say(self, caption):
-        self.doing = caption
+        self.doing = self.cell.caption = caption
         if not self.ahead:
-            self.cell.caption = caption
             print(f"  [{self.cell.steps / cell.PHYSICS_HZ:6.1f} s sim, {time.time() - self.started:5.0f} s wall] {caption}", flush=True)
 
     def mark(self, label):
@@ -132,27 +143,39 @@ class Build:
         eye = cell.pose(np.diag([1.0, -1.0, -1.0]), np.array(survey["look_at_m"]) + [0.0, 0.0, survey["height_m"]])
         self.cell.camera_to(eye)
         truth = self.truth()
+        name = f"look_{self.looks:02d}_{label}"
+        outlines = lambda poses: {piece: {"xyz": [round(float(v), 5) for v in at[:3, 3]],
+                                          "outline": np.round(assembly.footprint(self.pack, piece, at), 5).tolist()} for piece, at in poses.items()}
+        record = {"index": self.looks, "label": label, "sim_s": self.cell.steps / cell.PHYSICS_HZ, "truth": outlines(truth)}
+        self.look_log.append(record)
+        self.log.note(look=self.looks)
         if self.args.perception == "oracle":
+            record.update(estimate=outlines(truth), oracle=True)
             return truth, {"perception": "oracle: the simulator's own poses"}
         clip = self.cell.record("wrist", self.out / "looks" / f"{self.looks:02d}_{label}", frames=2)
         run = f"{self.out.name}-{self.looks:02d}-{label}-{time.strftime('%H%M%S')}"
-        sam3 = Sam3(job_status=jobs.runs_status)
-        started = sam3.call("track", source=str(clip), name=run, prompts=list(self.config["sam3_prompts"]),
-                            allow_concurrent_gpu=self.args.allow_concurrent_gpu)
-        if not started.get("ok"):
-            raise SystemExit(f"sam3 refused: {started.get('error')} {started.get('hint', '')}")
-        while jobs.runs_status(started["job_id"])["state"] == "running":
-            time.sleep(3)
-        report = sam3.call("report", name=run)
-        if report.get("state") != "finished":
-            raise SystemExit(f"sam3 failed: {json.dumps(report)[:600]}")
-        scan = puzzle_scan.Scan(clip, report["run_dir"])
-        estimate = puzzle_scan.match(scan, self.pack)
-        estimate.update(clip=str(clip), run=report["run_dir"], score=puzzle_scan.score(estimate, {n: p.tolist() for n, p in truth.items()}, self.pack))
+        with self.cell.timed("sam3_s"):
+            sam3 = Sam3(job_status=jobs.runs_status)
+            started = sam3.call("track", source=str(clip), name=run, prompts=list(self.config["sam3_prompts"]),
+                                allow_concurrent_gpu=self.args.allow_concurrent_gpu)
+            if not started.get("ok"):
+                raise SystemExit(f"sam3 refused: {started.get('error')} {started.get('hint', '')}")
+            while jobs.runs_status(started["job_id"])["state"] == "running":
+                time.sleep(3)
+            report = sam3.call("report", name=run)
+            if report.get("state") != "finished":
+                raise SystemExit(f"sam3 failed: {json.dumps(report)[:600]}")
+        with self.cell.timed("scan_s"):
+            scan = puzzle_scan.Scan(clip, report["run_dir"])
+            estimate = puzzle_scan.match(scan, self.pack)
+            estimate.update(clip=str(clip), run=report["run_dir"], score=puzzle_scan.score(estimate, {n: p.tolist() for n, p in truth.items()}, self.pack))
         (clip / "estimate.json").write_text(json.dumps(estimate, indent=1) + "\n")
-        self._overlay(clip, Path(report["run_dir"]), self.out / f"look_{self.looks:02d}_{label}_masks.png")
-        shutil.copy(clip / "rgb/00000.png", self.out / f"look_{self.looks:02d}_{label}.png")
+        self._overlay(clip, Path(report["run_dir"]), self.out / f"{name}_masks.png")
+        shutil.copy(clip / "rgb/00000.png", self.out / f"{name}.png")
         seen = {piece["name"]: cell.pose(np.array(piece["rotation"]), piece["position_m"]) for piece in estimate["pieces"]}
+        record.update(estimate=outlines(seen), picture=f"{name}.png", masks=f"{name}_masks.png", unexplained=len(estimate.get("unexplained", [])),
+                      scores=[{key: row.get(key) for key in ("name", "result", "as", "position_error_mm", "rotation_error_deg")}
+                              for row in estimate["score"]["pieces"]])
         return seen, estimate
 
     @staticmethod
@@ -169,6 +192,7 @@ class Build:
         Image.fromarray(picture.astype(np.uint8)).save(out)
 
     # ---- the graph's tools ------------------------------------------------------------------------
+    @stepped("survey")
     def survey(self):
         """Find every piece of the puzzle on the table."""
         self.say("survey: wrist camera, SAM 3.1, scan to scene")
@@ -199,7 +223,8 @@ class Build:
         lookahead has not found blocked."""
         grasp = self.config["grasps"][piece]
         back = np.linalg.inv(self.cell.wrist_from_gripper)
-        options = assembly.choose_grasps(self.pack, piece, grasp, now, target, around_now, around_then, cell.pad_setback, axis, clear_m)
+        with self.cell.timed("plan_s"):
+            options = assembly.choose_grasps(self.pack, piece, grasp, now, target, around_now, around_then, cell.pad_setback, axis, clear_m)
         for way, option in enumerate(options):
             if way in self.avoid.get(piece, ()):
                 continue
@@ -216,6 +241,7 @@ class Build:
         """The gripper frame's pose that puts the pad centres at a pose, with the pads ``width_m`` apart."""
         return shifted(pads, pads[:3, 2] * cell.pad_setback(width_m))
 
+    @stepped("place_base")
     def place_base(self, piece):
         """Grip the base by its centre island and slide it on the table to the middle."""
         now, target, speeds = self.estimate[piece], self._base_target(), self.config["speeds"]
@@ -224,22 +250,36 @@ class Build:
             raise Refused("the way to the middle is not free of pieces")
         hold = self._grasp(piece, now, target, others, others)
         width = hold["width_m"]
-        self.say(f"{piece}: gripping its centre island")
-        self.cell.open_to(width + self.config["open_beyond_m"])
-        self.cell.gripper_carry(shifted(self._tcp(hold["pick"], width), [0, 0, HOVER_M]), speed_deg_s=speeds["joint_deg_s"])
-        self.cell.gripper_line(self._tcp(hold["pick"], width), speeds["approach_m_s"])
-        self.cell.grip(width, self.config["grip_force_n"])
-        self.say(f"{piece}: sliding it to the middle")
-        self.cell.gripper_line(self._tcp(hold["place"], width), speeds["slide_m_s"])
-        self.cell.open_to(width + self.config["open_beyond_m"])
-        self.cell.gripper_line(shifted(self._tcp(hold["place"], width), [0, 0, HOVER_M]), speeds["approach_m_s"])
+        pick, place = self._tcp(hold["pick"], width), self._tcp(hold["place"], width)
+        hover, rise = shifted(pick, [0, 0, HOVER_M]), shifted(place, [0, 0, HOVER_M])
+        self.log.note(grasp=self._grasp_plan(piece, hold), target=waypoint("middle", target),
+                      waypoints=[waypoint(*point) for point in (("hover", hover), ("pick", pick), ("place", place), ("rise", rise))])
+        with self.log.step("approach", piece, waypoints=[waypoint("hover", hover), waypoint("pick", pick)]):
+            self.say(f"{piece}: gripping its centre island")
+            self.cell.open_to(width + self.config["open_beyond_m"])
+            self.cell.gripper_carry(hover, speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_line(pick, speeds["approach_m_s"])
+        with self.log.step("grip", piece, force_n=self.config["grip_force_n"], width_m=width) as row:
+            row["result"] = {"gap_m": self.cell.grip(width, self.config["grip_force_n"])}
+        with self.log.step("slide", piece, waypoints=[waypoint("place", place)], speed_m_s=speeds["slide_m_s"]):
+            self.say(f"{piece}: sliding it to the middle")
+            self.cell.gripper_line(place, speeds["slide_m_s"])
+        with self.log.step("release", piece, waypoints=[waypoint("rise", rise)]):
+            self.cell.open_to(width + self.config["open_beyond_m"])
+            self.cell.gripper_line(rise, speeds["approach_m_s"])
         self.base_goal = self.estimate[piece] = target      # where it should now be; the next look measures it
         self.mark(f"{piece} in the middle")
         return {"result": "slid", "target": se3(target)}
 
+    def _grasp_plan(self, piece, hold):
+        """A chosen grasp as the run's log keeps it: its definition on the CAD and which way of holding was taken."""
+        return {**{key: self.config["grasps"][piece][key] for key in ("point_m", "closing_axis", "approach_axis", "width_m", "what")},
+                "way": hold["way"], "gripper_in_piece": np.round(hold["in_piece"], 5).tolist(), "force_n": self.config["grip_force_n"]}
+
     def _seat(self, piece):
         return self.estimate[self.base] @ self.slots[piece]
 
+    @stepped("approach")
     def approach(self, piece):
         """Choose a grasp for the piece, open, and bring the open pads round it."""
         step = next(step for step in self.order if step["piece"] == piece)
@@ -258,16 +298,22 @@ class Build:
         width, speeds = hold["width_m"], self.config["speeds"]
         if not self.ahead:
             self.metrics[piece]["attempts"] += 1
+        pick, over = self._tcp(hold["pick"], width), self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), width)
+        hold["path"] = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, LIFT_M]),
+                        "carry": shifted(over, [0, 0, CARRY_M]), "over": over, "place": self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width)}
+        self.log.note(grasp=self._grasp_plan(piece, hold), adjusted=piece in self.adjust, slot_axis=[round(float(v), 4) for v in hold["axis"]],
+                      waypoints=[waypoint(name, at) for name, at in hold["path"].items()])
         self.say(f"{piece}: approaching")
         self.cell.open_to(width + self.config["open_beyond_m"])
-        self.cell.gripper_carry(shifted(self._tcp(hold["pick"], width), [0, 0, HOVER_M]), speed_deg_s=speeds["joint_deg_s"])
-        self.cell.gripper_line(self._tcp(hold["pick"], width), speeds["approach_m_s"])
+        self.cell.gripper_carry(hold["path"]["hover"], speed_deg_s=speeds["joint_deg_s"])
+        self.cell.gripper_line(pick, speeds["approach_m_s"])
         self.held = hold
         size = np.max([c + h for c, h in self.pack.shape(piece).boxes], axis=0) - np.min([c - h for c, h in self.pack.shape(piece).boxes], axis=0)
-        return {"commanded": se3(self._tcp(hold["pick"], width)), "width_m": width,
+        return {"commanded": se3(pick), "width_m": width,
                 "target_obb": {"center": dict(zip("xyz", map(float, self.estimate[piece][:3, 3]))),
                                "extent": dict(zip("xyz", map(float, size / 2))), "rotation": se3(self.estimate[piece])["orientation"]}}
 
+    @stepped("close")
     def close(self, piece):
         """Close the RG2 on the piece at the configured force."""
         self.say(f"{piece}: gripping at {self.config['grip_force_n']:g} N")
@@ -276,43 +322,50 @@ class Build:
             self.metrics[piece]["grip_gap_mm"] = round(reached * 1000, 2)
         return {"gap_m": reached}
 
+    @stepped("lift")
     def lift(self, piece):
         """Lift the gripped piece straight up."""
         before = self.truth()[piece]
         self.say(f"{piece}: lifting")
-        self.cell.gripper_line(shifted(self._tcp(self.held["pick"], self.held["width_m"]), [0, 0, LIFT_M]), self.config["speeds"]["approach_m_s"])
+        self.log.note(waypoints=[waypoint("lift", self.held["path"]["lift"])])
+        self.cell.gripper_line(self.held["path"]["lift"], self.config["speeds"]["approach_m_s"])
         rise = float(self.truth()[piece][2, 3] - before[2, 3])
         if not self.ahead:
             self.metrics[piece].update(grasp_success=bool(rise > 0.8 * LIFT_M), lift_rise_mm=round(rise * 1000, 1))
         return {"rise_m": rise}
 
+    @stepped("insert")
     def insert(self, piece):
         """Carry the held piece over its slot, lower it along the slot axis, let go, back away and rise."""
         hold, speeds = self.held, self.config["speeds"]
-        width = hold["width_m"]
-        place = hold["place"]
-        self.say(f"{piece}: carrying it over its slot")
-        over = self._tcp(shifted(place, hold["axis"] * hold["clear_m"]), width)
-        self.cell.gripper_carry(shifted(over, [0, 0, CARRY_M]), speed_deg_s=speeds["joint_deg_s"])
-        self.cell.gripper_line(over, speeds["approach_m_s"])
+        width, path = hold["width_m"], hold["path"]
+        with self.log.step("carry", piece, waypoints=[waypoint("carry", path["carry"]), waypoint("over", path["over"])]):
+            self.say(f"{piece}: carrying it over its slot")
+            self.cell.gripper_carry(path["carry"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_line(path["over"], speeds["approach_m_s"])
         gripper = self.cell.gripper_pose()
         hold["in_hand"] = np.linalg.inv(self.truth()[piece]) @ shifted(gripper, -gripper[:3, 2] * cell.pad_setback(width))
         if not self.ahead:                                  # how far the piece sits from the grasp as defined: what friction and grip force set
             defined = np.linalg.inv(hold["in_piece"])
             self.metrics[piece]["in_hand_shift_mm"] = round(1000 * min(float(np.linalg.norm((defined @ assembly.pose(turn, shift) @ hold["in_hand"])[:3, 3]))
                                                                        for turn, shift in self.pack.shape(piece).symmetries), 2)
-        self.say(f"{piece}: inserting along the slot axis at {speeds['insert_m_s'] * 1000:g} mm/s")
-        try:
-            self.cell.gripper_line(self._tcp(shifted(place, hold["axis"] * 0.001), width), speeds["insert_m_s"], segment_m=0.005)
-            blocked = None
-        except cell.MoveFailed as error:
-            blocked = str(error)
-        self.cell.open_to(width + self.config["open_beyond_m"])
+        with self.log.step("lower", piece, waypoints=[waypoint("place", path["place"])], speed_m_s=speeds["insert_m_s"]) as row:
+            self.say(f"{piece}: inserting along the slot axis at {speeds['insert_m_s'] * 1000:g} mm/s")
+            try:
+                self.cell.gripper_line(path["place"], speeds["insert_m_s"], segment_m=0.005)
+                blocked = None
+            except cell.MoveFailed as error:
+                blocked = str(error)
+            row["result"] = {"blocked": blocked}
+        with self.log.step("release", piece):
+            self.cell.open_to(width + self.config["open_beyond_m"])
         back = shifted(self.cell.gripper_pose(), -self.cell.gripper_pose()[:3, 2] * RETREAT_M)
-        self.cell.gripper_line(back, speeds["approach_m_s"])
-        self.cell.gripper_line(shifted(back, [0, 0, CARRY_M]), speeds["approach_m_s"])        # and up, clear of the puzzle, before any large move
+        rise = shifted(back, [0, 0, CARRY_M])               # and up, clear of the puzzle, before any large move
+        with self.log.step("retreat", piece, waypoints=[waypoint("back", back), waypoint("rise", rise)]):
+            self.cell.gripper_line(back, speeds["approach_m_s"])
+            self.cell.gripper_line(rise, speeds["approach_m_s"])
+            self.cell.step(250)
         self.held = None
-        self.cell.step(250)
         self.mark(f"{piece} inserted")
         return {"blocked": blocked}
 
@@ -323,11 +376,12 @@ class Build:
         return {"position_error_mm": round(metres * 1000, 2), "rotation_error_deg": round(degrees, 2),
                 "seated": bool(metres <= limit["position_m"] and degrees <= limit["rotation_deg"])}
 
+    @stepped("lookahead")
     def lookahead(self, piece):
         """Simulate the pick and the insertion ahead on Newton, from where the scan says the pieces are. A try in
         which the arm is blocked is repeated with the next way of holding the piece; one that does not seat it is
         repeated once with the grasp as the piece sat in the hand over the slot. Then go or abort. The stage is put
-        back as it was."""
+        back as it was. Every try is filmed as a clip of its own, ``lookahead/<piece>_<try>``."""
         self.say(f"{piece}: lookahead on Newton")
         if self.args.no_lookahead:
             return {"verdict": "go", "tries": []}
@@ -338,23 +392,29 @@ class Build:
         self.ahead = True
         try:
             while len(tries) < LOOKAHEAD_TRIES:
-                self.cell.place_bodies({self.paths[name]: self._twin_pose(name) for name in self.estimate})
-                self.cell.step(100)
-                before, self.trying = self.truth(), None
-                try:
-                    self.approach(piece)
-                    self.close(piece)
-                    rise = self.lift(piece)["rise_m"]
-                    blocked = self.insert(piece)["blocked"]
-                    after = self.truth()
-                    moved = max(float(np.linalg.norm(after[name][:3, 3] - before[name][:3, 3])) for name in after if name != piece)
-                    row = {**self._seated(piece, after, after[self.base]), "blocked": blocked, "rise_mm": round(rise * 1000, 1),
-                           "others_moved_mm": round(moved * 1000, 2)}
-                    row["go"] = bool(row["seated"] and moved < 0.003)
-                except (Refused, cell.MoveFailed) as error:
-                    row = {"go": False, "error": str(error), "during": self.doing}
-                hold = self.trying
-                tries.append({**row, "way": hold and hold["way"], "adjusted": piece in self.adjust})
+                clip = f"{piece}_{len(tries) + 1}"
+                self.cell.aside(self.out / "lookahead" / clip)
+                with self.log.step("try", piece, clip=clip) as attempt:
+                    self.cell.place_bodies({self.paths[name]: self._twin_pose(name) for name in self.estimate})
+                    self.cell.step(100)
+                    before, self.trying = self.truth(), None
+                    try:
+                        self.approach(piece)
+                        self.close(piece)
+                        rise = self.lift(piece)["rise_m"]
+                        blocked = self.insert(piece)["blocked"]
+                        after = self.truth()
+                        moved = max(float(np.linalg.norm(after[name][:3, 3] - before[name][:3, 3])) for name in after if name != piece)
+                        row = {**self._seated(piece, after, after[self.base]), "blocked": blocked, "rise_mm": round(rise * 1000, 1),
+                               "others_moved_mm": round(moved * 1000, 2)}
+                        row["go"] = bool(row["seated"] and moved < 0.003)
+                    except (Refused, cell.MoveFailed) as error:
+                        row = {"go": False, "error": str(error), "during": self.doing}
+                    hold = self.trying
+                    tries.append({**row, "way": hold and hold["way"], "adjusted": piece in self.adjust})
+                    attempt["result"] = tries[-1]
+                filmed = self.cell.back()
+                self.tries[clip] = {**{key: filmed[key] for key in ("fps", "zero_s", "captions", "samples", "grips")}, "piece": piece}
                 self.cell.rewind()
                 if row["go"] or hold is None:
                     break
@@ -380,6 +440,7 @@ class Build:
             return shifted(self._seat(name), [0, 0, puzzle_scan.DROP_IN_M])
         return self.estimate[name]
 
+    @stepped("rescan")
     def rescan(self, piece):
         """Look again from the survey pose, update where everything is, and say whether the piece is where it should be."""
         self.say(f"{piece}: looking again")
@@ -410,11 +471,13 @@ class Build:
             return {"result": "retry", **(seated or {})}
         raise Refused(f"{piece} is not in its slot and cannot be picked again")
 
+    @stepped("release")
     def release(self):
         """Open the gripper: the graph's recovery when it gives up."""
         self.cell.open_to(0.08)
         return {"result": "open"}
 
+    @stepped("picture")
     def picture(self, label):
         """One colour picture from the wrist camera, where it is now: what a vision-language model is shown."""
         clip = self.cell.record("wrist", self.out / "pictures" / label)
@@ -476,6 +539,11 @@ class Build:
             self.metrics[piece].update(final_position_error_mm=final["position_error_mm"], final_rotation_error_deg=final["rotation_error_deg"],
                                        final_seated=final["seated"])
         film = self.cell.stop_film()
+        (self.out / "run_log.json").write_text(json.dumps({
+            "what": "The run as the viewer reads it (scripts/puzzle_viewer.py). Times are simulated seconds unless named wall.",
+            "steps": self.log.steps, "looks": self.look_log, "tries": self.tries, "samples": self.cell.samples, "grips": self.cell.grips,
+            "film": {key: film[key] for key in ("fps", "zero_s", "cameras", "captions")}, "sample_columns": ["seconds", "rail_m", *cell.ARM, "pad_gap_m"],
+            "wall_start": started, "wall_s": round(time.time() - started, 1)}, default=lambda value: value.item()) + "\n")
         summary = {"completed": all(row["final_seated"] for row in self.metrics.values()),
                    "final_poses": {name: np.round(at, 6).tolist() for name, at in truth.items()},
                    "simulated_seconds": round(self.cell.steps / cell.PHYSICS_HZ, 1), "wall_seconds": round(time.time() - started, 1),
@@ -554,7 +622,8 @@ def main():
     record["graph"]["checks"] = graph_report(build.out / "trace", build.slots)
     record.update(build.finish(started))
     (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")
-    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video")}, indent=1))
+    record["viewer"] = str(puzzle_viewer.build(build.out))
+    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
 
 
 if __name__ == "__main__":

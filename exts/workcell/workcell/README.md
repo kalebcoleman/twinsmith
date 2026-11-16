@@ -220,28 +220,72 @@ The graph's trace (`<out>/trace/dag_trace.json`, `node_data/`) has every node's 
 
 Outputs in `<out>`: `metrics.json` (per piece: named correctly, gripped, seated, final pose error against the CAD,
 what the lookahead said; the graph's result and checkpoints), `build.mp4` (the table camera and the wrist camera side
-by side, captioned), `key_*.png`, `look_*_masks.png` (each look with its SAM 3.1 masks) and the graph.
+by side, captioned), `key_*.png`, `look_*_masks.png` (each look with its SAM 3.1 masks), the graph, `run_log.json`
+and `viewer/`.
 
-Measured (2026-11-15, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v3` and `puzzles/v1`, the green puzzle: a base,
-two bars, two forks; one run on each of three layouts; the runs and their videos are in the puzzle project, not this
-repository):
+#### The step viewer
+
+`<out>/viewer/index.html` replays the run: what was planned, then what was done. It is a static page (open the file;
+no server, nothing from the network), built at the end of the run by `scripts/puzzle_viewer.py` from the run's own
+records, and `python3 scripts/puzzle_viewer.py <out>` builds it again for any finished run without a simulator.
+
+| Panel | Shows |
+|---|---|
+| The build | The table camera's and the wrist D415's film at the simulation's own speed (5 frames per simulated second), with one clock for the whole page |
+| Future | Every Newton lookahead try as its own clip, failed first tries included. With "play each lookahead before its step" on, the build pauses at a lookahead, its tries play here, and the build goes on when one says go |
+| The workflow | The Graph-as-Policy graph: subgraphs with their skills, inner nodes, exits taken; each node grey, amber, green or red as it is not reached, running, finished or failed at the time shown, from the graph's trace |
+| Steps | Every step in order (survey, base placement, lookahead and its tries, approach, close, lift, carry, lower, release, retreat, rescan, checkpoint) with its start, its simulated and wall duration and its result. Clicking one goes there |
+| The step | Its plan: the grasp as defined on the CAD and which way of holding was taken, the waypoints (hover, pick, lift, carry, over the slot, place, retreat) with where the gripper points, its result, where its wall time went, and its clip |
+| Joints and gripper | The six arm joints, the rail, the pad gap and the commanded grip force over time, for the build or for the lookahead try on show |
+| Perception | Per look: the wrist picture with the SAM 3.1 masks, and the table from above with the scan's estimate drawn over the simulator's truth. The truth is there to score the estimate and is labelled so; the robot never reads it |
+| Where the wall time went | Per kind of step and in all: seconds in the solver, rendering, bridge calls beyond those two, SAM 3.1, the scan's matching, grasp choice and the rest; and what lies outside the steps |
+
+What the run records for it is `run_log.json`: the steps (`scripts/step_log.py`: each with its plan, simulated and
+wall time, frame and sample ranges, and its share of the counters), the joints sampled every 50 ms inside Kit, the
+looks, and each lookahead try's own clip, samples and captions. `viewer/timing.json` is the time breakdown alone.
+
+The page is panels over one value. `viewer.js` keeps a registry (`Viewer.panel(id, {title, mount, update})`); the
+run names the panels to show (`panels` in `run.js`), and `Viewer.load(run)` mounts them afresh, so a page fed a
+growing run shows it live and a page with other panels (a lab display) reads the same records. Neither is built yet:
+today the page is written once, when the run ends. The grip force plotted is the commanded limit, not a measurement.
+
+Measured (2026-11-16, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v3` and `puzzles/v1`, the green puzzle: a base,
+two bars, two forks; one run on each of three layouts; the runs, their videos and their viewers are in the puzzle
+project, not this repository):
 
 | Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Lookahead | Simulated | Wall |
 |---|---|---|---|---|---|---|---|
-| seed 5 | yes | 4 of 4 | 0.49 to 0.90 mm | 0.73, 1.00 mm | go for all; three after a second try | 175.0 s | 30 min |
-| seed 1 | yes | 4 of 4 | 0.92 to 1.27 mm | 0.92, 1.28 mm | go for all; two after a second try | 171.1 s | 29 min |
-| seed 3 | yes | 4 of 4 | 0.81 to 1.39 mm | 1.28, 2.22 mm | go for all; two after a second try | 166.3 s | 29 min |
+| seed 5 | yes | 4 of 4 | 0.41 to 0.94 mm | 0.48, 0.86 mm | go for all; three after a second try | 175.0 s | 31 min |
+| seed 1 | yes | 4 of 4 | 0.80 to 1.13 mm | 0.80, 1.63 mm | go for all; two after a second try | 172.0 s | 31 min |
+| seed 3 | yes | 4 of 4 | 1.29 to 1.42 mm | 0.93, 2.22 mm | go for all; two after a second try | 166.3 s | 29 min |
 
-All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.7 mm apart on
-the 25.9 mm bars and 19.2 to 19.5 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The
-graph ended in success three times with fifteen of fifteen checkpoints passed; the stock reach check read 0.8 to
-1.2 mm and the grip check `held` every time. The vision-language model (Qwen3-VL-32B, served locally) counted five
-parts where the scan had five and answered yes to "complete" on all three.
+All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 mm apart on the
+25.9 mm bars and 19.3 to 19.4 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The graph
+ended in success three times with fifteen of fifteen checkpoints passed; the stock reach check read 0.8 to 1.2 mm and
+the grip check `held` every time. The vision-language model (Qwen3-VL-32B, served locally) counted five parts where
+the scan had five and answered yes to "complete" on all three.
 
-What the lookahead did: a fork is picked lying flat and turned upright in the hand, where it sits 2.6 to 5.4 mm from the
-grasp as defined. Its first simulated try jammed in five of six cases (the fork 16 mm from its slot, other pieces
-pushed 16 to 28 mm) and pushed another piece 3.7 mm in the sixth; the second try, with the grasp corrected by how the
-fork sat in the hand, seated it in all six, and the real insertion used that grasp. A bar needed the second try once.
+What the lookahead did: a fork is picked lying flat and turned upright in the hand, where it sits 2.3 to 6.2 mm from
+the grasp as defined. Its first simulated try jammed in all six cases (the fork 16 mm from its slot, other pieces
+pushed 16 to 28 mm); the second try, with the grasp corrected by how the fork sat in the hand, seated it in all six,
+and the real insertion used that grasp. A bar needed the second try once.
+
+Where the wall time went (the viewer's last panel; seed 5, and the other two within 5 percent of it): 1863 s of wall
+time for 175 s of simulated time, 10.6 times slower than real time.
+
+| Seconds | Share | Spent on |
+|---|---|---|
+| 1570 | 84% | Inside the solver: 4.2 s per simulated second at 500 Hz. 847 s of it is the lookaheads, which simulate 201 s that the build's clock does not count |
+| 144 | 8% | Waiting for SAM 3.1, six looks at 24 s |
+| 82 | 4% | Rendering: 1863 frames from two cameras (the film and the lookahead clips), 0.044 s each |
+| 35 | 2% | Bridge calls beyond the solver and the renderer: 1098 calls |
+| 15 | 1% | Matching the scan to the CAD |
+| 17 | 1% | Choosing grasps (2 s), the vision-language model (3 s), the graph's own work and the rest |
+
+So the factor of ten is the solver's 4.2, about doubled by simulating every pick ahead once or twice, plus the looks.
+Rendering and the bridge are not where the time goes: moving the joint targets into Kit (one call per move, not one
+per 10 ms) had already taken the bridge from most of the time to 2 percent. Why the solver is at 4.2 was not
+examined; `sim_tools.physics.step` steps Newton with its CUDA graph capture off, which is the first thing to measure.
 
 Limits. One run per layout is three builds, not a success rate, and earlier runs of the same layouts stopped for
 reasons that were then fixed: a base that is the same after half a turn was read the other way round after the first

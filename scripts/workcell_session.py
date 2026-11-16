@@ -13,10 +13,13 @@ robot. The Kit side is ``workcell_session_kit.py``. Conventions:
 * Poses are 4 x 4, world from the thing, for column vectors.
 """
 
+import collections
+import contextlib
 import json
 import math
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +33,7 @@ from workcell_rail_acceptance import ARM_M, ZERO_RAD, finger_for_gap, pad_gap, t
 KIT = Path(__file__).with_name("workcell_session_kit.py")
 ARM = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
 PHYSICS_HZ = 500
+SAMPLE_STEPS = 25                               # physics steps between joint samples: 50 ms
 CONTROL_STEPS = 5                               # physics steps between joint targets: 10 ms. At 50 ms the stiff drives
                                                 # jerk the gripper at every target and a held piece creeps
 RG2_STROKE_M = 0.110                            # OnRobot RG2 datasheet: stroke 110 mm, grip force 3 to 40 N
@@ -137,19 +141,39 @@ class Session:
         self.out.mkdir(parents=True, exist_ok=True)
         self.bridge = BridgeClient(host=host, port=port)
         self.steps, self.film, self.caption = 0, None, ""
+        self.samples, self.grips = [], []                  # [[seconds, rail m, six arm joints rad, pad gap m]] and [[seconds, grip force N]]
+        self.spent = collections.Counter()                 # wall seconds by what took them, and the number of bridge calls
 
     # ---- the bridge -------------------------------------------------------------------------------
     def call(self, name, arguments=None, timeout=300):
-        reply = self.bridge.call(name, {**self.ids, **(arguments or {})} if name.startswith("sim.") else (arguments or {}), timeout=timeout)
+        with self.timed("bridge_s"):
+            reply = self.bridge.call(name, {**self.ids, **(arguments or {})} if name.startswith("sim.") else (arguments or {}), timeout=timeout)
         if isinstance(reply, dict) and reply.get("status") == "error":
             raise BridgeError(reply.get("message", "error"), reply)
         return reply
 
     def kit(self, code, timeout=600):
-        reply = self.bridge.call("run_python", {"code": code, "session_id": "workcell_session", "persistent": True}, timeout=timeout)
+        with self.timed("bridge_s"):
+            reply = self.bridge.call("run_python", {"code": code, "session_id": "workcell_session", "persistent": True}, timeout=timeout)
         if reply.get("status") == "error" or reply.get("error"):
             raise BridgeError(str(reply.get("message") or reply.get("error"))[:1500], reply)
         return reply.get("result")
+
+    @contextlib.contextmanager
+    def timed(self, what):
+        """Count the wall time of a block under a name in ``spent``; a bridge call also counts as one call."""
+        started = time.time()
+        try:
+            yield
+        finally:
+            self.spent[what] += time.time() - started
+            if what == "bridge_s":
+                self.spent["bridge_calls"] += 1
+
+    def clock(self):
+        """The run's counters now, as a StepLog reads them."""
+        return {"sim_s": self.steps / PHYSICS_HZ, "frame": len(self.film["captions"]) if self.film else 0,
+                "sample": len(self.samples), "spent": dict(self.spent)}
 
     def step(self, steps):
         """Advance physics; while filming, one frame per camera every ``film["every"]`` steps."""
@@ -157,14 +181,19 @@ class Session:
 
     def drive(self, rows, steps):
         """Give the robot joint targets row by row ([{joint: radians}]) and advance physics ``steps`` after each, in
-        one call to Kit per 100 rows."""
+        one call to Kit per 100 rows. The joints are sampled every SAMPLE_STEPS on the way."""
+        watched = [self.dofs[joint] for joint in ("rail_joint", *ARM, "finger_joint")]
         for start in range(0, len(rows), 100):
             part = [{self.dofs[joint]: value for joint, value in row.items()} for row in rows[start:start + 100]]
-            film = f"film, {self.film['every']}, {self.steps}" if self.film else ""
-            shot = self.kit(f"result = await drive({self.root!r}, {part!r}, {steps}, {film})")
+            film = f"film, {self.film['every']}" if self.film else "(), 0"
+            done = self.kit(f"result = await drive({self.root!r}, {part!r}, {steps}, {film}, {self.steps}, {SAMPLE_STEPS})")
             self.steps += len(part) * steps
+            self.spent.update(physics_s=done["physics_s"], render_s=done["render_s"])
+            for count, *positions in done["samples"]:
+                rail, *arm, finger = (positions[index] for index in watched)
+                self.samples.append([round(count / PHYSICS_HZ, 3), round(rail, 5), *(round(q, 5) for q in arm), round(pad_gap(finger), 5)])
             if self.film:
-                self.film["captions"] += [self.caption] * shot
+                self.film["captions"] += [self.caption] * done["shot"]
 
     def joints(self):
         state = self.call("sim.joints.state", {"path": self.root})
@@ -350,6 +379,7 @@ class Session:
         if not 0.0 <= gap_m <= RG2_STROKE_M:
             raise ValueError(f"The RG2 opens 0 to {RG2_STROKE_M * 1000:g} mm, not {gap_m * 1000:.1f}")
         self.call("sim.joints.command", {"path": self.root, "targets": {"finger_joint": finger_for_gap(gap_m)}, "clamp": True})
+        self.grips.append([self.steps / PHYSICS_HZ, 0.0])
         self.step(steps)
 
     def grip(self, width_m, force_n, steps=750):
@@ -362,6 +392,7 @@ class Session:
         torque = 2 * ARM_M * math.cos(ZERO_RAD + finger_for_gap(width_m)) * force_n
         self.call("sim.joints.gains", {"path": self.root, "dofs": ["finger_joint"], "stiffness": GRIP_STIFFNESS, "max_effort": torque})
         self.call("sim.joints.command", {"path": self.root, "targets": {"finger_joint": finger_for_gap(0.0)}, "clamp": True})
+        self.grips.append([self.steps / PHYSICS_HZ, force_n])
         self.step(steps)
         return pad_gap(self.joints()["finger_joint"])
 
@@ -390,9 +421,10 @@ class Session:
         if folder.exists():
             shutil.rmtree(folder)
         self.kit(f"clip = Recorder({prim!r}, {body!r}, {str(folder)!r}, {[intrinsics['width'], intrinsics['height']]!r}, {intrinsics!r})")
-        for _ in range(frames):
-            self.kit("result = await shoot([clip])")
-        self.kit("result = clip.close(10.0)")
+        with self.timed("render_s"):
+            for _ in range(frames):
+                self.kit("result = await shoot([clip])")
+            self.kit("result = clip.close(10.0)")
         return folder
 
     def start_film(self, folder, fps):
@@ -403,7 +435,9 @@ class Session:
         made = ", ".join(f"Recorder({prim!r}, {body!r}, {str(folder / name)!r}, {[i['width'], i['height']]!r}, {i!r}, depth=False)"
                          for name, (prim, body, i) in self.cameras.items())
         self.kit(f"film = [{made}]")
-        self.film = {"folder": folder, "every": round(PHYSICS_HZ / fps), "fps": fps, "captions": [], "cameras": list(self.cameras)}
+        every = round(PHYSICS_HZ / fps)
+        self.film = {"folder": folder, "every": every, "fps": fps, "captions": [], "cameras": list(self.cameras),
+                     "zero_s": (self.steps // every + 1) * every / PHYSICS_HZ}                # the simulated time of its first frame
 
     def stop_film(self):
         """Close the film's recorders; returns {"folder", "fps", "captions", "cameras"}."""
@@ -413,10 +447,28 @@ class Session:
 
     # ---- simulating ahead -------------------------------------------------------------------------
     def checkpoint(self, bodies):
-        """Remember the robot's and these bodies' physics state, and pause filming, to simulate ahead."""
+        """Remember the robot's and these bodies' physics state, to simulate ahead."""
         self.kit(f"checkpoint = Checkpoint({self.root!r}, {list(bodies)!r})")
-        self.saved = {"commanded": dict(self.commanded), "film": self.film, "steps": self.steps, "caption": self.caption}
-        self.film = None
+        self.saved = {"commanded": dict(self.commanded), "steps": self.steps, "caption": self.caption}
+
+    def aside(self, folder):
+        """From now the film's cameras write to another folder, counted from zero, and the joint samples go to
+        lists of their own: a clip of something tried, apart from the run's film."""
+        folder = Path(folder)
+        if folder.exists():
+            shutil.rmtree(folder)
+        self.kit(f"[recorder.switch(path) for recorder, path in zip(film, {[str(folder / name) for name in self.film['cameras']]!r})]")
+        self.kept = (self.film, self.samples, self.grips)
+        zero = (self.steps // self.film["every"] + 1) * self.film["every"] / PHYSICS_HZ
+        self.film, self.samples, self.grips = {**self.film, "folder": folder, "captions": [], "zero_s": zero}, [], []
+
+    def back(self):
+        """End the clip ``aside`` began and go on with the run's film. Returns ``{"folder", "fps", "zero_s",
+        "captions", "samples", "grips"}`` of the clip."""
+        clip = {**{key: self.film[key] for key in ("folder", "fps", "zero_s", "captions")}, "samples": self.samples, "grips": self.grips}
+        self.kit("[recorder.back() for recorder in film]")
+        self.film, self.samples, self.grips = self.kept
+        return clip
 
     def place_bodies(self, placed):
         """Put rigid bodies at world poses, at rest: {path: 4 x 4}."""
@@ -424,12 +476,12 @@ class Session:
         self.kit(f"place_bodies({ {path: [float(v) for v in row] for path, row in rows.items()}!r})")
 
     def rewind(self):
-        """Put the remembered physics state back and let the scene rest; filming stays paused."""
+        """Put the remembered physics state back and let the scene rest."""
         self.kit("checkpoint.restore()")
         self.kit(f"result = await drive({self.root!r}, [{{}}], 50)")
         self.commanded = dict(self.saved["commanded"])
 
     def restore(self):
-        """``rewind``, and resume filming. The steps simulated ahead are not counted."""
+        """``rewind``, and the run's clock and caption as they were: the steps simulated ahead are not counted."""
         self.rewind()
-        self.film, self.steps, self.caption = (self.saved[key] for key in ("film", "steps", "caption"))
+        self.steps, self.caption = self.saved["steps"], self.saved["caption"]

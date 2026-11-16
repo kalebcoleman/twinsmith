@@ -7,6 +7,7 @@ the optical frame (+X right, +Y down, +Z forward). Cameras are drawn on the sess
 """
 import json
 import os
+import time
 
 import numpy as np
 import omni.replicator.core as rep
@@ -113,6 +114,15 @@ class Recorder:
         self.frames.append({"world_from_camera": _matrix(optical)})
         return index
 
+    def switch(self, folder):
+        """A film's recorder writes its next frames to another folder, counted from zero, until ``back``."""
+        self.kept = (self.folder, self.frames)
+        self.folder, self.frames = folder, []
+        os.makedirs(os.path.join(folder, "rgb"), exist_ok=True)
+
+    def back(self):
+        self.folder, self.frames = self.kept
+
     def close(self, fps):
         """Write camera.json and release the render product; returns the number of frames."""
         with open(os.path.join(self.folder, "camera.json"), "w") as stream:
@@ -135,24 +145,31 @@ async def shoot(recorders, subframes=2):
                 raise
 
 
-async def drive(articulation, rows, steps, film=(), every=0, done=0):
+async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
     """Give an articulation joint position targets row by row ([{DOF index: radians}], an empty row changes nothing)
-    and advance physics ``steps`` after each, without a round trip per row. While filming, every recorder in ``film``
-    saves a frame each time the count of steps, which starts at ``done``, reaches a multiple of ``every``. Returns
-    the number of frames each recorder saved."""
-    view, shot = physics.view_for(articulation, articulation=True), 0
+    and advance physics ``steps`` after each, without a round trip per row. The count of steps starts at ``done``:
+    each time it reaches a multiple of ``every`` every recorder in ``film`` saves a frame, and at each multiple of
+    ``sample`` the joint positions are read. Returns ``{"shot": frames per recorder, "samples": [[count, position
+    per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping and filming."""
+    view, out = physics.view_for(articulation, articulation=True), {"shot": 0, "samples": [], "physics_s": 0.0, "render_s": 0.0}
     for row in rows:
         if row:
             physics.dof_set(view, "get_dof_position_targets", "set_dof_position_targets", {int(index): value for index, value in row.items()})
         left = steps
         while left:
-            count = min(left, every - done % every) if film else left
+            count = min([left] + ([every - done % every] if film else []) + ([sample - done % sample] if sample else []))
+            started = time.perf_counter()
             physics.step(_stage(), count)
+            out["physics_s"] += time.perf_counter() - started
             left, done = left - count, done + count
+            if sample and done % sample == 0:
+                out["samples"].append([done, *physics.dof_row(view, view.get_dof_positions())[0].tolist()])
             if film and done % every == 0:
+                started = time.perf_counter()
                 await shoot(film)
-                shot += 1
-    return shot
+                out["render_s"] += time.perf_counter() - started
+                out["shot"] += 1
+    return out
 
 
 class Checkpoint:
