@@ -341,6 +341,26 @@ other layouts than before, with the base 0.28 and 0.29 m from the middle: over t
 short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
 was added. On v3 the same move had stopped 3 to 8 mm short and passed.
 
+Why the base slipped, and the fingertips (the same day, after those runs). In the pictures the fingertips could be
+seen inside the pieces. Measured on a grasp alone (40 N, between the colliders, after closing and after a 120 mm
+lift): each fingertip's collider was 0.62 mm inside a bar and 0.65 to 0.72 mm inside a fork's tab. The fingertip's
+drawn face and its collider's face are one plane and a piece is exactly its collision boxes, so that was the contact
+giving way, with the solver's default softness. Measured on the base's slide alone (0.28 m, 40 N): the base slipped
+20, 24 and 21 mm in the fingers at 0.02, 0.04 and 0.08 m/s, so not a creep under load. The arm's joint targets were
+written every 10 ms; each jump jerks the gripper and the 1 kg base slips a little at each. Two changes follow.
+`workcell_session` writes a target every physics step (2 ms): the same slide slips 7 mm. And the two fingertip
+colliders get a stiffer contact of their own on Newton (`fingertips.newton_contact` in `lab_hardware.json`,
+authored by `newton_cell.prepare`; no other contact in the cell changes): 0.24 mm into the bar and 0.27 mm into the
+tab, and the slide slips 3 mm. A stiffer setting still, with the contact's time constant at the least the step
+allows, left 0.03 mm but slipped 24 mm and failed two of three builds; it is recorded in the config and not used.
+
+With both changes, the three layouts again, with the simulator's own poses in place of the camera (`--perception
+oracle`: the changes are to handling, and the lab's live scan was using the GPU's memory): the base stopped 2.6, 1.0
+and 3.7 mm from the middle after one slide each, no second slide needed; seeds 1 and 3 completed, 4 of 4 seated, final
+errors 0.30 to 0.98 mm; seed 5 seated three pieces (0.64 to 1.01 mm) and its lookahead then refused the last fork,
+whose insertion jammed in the twin. That fork's insertion had failed the same way once before these changes, in one of
+four runs of that layout, so it is counted as the build's own unreliability and not as caused or cured here.
+
 What the lookahead does for a fork: picked lying flat and turned upright in the hand, it sits 2.4 to 5.6 mm from the
 grasp as defined. Lowered from the grasp as defined it jams (it did in the first simulated try of all six forks, 16 mm
 from the slot with other pieces pushed 16 to 28 mm, while the correction was only applied in a second try). Corrected
@@ -391,8 +411,8 @@ above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from t
 said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
 run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
 layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
-against the pieces before a move; the arm's links are not. The base slips in the fingers when slid, and why it slips
-more from one side of the table than the other was not found; the second slide corrects it and does not explain it.
+against the pieces before a move; the arm's links are not. Seed 5's last fork jams in about two runs of five; a fork is
+inserted with 1.0 to 1.4 mm of clearance a side after turning in the hand, and nothing here makes that reliable.
 Nothing here has seen a real camera or a real robot.
 
 Machine-readable data:

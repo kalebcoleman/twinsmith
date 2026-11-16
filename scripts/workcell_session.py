@@ -34,8 +34,10 @@ KIT = Path(__file__).with_name("workcell_session_kit.py")
 ARM = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
 PHYSICS_HZ = 500
 SAMPLE_STEPS = 25                               # physics steps between joint samples: 50 ms
-CONTROL_STEPS = 5                               # physics steps between joint targets: 10 ms. At 50 ms the stiff drives
-                                                # jerk the gripper at every target and a held piece creeps
+CONTROL_STEPS = 1                               # physics steps between joint targets: every step, 2 ms. A target that
+                                                # jumps jerks the gripper, and what it holds slips a little each time:
+                                                # sliding the 1 kg puzzle base 0.28 m, it slipped 24 mm in the fingers
+                                                # with a target every 10 ms and 7 mm with one every step, at any speed
 RG2_STROKE_M = 0.110                            # OnRobot RG2 datasheet: stroke 110 mm, grip force 3 to 40 N
 RG2_FORCE_N = (3.0, 40.0)
 GRIP_STIFFNESS = 57.3                           # N m per rad: stiff enough that the torque cap, not the spring, sets the grip
