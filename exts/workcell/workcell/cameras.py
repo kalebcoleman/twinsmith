@@ -74,9 +74,9 @@ REQUIRED_CONFIG_PATHS = (
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
     "wrist_camera.offset_in_rg2_m", "wrist_camera.rotation_in_rg2_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
-    "wrist_camera.body_size_m",
+    "wrist_camera.body_size_m", "wrist_camera.color_intrinsics",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
-    "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
+    "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.color_intrinsics", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
     "overhead_mount.height_m", "overhead_mount.removable", "overhead_mount.printed_shelf_size_m",
     "robot.reach_m",
@@ -118,8 +118,9 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
     limitations = [
         "The D415 body is an explicitly unconfirmed dimensioned proxy (0.099 x 0.020 x 0.023 m), "
         "not a D455/rsd455 substitute and not a verified CAD model.",
-        "Extrinsics come only from config; no fiducial or marker-based calibration is used, and "
-        "markerless hand-eye calibration is pending.",
+        "Extrinsics come only from config; a completed hand-eye calibration has not been imported.",
+        "Colour intrinsics use color_intrinsics when supplied, otherwise nominal FOV; the projection is "
+        "an ideal pinhole without lens distortion.",
         "Rendered depth is single-pinhole distance_to_image_plane, not D415 stereo or IR depth; "
         "no projector, noise or stereo matching is modelled.",
         "ROS topics are proposed realsense2_camera 4.x names, not published or verified; no ROS graph "
@@ -232,6 +233,8 @@ def author_report(stage, report, usd=None):
         cam.CreateFocalLengthAttr().Set(camera["intrinsics"]["focal_length_mm"])
         cam.CreateHorizontalApertureAttr().Set(camera["intrinsics"]["horizontal_aperture_mm"])
         cam.CreateVerticalApertureAttr().Set(camera["intrinsics"]["vertical_aperture_mm"])
+        cam.CreateHorizontalApertureOffsetAttr().Set(camera["intrinsics"]["horizontal_aperture_offset_mm"])
+        cam.CreateVerticalApertureOffsetAttr().Set(camera["intrinsics"]["vertical_aperture_offset_mm"])
         cam.CreateClippingRangeAttr().Set(Gf.Vec2f(*camera["depth"]["clipping_range_m"]))
         _set_transform(Gf, UsdGeom, cam.GetPrim(), camera["usd_camera"]["translation_m"],
                        camera["usd_camera"]["quaternion_wxyz"])
@@ -676,14 +679,34 @@ def _gantry_check(position, mount, reach, limitations):
 
 def _camera_optics(section, label, limitations):
     resolution = _resolution(section.get("resolution"))
-    fov = _vector(section.get("color_fov_deg"), 2, f"{label}.color_fov_deg")
-    if resolution is None or fov is None:
+    if resolution is None:
         return None, None, None
-    try:
-        fx, fy, cx, cy = camera_intrinsics(list(resolution), list(fov))
-    except ValueError as exc:
-        limitations.append(f"{label} resolution/FOV is invalid: {exc}")
-        return None, None, None
+    calibrated = section.get("color_intrinsics")
+    if "color_intrinsics" in section:
+        if (not isinstance(calibrated, dict)
+                or set(calibrated) != {"width", "height", "fx", "fy", "cx", "cy"}
+                or any(type(calibrated[key]) is not int for key in ("width", "height"))
+                or [calibrated["width"], calibrated["height"]] != list(resolution)):
+            raise ValueError(f"{label}.color_intrinsics must hold width, height, fx, fy, cx, cy at the configured resolution")
+        numbers = [calibrated[key] for key in ("fx", "fy", "cx", "cy")]
+        if any(type(value) not in (int, float) or not math.isfinite(value) for value in numbers):
+            raise ValueError(f"{label}.color_intrinsics must contain finite numbers")
+        fx, fy, cx, cy = numbers
+        if fx <= 0 or fy <= 0 or not 0 <= cx < resolution[0] or not 0 <= cy < resolution[1]:
+            raise ValueError(f"{label}.color_intrinsics has invalid focal lengths or principal point")
+        fov = [math.degrees(math.atan(center / focal) + math.atan((size - center) / focal))
+               for size, center, focal in zip(resolution, (cx, cy), (fx, fy))]
+        source = "color_intrinsics"
+    else:
+        fov = _vector(section.get("color_fov_deg"), 2, f"{label}.color_fov_deg")
+        if fov is None:
+            return None, None, None
+        try:
+            fx, fy, cx, cy = camera_intrinsics(list(resolution), list(fov))
+        except ValueError as exc:
+            limitations.append(f"{label} resolution/FOV is invalid: {exc}")
+            return None, None, None
+        source = "color_fov_deg"
     aperture = DEFAULT_APERTURE_MM
     focal = fx * aperture / resolution[0]
     vertical = resolution[1] * focal / fy
@@ -691,8 +714,12 @@ def _camera_optics(section, label, limitations):
         "width": resolution[0], "height": resolution[1], "fov_deg": list(fov),
         "fx": fx, "fy": fy, "cx": cx, "cy": cy,
         "focal_length_mm": focal, "horizontal_aperture_mm": aperture, "vertical_aperture_mm": vertical,
+        # USD's film plane uses right/up; the optical image uses right/down.
+        "horizontal_aperture_offset_mm": (resolution[0] / 2 - cx) * aperture / resolution[0],
+        "vertical_aperture_offset_mm": (cy - resolution[1] / 2) * vertical / resolution[1],
+        "source": source,
         "aperture_assumption_mm": aperture,
-        "pixel_model": "ideal pinhole, square pixels; no lens distortion",
+        "pixel_model": "ideal pinhole; no lens distortion",
         "camera_matrix": [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]],
     }
     return resolution, fov, intrinsics

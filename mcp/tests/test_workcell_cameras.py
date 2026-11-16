@@ -95,6 +95,7 @@ def test_report_shape_and_prim_paths(config, tmp_path):
 
 
 def test_intrinsics_follow_config_resolution_and_fov(config, tmp_path):
+    config["wrist_camera"].pop("color_intrinsics", None)  # older configs still use nominal FOV
     report = build(config, tmp_path)
     for key in ("wrist", "overhead"):
         section = config[f"{key}_camera"]
@@ -122,6 +123,31 @@ def test_intrinsics_follow_config_resolution_and_fov(config, tmp_path):
         assert camera["depth"]["annotator"] == "distance_to_image_plane"
         assert camera["depth"]["encoding"] == "32FC1"
         assert camera["depth"]["units"] == "m"
+
+
+def test_factory_intrinsics_override_nominal_fov(config, tmp_path):
+    config["wrist_camera"].pop("color_fov_deg")
+    wrist = build(config, tmp_path)["cameras"]["wrist"]
+    k = wrist["intrinsics"]
+    assert k["source"] == "color_intrinsics"
+    assert [k[key] for key in ("fx", "fy", "cx", "cy")] == [923.8, 923.6, 622.9, 351.8]
+    assert wrist["camera_info"]["K"] == [923.8, 0, 622.9, 0, 923.6, 351.8, 0, 0, 1]
+
+
+@pytest.mark.parametrize("key,value", [("width", 640), ("height", 720.0), ("fx", 0), ("fy", -1),
+                                     ("cx", float("nan")), ("cy", float("inf")), ("fx", True),
+                                     ("cx", 1280), ("cy", -1), ("fx", "923.8")])
+def test_invalid_factory_intrinsics_do_not_fall_back(config, tmp_path, key, value):
+    config["wrist_camera"]["color_intrinsics"][key] = value
+    with pytest.raises(ValueError, match="color_intrinsics"):
+        build(config, tmp_path)
+
+
+@pytest.mark.parametrize("value", [None, {}, [923.8, 923.6, 622.9, 351.8]])
+def test_incomplete_factory_intrinsics_do_not_fall_back(config, tmp_path, value):
+    config["wrist_camera"]["color_intrinsics"] = value
+    with pytest.raises(ValueError, match="color_intrinsics"):
+        build(config, tmp_path)
 
 
 def same_rotation(first, second):
@@ -517,7 +543,7 @@ def test_authoring_without_pxr_refuses_instead_of_faking(config, tmp_path):
 
 def test_authoring_creates_referenced_parts_and_cameras(config, tmp_path):
     pxr = pytest.importorskip("pxr")
-    from pxr import Sdf, Usd, UsdGeom, UsdPhysics
+    from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 
     pack = Pack(tmp_path)
     asset_paths = []
@@ -565,6 +591,15 @@ def test_authoring_creates_referenced_parts_and_cameras(config, tmp_path):
     assert camera
     assert camera.GetFocalLengthAttr().Get() == pytest.approx(wrist["intrinsics"]["focal_length_mm"])
     assert camera.GetHorizontalApertureAttr().Get() == pytest.approx(36.0)
+    # Project actual USD camera-space points, independently of the aperture formulas.
+    # Both offset signs and unequal fx/fy must agree with the declared optical K.
+    projection = camera.GetCamera().frustum.ComputeProjectionMatrix()
+    k = config["wrist_camera"]["color_intrinsics"]
+    for x, y, z in ((0, 0, 1), (.12, -.08, .5), (-.2, .15, 2)):
+        clip = Gf.Vec4d(x, -y, -z, 1) * projection
+        u = (clip[0] / clip[3] + 1) * k["width"] / 2
+        v = (1 - clip[1] / clip[3]) * k["height"] / 2
+        assert [u, v] == pytest.approx([k["fx"] * x / z + k["cx"], k["fy"] * y / z + k["cy"]], abs=1e-4)
     ops = {op.GetOpName(): op for op in UsdGeom.Xformable(camera.GetPrim()).GetOrderedXformOps()}
     orient = ops["xformOp:orient"].Get()
     assert orient.GetReal() == pytest.approx(0.0, abs=1e-12)

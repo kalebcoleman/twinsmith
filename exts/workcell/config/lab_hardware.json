@@ -832,6 +832,11 @@
     }
   },
   "wrist_camera": {
+    "color_intrinsics": {
+      "value": {"width": 1280, "height": 720, "fx": 923.8, "fy": 923.6, "cx": 622.9, "cy": 351.8},
+      "status": "unconfirmed",
+      "source": "D415 factory colour intrinsics printed by the lab calibration capture on 2026-11-16, transcribed from the supplied terminal screenshot at one decimal place. Use these ahead of the nominal colour FOV. Replace with the full precision saved intrinsics when the run is exported. This is a pinhole approximation; distortion coefficients and a completed hand-eye extrinsic solve have not been imported."
+    },
     "model": {
       "value": "Intel RealSense D415",
       "status": "confirmed",
@@ -860,7 +865,7 @@
         720
       ],
       "status": "confirmed",
-      "source": "Max's merged_localization.py opens the wrist D415 colour stream at 1280x720 (c_width, c_height) and builds its camera matrix from this size and the 69.4 x 42.5 degree field of view, with the principal point at the image centre. The real unit's factory intrinsics are not recorded here."
+      "source": "The lab calibration capture on 2026-11-16 opens the wrist D415 colour stream at 1280x720, matching Max's merged_localization.py. The printed factory intrinsics are recorded in color_intrinsics at screenshot precision."
     },
     "clipping_range_m": {
       "value": [
@@ -930,9 +935,9 @@
       "source": "Proposed: realsense2_camera with camera_namespace and camera_name both set to this. Max's localizer reads the camera through pyrealsense2, not ROS topics."
     },
     "calibration": {
-      "value": "configurable extrinsics; markerless hand-eye calibration pending",
+      "value": "factory colour intrinsics at screenshot precision; ChArUco hand-eye calibration pending",
       "status": "unconfirmed",
-      "source": "No calibration algorithm or measured extrinsics claimed."
+      "source": "Lab capture on 2026-11-16 uses an 8 x 6 ChArUco board with 30 mm squares, 22 mm markers and DICT_7X7_50. No completed hand-eye result has been imported. The new side photos and wrist image challenge the provisional mount pose, especially its assumed body-centred lateral placement; do not treat it as calibrated."
     },
     "mass_kg": {
       "value": 0.064,

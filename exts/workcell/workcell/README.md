@@ -941,7 +941,7 @@ configuration or a design envelope and are not vendor drawings.
 | D415 body | 0.099 x 0.020 x 0.023 m | `confirmed` (Intel RealSense D400 Series Datasheet rev 017, table 3-51) |
 | Wrist camera offset | 0.127, 0.035, 0.102 m in the RG2 body frame (off the back face, body centred on the gripper; -0.035, 0.127, 0.0995 m in tool0 with the shipped stack and RG2 roll) | `unconfirmed`, provisional: Kaleb's corrections and one photo. Measure the camera's distance from the RG2's back face, its height along the gripper, and whether it is centred |
 | Wrist camera rotation | 39, 0, -90 degrees in the RG2 body frame (extrinsic XYZ): long axis along the finger-opening axis, tilted 39 degrees toward the tool axis | `unconfirmed`, provisional: the photo reads 25 degrees; 39 keeps the fingertips in view from the modelled position |
-| Wrist camera image | 1280 x 720, 69.4 x 42.5 degree field of view, principal point at the centre (as Max's localizer assumes) | `confirmed` (nominal; the unit's factory intrinsics are not recorded) |
+| Wrist camera image | 1280 x 720; fx 923.8, fy 923.6, cx 622.9, cy 351.8 pixels | `unconfirmed` precision: factory values transcribed from the 2026-11-16 calibration screenshot, rounded to one decimal; full precision export pending |
 | Overhead camera position (not built) | 0.91, -0.2, 1.02 m, under the gantry beam | `unconfirmed` |
 | Gantry post positions and height | (0.91, -0.79) and (0.91, -0.10) m; 1.0944 m | `unconfirmed` |
 | Shelf and release stack offsets | +0.0205 m and +0.0305 m above the camera (from proxy dimensions) | `unconfirmed` |
@@ -949,6 +949,18 @@ configuration or a design envelope and are not vendor drawings.
 | Jenga nominal block size | 0.072 x 0.024 x 0.014 m (72 x 24 x 14 mm) | Nominal dimensions `confirmed`; tolerances `unconfirmed` |
 | Jenga block mass and friction | Not measured | `unconfirmed` |
 | Jenga tower | 54 blocks, 18 layers | `confirmed` |
+
+`wrist_camera.color_intrinsics` (also accepted under `overhead_camera`) holds `width`, `height`, `fx`, `fy`, `cx`,
+and `cy`. When present it overrides `color_fov_deg`; its resolution must match `resolution` exactly, with no implicit
+rescaling or fallback on invalid values. The builder authors USD film offsets as well as focal length and apertures,
+so the optical projection and reported CameraInfo use the same principal point. Without it, older configurations
+still derive a centred pinhole from the nominal FOV. Lens distortion is not modeled: compare undistorted real images
+using the same K, not raw distorted pixels. This lens update does not establish a hand-eye calibration.
+
+The 2026-11-16 side photos and wrist preview show both open fingertips at the upper image corners and challenge the
+old assumption that the camera housing is centred on the gripper. A centred optical view places the housing to one
+side because the colour lens is near one end. The bracket and its pose remain provisional pending the completed
+ChArUco hand-eye result; changing its optical pose also requires rebuilding the matching bracket geometry.
 
 Confirmed nominal Jenga dimensions do not confirm manufacturing tolerances, mass, friction or chamfers.
 
