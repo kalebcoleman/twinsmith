@@ -12,11 +12,10 @@ asset cache or any checkout path, and nothing writes to the asset store.
 Pack mesh conventions this module assumes (all parts: metres, Z-up, one default
 Xform prim at the local origin, no joints):
 
-* ``d415``: unconfirmed dimensioned proxy, body centred at the origin and
-  modelled 0.099 x 0.020 x 0.023 m. Local axes are the D415 optical frame:
-  +X right, +Y down, +Z forward. It is not a D455/rsd455 substitute. The render
-  camera sits at this origin and applies Rx(180 deg) because a USD camera looks
-  down -Z with +Y up.
+* ``d415``: geometry in the colour optical frame, +X right, +Y down, +Z forward.
+  The shipped vendor mesh includes the housing-to-optical offset; older packs
+  may use a centred dimensioned proxy. The render camera is at the optical
+  origin and applies Rx(180 deg) because USD cameras look down -Z with +Y up.
 * ``wrist_mount``: the printed bracket that clamps the RG2 body
   (``exts/workcell/cad/rg2_camera_bracket.py``), in the RG2 body frame, which is
   the pack's ``onrobot_rg2_base_link``: origin on the tool axis at the top of the
@@ -38,7 +37,7 @@ configured stack (``stack.py``: ``bota.mounted``, the parts' lengths,
   ``asset_layout.<role>.mount_pose`` can separate their stack.
 
 No fiducial or marker geometry is authored or referenced. Extrinsics are config
-values, pending markerless hand-eye calibration.
+values; the shipped wrist pose has measured hand-eye provenance and accuracy limits.
 """
 
 from __future__ import annotations
@@ -74,7 +73,7 @@ REQUIRED_CONFIG_PATHS = (
     *(f"assets.{role}" for role in REQUIRED_ASSET_ROLES),
     "wrist_camera.offset_in_rg2_m", "wrist_camera.rotation_in_rg2_deg",
     "wrist_camera.resolution", "wrist_camera.color_fov_deg", "wrist_camera.ros_namespace",
-    "wrist_camera.body_size_m",
+    "wrist_camera.body_size_m", "wrist_camera.color_intrinsics", "wrist_camera.calibration",
     "overhead_camera.enabled", "overhead_camera.position_m", "overhead_camera.look_at_m", "overhead_camera.up_hint",
     "overhead_camera.resolution", "overhead_camera.color_fov_deg", "overhead_camera.ros_namespace",
     "overhead_mount.type", "overhead_mount.extrusion_size_m", "overhead_mount.post_xy_m",
@@ -116,15 +115,18 @@ def plan_cameras(config, robot_report, assets=None, config_path=None):
         raise ValueError("config.assets must be a mapping of roles to pack ids")
 
     limitations = [
-        "The D415 body is an explicitly unconfirmed dimensioned proxy (0.099 x 0.020 x 0.023 m), "
-        "not a D455/rsd455 substitute and not a verified CAD model.",
-        "Extrinsics come only from config; no fiducial or marker-based calibration is used, and "
-        "markerless hand-eye calibration is pending.",
+        "The D415 body uses the selected pack geometry; older packs may contain an unconfirmed dimensioned proxy. "
+        "The shipped pack uses vendor housing geometry and optical offsets, not a D455 substitute.",
+        "Extrinsics come from config; wrist_camera.calibration records measured provenance and limits when available.",
+        "Colour intrinsics use color_intrinsics when supplied, otherwise nominal FOV; the projection is "
+        "an ideal pinhole without lens distortion. The principal point is authored as USD aperture offsets and "
+        "checked against USD's own frustum; that the renderer draws it at the reported cx, cy is not measured "
+        "from rendered pixels.",
         "Rendered depth is single-pinhole distance_to_image_plane, not D415 stereo or IR depth; "
         "no projector, noise or stereo matching is modelled.",
         "ROS topics are proposed realsense2_camera 4.x names, not published or verified; no ROS graph "
         "is built. Max's pipeline reads the sensor through pyrealsense2 directly.",
-        "Mount, shelf and release geometry uses the pack's centred-proxy convention; asset-local "
+        "Overhead mount, shelf and release geometry uses the pack's centred-proxy convention; asset-local "
         "datums and stacked offsets still need CAD or manifest confirmation.",
         "Capture needs a running Isaac RTX renderer and a rendered frame; no pixels are synthesized.",
         "The capture helper targets Isaac Sim 6.x isaacsim.sensors.experimental.rtx; older releases "
@@ -232,6 +234,8 @@ def author_report(stage, report, usd=None):
         cam.CreateFocalLengthAttr().Set(camera["intrinsics"]["focal_length_mm"])
         cam.CreateHorizontalApertureAttr().Set(camera["intrinsics"]["horizontal_aperture_mm"])
         cam.CreateVerticalApertureAttr().Set(camera["intrinsics"]["vertical_aperture_mm"])
+        cam.CreateHorizontalApertureOffsetAttr().Set(camera["intrinsics"]["horizontal_aperture_offset_mm"])
+        cam.CreateVerticalApertureOffsetAttr().Set(camera["intrinsics"]["vertical_aperture_offset_mm"])
         cam.CreateClippingRangeAttr().Set(Gf.Vec2f(*camera["depth"]["clipping_range_m"]))
         _set_transform(Gf, UsdGeom, cam.GetPrim(), camera["usd_camera"]["translation_m"],
                        camera["usd_camera"]["quaternion_wxyz"])
@@ -354,7 +358,7 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     if bracket:
         parts.append(bracket)
     body = _part(config, assets, assets_cfg, "d415", f"{root}/body", root,
-                 [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], "D415 wrist body proxy", limitations)
+                 [0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0], "D415 wrist housing", limitations)
     if body:
         parts.append(body)
     geometry = "referenced" if len(parts) == 2 else ("partial" if parts else "unavailable")
@@ -381,7 +385,10 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
         "asset_id": _value(config, "assets.d415"),
         "bom_id": _bom_id(config, "d415"),
         "geometry_status": geometry,
-        "body_geometry": _proxy_geometry("d415", body_size, "config.wrist_camera.body_size_m or pack proxy default"),
+        "body_geometry": {"role": "d415", "kind": "selected pack housing geometry", "dimensions_m": body_size,
+                          "source": "Pack manifest; dimensions are a nominal envelope, not an optical offset",
+                          "verified": False},
+        "calibration": section.get("calibration"),
         "optical": optical,
         "usd_camera": usd,
         "intrinsics": intrinsics,
@@ -394,8 +401,8 @@ def _plan_wrist(config, robot, assets, assets_cfg, limitations):
     }
     limitations.append(
         "The D415 body asset is in the colour optical frame and the bracket asset in the RG2 body frame; a bracket "
-        "fits only the camera pose it was modelled for (scripts/workcell_bracket_assets.py). The pose is an "
-        "estimate from one photo of the real bracket, not a measurement.")
+        "fits only the camera pose it was modelled for (scripts/workcell_calibrated_camera_assets.py). "
+        "The shipped optical pose is a hand-eye estimate; the printed bracket geometry remains photo-estimated.")
     limitations.append(
         "The wrist camera's tool0 pose is derived from the configured stack and UR's flange-to-tool0 convention; "
         "the camera and bracket prims hang from tool0 (wrist_3_link) and carry no mass themselves: their masses "
@@ -491,7 +498,7 @@ def _plan_overhead(config, assets, assets_cfg, limitations):
         if part:
             parts.append(part)
     body = _part(config, assets, assets_cfg, "d415", f"{OVERHEAD_ROOT}/body", OVERHEAD_ROOT,
-                 position, optical_q, "D415 overhead body proxy", limitations)
+                 position, optical_q, "D415 overhead housing", limitations)
     if body:
         parts.append(body)
     geometry = "referenced" if len(parts) == 4 else ("partial" if parts else "unavailable")
@@ -513,7 +520,9 @@ def _plan_overhead(config, assets, assets_cfg, limitations):
         "asset_id": _value(config, "assets.d415"),
         "bom_id": _bom_id(config, "d415"),
         "geometry_status": geometry,
-        "body_geometry": _proxy_geometry("d415", body_size, "config.wrist_camera.body_size_m or pack proxy default"),
+        "body_geometry": {"role": "d415", "kind": "selected pack housing geometry", "dimensions_m": body_size,
+                          "source": "Pack manifest; dimensions are a nominal envelope, not an optical offset",
+                          "verified": False},
         "optical": optical,
         "usd_camera": usd,
         "intrinsics": intrinsics,
@@ -676,14 +685,34 @@ def _gantry_check(position, mount, reach, limitations):
 
 def _camera_optics(section, label, limitations):
     resolution = _resolution(section.get("resolution"))
-    fov = _vector(section.get("color_fov_deg"), 2, f"{label}.color_fov_deg")
-    if resolution is None or fov is None:
+    if resolution is None:
         return None, None, None
-    try:
-        fx, fy, cx, cy = camera_intrinsics(list(resolution), list(fov))
-    except ValueError as exc:
-        limitations.append(f"{label} resolution/FOV is invalid: {exc}")
-        return None, None, None
+    calibrated = section.get("color_intrinsics")
+    if "color_intrinsics" in section:
+        if (not isinstance(calibrated, dict)
+                or set(calibrated) != {"width", "height", "fx", "fy", "cx", "cy"}
+                or any(type(calibrated[key]) is not int for key in ("width", "height"))
+                or [calibrated["width"], calibrated["height"]] != list(resolution)):
+            raise ValueError(f"{label}.color_intrinsics must hold width, height, fx, fy, cx, cy at the configured resolution")
+        numbers = [calibrated[key] for key in ("fx", "fy", "cx", "cy")]
+        if any(type(value) not in (int, float) or not math.isfinite(value) for value in numbers):
+            raise ValueError(f"{label}.color_intrinsics must contain finite numbers")
+        fx, fy, cx, cy = numbers
+        if fx <= 0 or fy <= 0 or not 0 <= cx < resolution[0] or not 0 <= cy < resolution[1]:
+            raise ValueError(f"{label}.color_intrinsics has invalid focal lengths or principal point")
+        fov = [math.degrees(math.atan(center / focal) + math.atan((size - center) / focal))
+               for size, center, focal in zip(resolution, (cx, cy), (fx, fy))]
+        source = "color_intrinsics"
+    else:
+        fov = _vector(section.get("color_fov_deg"), 2, f"{label}.color_fov_deg")
+        if fov is None:
+            return None, None, None
+        try:
+            fx, fy, cx, cy = camera_intrinsics(list(resolution), list(fov))
+        except ValueError as exc:
+            limitations.append(f"{label} resolution/FOV is invalid: {exc}")
+            return None, None, None
+        source = "color_fov_deg"
     aperture = DEFAULT_APERTURE_MM
     focal = fx * aperture / resolution[0]
     vertical = resolution[1] * focal / fy
@@ -691,8 +720,12 @@ def _camera_optics(section, label, limitations):
         "width": resolution[0], "height": resolution[1], "fov_deg": list(fov),
         "fx": fx, "fy": fy, "cx": cx, "cy": cy,
         "focal_length_mm": focal, "horizontal_aperture_mm": aperture, "vertical_aperture_mm": vertical,
+        # USD's film plane uses right/up; the optical image uses right/down.
+        "horizontal_aperture_offset_mm": (resolution[0] / 2 - cx) * aperture / resolution[0],
+        "vertical_aperture_offset_mm": (cy - resolution[1] / 2) * vertical / resolution[1],
+        "source": source,
         "aperture_assumption_mm": aperture,
-        "pixel_model": "ideal pinhole, square pixels; no lens distortion",
+        "pixel_model": "ideal pinhole; no lens distortion",
         "camera_matrix": [[fx, 0.0, cx], [0.0, fy, cy], [0.0, 0.0, 1.0]],
     }
     return resolution, fov, intrinsics

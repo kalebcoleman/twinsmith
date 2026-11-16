@@ -237,7 +237,7 @@ Nothing in twinsmith needs a pack of yours, a Hugging Face account or a token. W
 | A part an agent designs | SolidCraft beside twinsmith, then `hardware(action="part")`, `assets__mesh` and `assets__validate` ([from a SolidCraft part to the work cell](HARDWARE.md#from-a-solidcraft-part-to-the-work-cell)); `adopt` the result to keep it as a pack | Free, open source |
 
 A public Hugging Face repository also works with no token: list the pack in the sources file below and `pull` is anonymous.
-The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v3`, `jenga/v1`); they hold vendor CAD that
+The UR5e work cell is the one feature that needs specific packs (`ur5e-workcell/v4`, `jenga/v1`); they hold vendor CAD that
 may not be redistributed, so each owner builds them from their own copy ([rebuild](REBUILD.md#the-sequence)).
 
 ## Pulling and pushing packs
@@ -340,9 +340,10 @@ The licence of every third-party file the repository mentions is in [THIRD-PARTY
 ## The work cell's packs
 
 The examples above use `ur5e-jenga-workcell`, the source pack. The work cell reads two packs built from it:
-`ur5e-workcell/v3` (the base cell: robot, gripper stack, wrist camera, bench with its rail, mounting hardware) and
+`ur5e-workcell/v4` (the base cell: robot, gripper stack, wrist camera, bench with its rail, mounting hardware) and
 `jenga/v1` (the Jenga block that the task files place). `scripts/workcell_split_packs.py`,
-`scripts/workcell_camera_assets.py` and `scripts/workcell_bracket_assets.py` write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).
+`scripts/workcell_camera_assets.py`, `scripts/workcell_bracket_assets.py` and
+`scripts/workcell_calibrated_camera_assets.py` write them; see [rebuild from a clean machine](REBUILD.md#the-sequence).
 A third, optional pack, `puzzles/v1`, holds the lab's 3D-printed assembly puzzles for the `puzzle_table` task;
 `scripts/workcell_puzzle_pack.py` writes it from a checkout of its upstream repository
 ([puzzle tasks](../exts/workcell/workcell/README.md#puzzle-tasks)).

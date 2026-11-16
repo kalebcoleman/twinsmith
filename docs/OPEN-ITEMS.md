@@ -38,7 +38,7 @@ version.
 
 ### Work cell on Newton
 
-The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side (the cell now uses `ur5e-workcell/v3`: the RG2, Quick Changer and Bota from the vendors' own CAD, the real wrist camera bracket, and the bench split into the static bench and the rail's carriage; the Jenga block is the task pack `jenga/v1`):
+The work cell builds on Newton since 2026-11-14. Pack `ur5e-jenga-workcell/v2` fixes the asset side (the cell now uses `ur5e-workcell/v4`: the RG2, Quick Changer and Bota from the vendors' own CAD, the real wrist camera bracket, and the bench split into the static bench and the rail's carriage; the Jenga block is the task pack `jenga/v1`):
 - a box collision layer for the bench;
 - the RG2 in the arm's articulation, with mimic fingers and no zero-force drives.
 
@@ -91,8 +91,14 @@ real cell:
 - [ ] Settle whether the RG2's datasheet 0.78 kg includes the Quick Changer tool side (0.14 kg); the cell takes it
   to be included and adds only the robot side (0.06 kg).
 - [x] The wrist D415 and its printed bracket are on the RG2 body, with mass (0.064 kg and 0.100 kg) and convex colliders.
-- [ ] The wrist camera's pose is provisional: one photo and two corrections by eye. The model is still 45 to 80 mm too low and
-  its 39 degree tilt is derived, not measured. Replace it from better photos or the bracket's CAD file.
+- [x] Import the 2026-11-16 measured wrist colour optical pose and full intrinsics, preserving frame conventions and provenance.
+  Pack v4 rebuilds the bracket around the measured pose. All 15 views reproduce pooled controller-TCP reprojection 0.862 px.
+- [ ] Resolve nominal joint-FK versus recorded controller TCP (0.88–1.04 mm / 0.26–0.30 degrees in this session;
+  board projection 5.98–7.68 px with nominal FK). Independently validate physical accuracy: classical and refined flange Z
+  differ by about 11 mm. Same-session leave-one-view-out robustness is not independent accuracy.
+- [ ] Measure the printed bracket profile and taped fingertips. All-view silhouettes and a stopped RTX viewport check
+  support the new optics, but tape, cables, fasteners and the exact support shape remain approximate.
+  See [calibration evidence and limits](../exts/workcell/cad/README.md#calibration-and-frame-conversion).
 - [x] Vendor meshes in place of the placeholder boxes: the RG2, Quick Changer and Bota from the vendors' STEP files, the D415
   from RealSense's mesh.
 - [ ] Measure the gap between the RG2's fingertips fully open (the model gives 100.8 mm, the datasheet 110 mm) and the robot

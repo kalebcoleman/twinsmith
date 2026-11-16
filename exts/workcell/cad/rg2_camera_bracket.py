@@ -1,6 +1,6 @@
 """Wrist camera bracket on the OnRobot RG2, as a FreeCAD model (run with ``freecadcmd``; millimetres).
 
-A parametric copy of the 3D-printed bracket on the lab's UR5e, read from one photo (see ``README.md`` beside this file).
+A parametric copy of the 3D-printed bracket on the lab's UR5e, estimated from photos around the measured colour optical pose (see ``README.md`` beside this file).
 It is NOT a plate between flange faces: it is a two-piece clamp collar around the RG2 body's 54 x 36 mm waist, below the
 gripper's own mounting bracket and above the finger pivots, so the tool stack and the tool kinematics are unchanged and
 the camera turns with the gripper. Two printed pieces:
@@ -33,14 +33,15 @@ Sourced dimensions (vendor documents, fetched 2026-11-14):
   Intel RealSense D400 Series Datasheet rev 017 (September 2023), table 3-51 and figure 10-8,
   https://www.realsenseai.com/wp-content/uploads/2023/10/Intel-RealSense-D400-Series-Datasheet-September-2023.pdf
 
-Everything else below is ESTIMATED FROM THE PHOTO (or a design choice where the photo shows nothing) and must be
-measured; ``README.md`` lists each value with how it was scaled and its uncertainty.
+The optical pose is the 2026-11-16 hand-eye estimate. Bracket dimensions remain photo estimates or design choices;
+see ``README.md`` for provenance and accuracy limits.
 
 Environment (all optional except BRACKET_OUT): BRACKET_OUT (folder), CAM_X_MM, CAM_Y_MM, CAM_Z_MM (the D415 colour
 optical origin), TILT_DEG, BACK_MM (camera back face along the optical axis, negative), BODY_CX_MM (camera body
 centre along optical x), all in this CAD frame. The camera's long axis is along X with optical +x = -X; at zero tilt
 it looks along +Z with optical +y = -Y (away from the gripper). TILT_DEG turns it about its long axis so the optical
-axis leans toward the tool axis (+Y). No other orientation is modelled.
+axis leans toward the tool axis (+Y). PITCH_DEG and YAW_DEG preserve the measured small departures from
+the nominal [tilt, 0, -90] extrinsic XYZ rotation in the RG2 body frame.
 Writes clamp_front.step/.stl, camera_arm.step/.stl, wrist_bracket.step (both pieces as mounted) and bracket.json.
 """
 import json
@@ -71,11 +72,13 @@ P = {
     "d415_depth": 20.0,
     "d415_m3_pitch": 45.0,          # D400 datasheet rev 017, figure 10-8
     "d415_m3_max_insertion": 3.0,
-    # --- camera pose: estimated from the photo (config wrist_camera.offset_in_rg2_m, here in the CAD frame) -------
-    "cam_x": env("CAM_X_MM", 35.0),             # Kaleb: the camera is in line with the gripper, so its body is centred on X = 0
-    "cam_y": env("CAM_Y_MM", -127.0),           # Kaleb: further from the gripper than first modelled; photo fit with X fixed
-    "cam_z": env("CAM_Z_MM", 102.0),            # as far toward the wrist as this arm shape allows; the fit says higher still
-    "tilt_deg": env("TILT_DEG", 39.0),          # about the camera's long axis, optical axis toward the tool axis
+    # --- camera pose: measured optical frame (2026-11-16); geometry below remains photo-estimated ---------------
+    "cam_x": env("CAM_X_MM", 1.1915213556659106),
+    "cam_y": env("CAM_Y_MM", -87.42378344884798),
+    "cam_z": env("CAM_Z_MM", 92.73948509468994),
+    "tilt_deg": env("TILT_DEG", 29.42373343302855),
+    "pitch_deg": env("PITCH_DEG", -0.881226331397599),
+    "yaw_deg": env("YAW_DEG", -89.90040720811024),
     "d415_back": env("BACK_MM", -10.2),         # vendor mesh: back face along the optical axis
     "d415_body_cx": env("BODY_CX_MM", 34.95),   # vendor mesh: body centre along optical x
     # --- clamp: estimated from the photo -------------------------------------------------------------------------
@@ -124,12 +127,17 @@ if not 0.0 <= P["tilt_deg"] <= 45.0:
     raise SystemExit("BRACKET ERROR: the model covers a tilt of 0 to 45 degrees toward the tool axis")
 SIN, COS = math.sin(TILT), math.cos(TILT)
 ORIGIN = Vector(P["cam_x"], P["cam_y"], P["cam_z"])
-EX, EY, EZ = Vector(-1, 0, 0), Vector(0, -COS, SIN), Vector(0, SIN, COS)
+pitch, yaw = math.radians(P["pitch_deg"]), math.radians(P["yaw_deg"])
+cp, sp, cy, sy = math.cos(pitch), math.sin(pitch), math.cos(yaw), math.sin(yaw)
+# Extrinsic XYZ in RG2, then body -> CAD (body y, -body x, body z).
+EX = Vector(sy * cp, -cy * cp, -sp)
+EY = Vector(sy * sp * SIN + cy * COS, -cy * sp * SIN + sy * COS, cp * SIN)
+EZ = Vector(sy * sp * COS - cy * SIN, -cy * sp * COS - sy * SIN, cp * COS)
 CAMERA = Matrix(EX.x, EY.x, EZ.x, ORIGIN.x,
                 EX.y, EY.y, EZ.y, ORIGIN.y,
                 EX.z, EY.z, EZ.z, ORIGIN.z,
                 0, 0, 0, 1)                                   # optical coordinates to the CAD frame
-BODY_CX = P["cam_x"] - P["d415_body_cx"]                      # camera body centre along X
+BODY_CX = P["cam_x"] + EX.x * P["d415_body_cx"]                      # camera body centre along X
 PLATE_BACK = P["d415_back"] - P["plate_thickness"]            # the plate's back face along the optical axis
 # The plate in optical coordinates: x toward the cable end, y from the gripper side to the far side.
 PLATE_OX = (P["d415_body_cx"] - P["plate_length"] / 2 + P["plate_shift_to_usb_end"],
@@ -145,9 +153,6 @@ def in_cad(x, y, z):
 
 PLATE_NEAR = in_cad(0, PLATE_OY[0], PLATE_BACK)               # the back face's edge nearest the gripper
 PLATE_MID = in_cad(0, 0, PLATE_BACK)                          # the back face under the camera's centreline
-Z_CAP = PLATE_NEAR.z                                          # the truss stops here outside the plate's footprint
-if Z_CAP < Z0 + 8.0:
-    raise SystemExit("BRACKET ERROR: the camera plate would sit at or below the collar; move the camera along +Z")
 if in_cad(0, -P["d415_height"] / 2, P["d415_back"]).y > Y_BACK - 8.0 or PLATE_NEAR.y > Y_BACK - 6.0:
     raise SystemExit("BRACKET ERROR: the camera is too close to the RG2's back face for an arm")
 
@@ -190,14 +195,26 @@ def clamp_front():
 
 
 def truss_solid():
-    """The arm: a triangle with an open window, standing on Z0. Outside the plate's footprint it stops level with the
-    plate's nearest edge; under the plate it rises to the plate's tilted back face."""
+    """A windowed arm rising from the collar to the measured camera plate.
+
+    The old constant-height extrusion imposed a lower limit on the camera pose. Here the
+    support slopes to the plate, and is clipped to its rear face inside its footprint.
+    Optical pose is an input; geometry must fit it, never the reverse.
+    """
     tip = Vector(BODY_CX + P["truss_tip_x_from_camera_centre"], PLATE_MID.y - P["truss_tip_past_camera"], 0)
     outline = [Vector(P["truss_root_x"], Y_BACK + 2.0, 0), Vector(-X_OUT, Y_BACK + 2.0, 0), tip]
     triangle = Part.Face(Part.makePolygon(outline + [outline[0]]))
-    column = triangle.cut(triangle.makeOffset2D(-P["truss_member"])).extrude(Vector(0, 0, 120.0))   # open window
-    column.translate(Vector(0, 0, Z0))
-    low = column.common(box(-300, 300, -300, 300, Z0, Z_CAP))
+    column = triangle.cut(triangle.makeOffset2D(-P["truss_member"])).extrude(Vector(0, 0, 600))
+    column.translate(Vector(0, 0, -300))
+    # Plane n.(p - origin) = PLATE_BACK. Use extra height at the tip so the
+    # exact (slightly rolled/yawed) camera-plane cut supplies the final contact face.
+    tip_z = ORIGIN.z + (PLATE_BACK - EZ.x * (tip.x - ORIGIN.x) - EZ.y * (tip.y - ORIGIN.y)) / EZ.z
+    yz = [(Y_BACK + 3, Z0), (tip.y - 1, tip_z - 8), (tip.y - 1, tip_z + 4), (Y_BACK + 3, Z1)]
+    edge = [Vector(-300, y, z) for y, z in yz]
+    ramp = Part.Face(Part.makePolygon(edge + [edge[0]])).extrude(Vector(600, 0, 0))
+    column = column.common(ramp)
+    footprint = optical_box(-300, 300, PLATE_OY[0], PLATE_OY[1], -400, 400)
+    low = column.cut(footprint)
     under = column.common(optical_box(-300, 300, PLATE_OY[0], PLATE_OY[1], -400, PLATE_BACK))
     return low, under, outline
 
@@ -215,12 +232,15 @@ def camera_arm():
 
 
 def describe(name, shape):
-    box_ = shape.BoundBox
+    # Boolean support surfaces can give an inflated OCC BoundBox; bound the exported tessellation.
+    vertices, _ = shape.tessellate(0.05)
+    low = [min(tuple(v)[i] for v in vertices) for i in range(3)]
+    high = [max(tuple(v)[i] for v in vertices) for i in range(3)]
     return {"piece": name, "valid": bool(shape.isValid()), "solids": len(shape.Solids), "volume_cm3": round(shape.Volume / 1000, 2),
             "centre_of_volume_mm": [round(v, 2) for v in shape.Solids[0].CenterOfMass],
-            "bounds_min_mm": [round(v, 2) for v in (box_.XMin, box_.YMin, box_.ZMin)],
-            "bounds_max_mm": [round(v, 2) for v in (box_.XMax, box_.YMax, box_.ZMax)],
-            "size_mm": [round(v, 2) for v in (box_.XLength, box_.YLength, box_.ZLength)]}
+            "bounds_min_mm": [round(v, 2) for v in low],
+            "bounds_max_mm": [round(v, 2) for v in high],
+            "size_mm": [round(v, 2) for v in [b - a for a, b in zip(low, high)]]}
 
 
 front, arm = clamp_front(), camera_arm()
@@ -274,19 +294,15 @@ def corners(low, high):
     return [[x, y, z] for x in (low[0], high[0]) for y in (low[1], high[1]) for z in (low[2], high[2])]
 
 
-_, UNDER, OUTLINE = truss_solid()
+LOW, UNDER, OUTLINE = truss_solid()
 if UNDER.Volume < 1.0:
     errors.append("the truss does not reach under the camera plate")
-SPAN_X = [vertex.X for vertex in UNDER.Vertexes] or [0.0]    # the part of the truss under the plate (its vertices:
-SUPPORT_Y = min([vertex.Y for vertex in UNDER.Vertexes] or [0.0])   # a boolean result's bounding box is not tight)
-SUPPORT_Z = PLATE_MID.z - (SUPPORT_Y - PLATE_MID.y) * SIN / COS     # the plate's back face above that far end
 report["collision_pieces_mm"] = {
     "collar": corners([-X_OUT, Y_BACK, Z0], [X_OUT, Y_FRONT, Z1]),
     "front_bar_extension": corners([-P["rg2_waist_width"] / 2, YF, Z1],
                                    [P["rg2_waist_width"] / 2, Y_FRONT, min(Z1 + P["front_bar_extension"], COLLISION_TOP_Z)]),
-    "truss": [[point.x, point.y, z] for z in (Z0, Z_CAP) for point in OUTLINE],
-    "plate_support": [[x, y, z] for x in (min(SPAN_X), max(SPAN_X))
-                      for y, z in ((PLATE_NEAR.y, Z_CAP), (SUPPORT_Y, Z_CAP), (SUPPORT_Y, max(SUPPORT_Z, Z_CAP + 0.01)))],
+    "truss": [[v.X, v.Y, v.Z] for v in LOW.Vertexes],
+    "plate_support": [[v.X, v.Y, v.Z] for v in UNDER.Vertexes],
     "camera_plate": [list(in_cad(x, y, z)) for x in PLATE_OX for y in PLATE_OY for z in (PLATE_BACK, P["d415_back"])],
 }
 if errors:

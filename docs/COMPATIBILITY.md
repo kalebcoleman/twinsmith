@@ -9,7 +9,7 @@ The primary tested pairings are **Isaac Sim 5.1 with Isaac Lab 2.3.2** and **Isa
 
 **Newton is the default engine for the scenes these tools build. PhysX is opt-in: choose it with `[sim] physics_backend = "physx"`,
 `TWINSMITH_PHYSICS_BACKEND=physx` or `--physics-backend physx` (`run.sh`). The UR5e work cell builds on either engine (pack
-`ur5e-workcell/v3`); its force/torque read (`workcell__robot(action="wrench")`) passes the static gravity check on
+`ur5e-workcell/v4`); its force/torque read (`workcell__robot(action="wrench")`) passes the static gravity check on
 both. On Newton its cameras and `mirror_real` are not qualified yet, and `mirror_real` is refused there
 ([open item](OPEN-ITEMS.md#work-cell-on-newton)).**
 

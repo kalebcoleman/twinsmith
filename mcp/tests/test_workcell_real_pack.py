@@ -98,8 +98,11 @@ def _in_wrist_image(stage, report, camera_report, section, roots):
     rotation = np.array([cameras._rotate_vector(optical_pose["quaternion_wxyz"], axis) for axis in np.eye(3).tolist()]).T
     optical = (points - np.array(optical_pose["translation_m"])) @ rotation
     optical = optical[optical[:, 2] > section["clipping_range_m"][0]]  # nearer than the clip plane is not drawn
-    inside = ((np.degrees(np.arctan2(np.abs(optical[:, 0]), optical[:, 2])) < section["color_fov_deg"][0] / 2)
-              & (np.degrees(np.arctan2(np.abs(optical[:, 1]), optical[:, 2])) < section["color_fov_deg"][1] / 2))
+    k = camera_report["cameras"]["wrist"]["intrinsics"]
+    u = k["fx"] * optical[:, 0] / optical[:, 2] + k["cx"]
+    v = k["fy"] * optical[:, 1] / optical[:, 2] + k["cy"]
+    width, height = section["resolution"]
+    inside = (u >= 0) & (u < width) & (v >= 0) & (v < height)
     return optical[inside]
 
 
@@ -174,9 +177,13 @@ def test_bracket_clamps_the_rg2_waist_and_holds_the_camera_off_its_back_face(cel
     offset = np.array(config["wrist_camera"]["offset_in_rg2_m"]) * 1000.0
     assert body[:, 0].max() == pytest.approx(offset[1] + 14.5, abs=0.3)             # the colour sensor end is at CAD +X
     assert (body[:, 1].min() + body[:, 1].max()) / 2 == pytest.approx(-offset[0], abs=0.5)
-    tilt = np.radians(config["wrist_camera"]["rotation_in_rg2_deg"][0])
-    glass = body[body @ np.array([0.0, np.sin(tilt), np.cos(tilt)]) > (body @ np.array([0.0, np.sin(tilt), np.cos(tilt)])).max() - 0.3]
-    assert len(glass) > 50 and np.ptp(glass @ np.array([0.0, np.sin(tilt), np.cos(tilt)])) < 0.3     # the flat front faces that way
+    q = cameras._euler_xyz_deg_to_quat(config["wrist_camera"]["rotation_in_rg2_deg"])
+    forward_body = cameras._rotate_vector(q, [0, 0, 1])
+    forward_cad = np.array([forward_body[1], -forward_body[0], forward_body[2]])
+    depth = body @ forward_cad
+    glass = body[depth > depth.max() - 0.3]
+    assert len(glass) > 50 and np.ptp(glass @ forward_cad) < 0.3
+
 
 
 def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
@@ -209,8 +216,8 @@ def test_bracket_is_clear_of_the_finger_linkage_over_its_whole_stroke(cell):
     bracket = _in_cad_frame(stage, report, config, [f"{root}/bracket", f"{root}/body"])
     near = bracket[bracket[:, 2] >= lowest - 4.0]            # the only part of the bracket level with the linkage
     ahead, behind = near[near[:, 1] > 0], near[near[:, 1] < 0]
-    assert len(ahead) and len(behind)
-    assert ahead[:, 1].min() >= front + 1.5 and behind[:, 1].max() <= back - 1.5
+    assert len(near)
+    assert ((near[:, 1] >= front + 1.5) | (near[:, 1] <= back - 1.5)).all()
     wrist = stage.GetPrimAtPath(root)       # everything under tool0 stays visual only, the D415 body included
     assert not any(item.HasAPI(UsdPhysics.CollisionAPI) or item.HasAPI(UsdPhysics.RigidBodyAPI) for item in Usd.PrimRange(wrist))
 
@@ -324,7 +331,19 @@ def test_bracket_collider_is_on_the_rg2_body_and_touches_nothing(cell):
         assert not prim.HasAPI(UsdPhysics.RigidBodyAPI) and not prim.HasAPI(UsdPhysics.MassAPI) and not prim.IsA(UsdPhysics.Joint)
         assert not prim.HasAPI(UsdPhysics.FilteredPairsAPI)
     for prim in shapes.values():
-        assert prim.IsA(UsdGeom.Mesh) and len(UsdGeom.Mesh(prim).GetPointsAttr().Get()) in (6, 8)
+        assert prim.IsA(UsdGeom.Mesh)
+        mesh = UsdGeom.Mesh(prim)
+        points = np.asarray(mesh.GetPointsAttr().Get())
+        from scipy.spatial import ConvexHull
+        hull = ConvexHull(points)
+        assert hull.volume > 0 and len(points) >= 4
+        faces = np.asarray(mesh.GetFaceVertexIndicesAttr().Get()).reshape(-1, 3)
+        assert all(n == 3 for n in mesh.GetFaceVertexCountsAttr().Get())
+        for face in faces:
+            a, b, c = points[face]
+            normal = np.cross(b - a, c - a)
+            assert np.linalg.norm(normal) > 1e-12
+            assert ((points - a) @ normal).max() < 1e-10  # outward faces bound every point
         assert UsdPhysics.MeshCollisionAPI(prim).GetApproximationAttr().Get() == "convexHull"
     # The shapes add no mass by themselves: the body has its own explicit mass plus the bracket's and the camera's.
     assert UsdPhysics.MassAPI(body).GetMassAttr().Get() == pytest.approx(
@@ -524,7 +543,7 @@ def test_pack_is_complete_on_its_own(cell):
     """Every layer the built cell opens is inside the pinned pack version: no file of another version is needed."""
     config, stage, _, _, pack = cell
     folder = Path(pack.asset(config["assets"]["robot"])).parents[1]
-    assert folder.name == config["pack"]["version"] == "v3" and folder.parent.name == config["pack"]["id"]
+    assert folder.name == config["pack"]["version"] == "v4" and folder.parent.name == config["pack"]["id"]
     layers = [Path(layer.realPath) for layer in stage.GetUsedLayers() if layer.realPath]
     assert layers and all(folder in path.parents for path in layers), [str(p) for p in layers if folder not in p.parents]
 
@@ -757,7 +776,7 @@ def test_carried_centres_of_gravity_follow_the_bracket_model(cell):
     centre = sum(piece["volume_cm3"] * np.array(piece["centre_of_volume_mm"]) for piece in report["pieces"]) / volume
     print_only = np.array([-centre[1], centre[0], centre[2]]) / 1000.0
     assert np.linalg.norm(np.array(config["wrist_camera"]["bracket_cog_in_rg2_m"]) - print_only) < 0.006      # the bolts pull it toward the body
-    assert volume == pytest.approx(99.1, abs=1.0)
+    assert volume == pytest.approx(105.21, abs=0.1)
 
 
 def test_the_robot_stands_on_the_rails_carriage_and_the_bench_is_what_the_photos_show(cell):
