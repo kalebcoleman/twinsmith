@@ -52,7 +52,7 @@ PACK, SOURCE, TARGET = "ur5e-workcell", "v2", "v3"
 CAD = "exts/workcell/cad/rg2_camera_bracket.py"
 PIECES = ("clamp_front", "camera_arm")
 PRINTED = dict(diffuseColor=(0.10, 0.11, 0.14), metallic=0.0, roughness=0.6)
-FIDELITY = ("Parametric copy of the real printed bracket, estimated from one photo; the RG2 and D415 dimensions are from "
+FIDELITY = ("Parametric copy of the real printed bracket, estimated from photos around the configured optical pose; the RG2 and D415 dimensions are from "
             "the vendors' datasheets, everything else must be measured (exts/workcell/cad/README.md)")
 
 
@@ -68,15 +68,15 @@ def to_body(points):
 def camera_pose(config):
     """The configured camera origin in the CAD frame (millimetres) and its tilt; only poses the CAD model covers pass.
 
-    ``rotation_in_rg2_deg`` must be ``[tilt, 0, -90]`` (extrinsic XYZ in the RG2 body frame): long axis along the
-    finger-opening axis, gripper toward the top of the image, tilted 0 to 45 degrees toward the tool axis.
+    ``rotation_in_rg2_deg`` is extrinsic XYZ in the RG2 body frame: tilt 0 to 45 degrees,
+    with pitch and yaw departures below 5 degrees from [tilt, 0, -90].
     """
     section = config["wrist_camera"]
     offset, rotation = section["offset_in_rg2_m"]["value"], section["rotation_in_rg2_deg"]["value"]
     tilt, pitch, yaw = (float(value) for value in rotation)
-    if pitch != 0.0 or yaw != -90.0 or not 0.0 <= tilt <= 45.0:
+    if not (abs(pitch) < 5.0 and abs(yaw + 90.0) < 5.0 and 0.0 <= tilt <= 45.0):
         raise SystemExit("the bracket model covers a camera with optical +x along the RG2 body's -Y, tilted 0 to 45 degrees "
-                         "about that axis toward the tool axis: rotation_in_rg2_deg = [tilt, 0, -90]")
+                         "toward the tool axis, with less than 5 degrees of pitch/yaw mounting deviation")
     x, y, z = (float(value) * 1000.0 for value in offset)
     return [y, -x, z], tilt                                              # the inverse of to_body
 
@@ -91,11 +91,13 @@ def d415_extent(path: Path):
     return float(points[:, 2].min()), float((points[:, 0].min() + points[:, 0].max()) / 2)
 
 
-def run_cad(out: Path, camera_mm, tilt_deg, back_mm, body_cx_mm):
+def run_cad(out: Path, camera_mm, tilt_deg, back_mm, body_cx_mm, rotation=None):
     # FreeCAD brings its own Python: this interpreter's variables (uv's virtual environment) must not reach it.
     clean = {key: value for key, value in os.environ.items() if not key.startswith(("PYTHON", "VIRTUAL_ENV", "UV_"))}
     env = dict(clean, BRACKET_OUT=str(out), CAM_X_MM=str(camera_mm[0]), CAM_Y_MM=str(camera_mm[1]), CAM_Z_MM=str(camera_mm[2]),
                TILT_DEG=str(tilt_deg), BACK_MM=str(back_mm), BODY_CX_MM=str(body_cx_mm))
+    if rotation is not None:
+        env.update(PITCH_DEG=str(rotation[1]), YAW_DEG=str(rotation[2]))
     done = subprocess.run(["freecadcmd", str(REPO / CAD)], env=env, capture_output=True, text=True, timeout=600)
     report = out / "bracket.json"
     if done.returncode or not report.is_file():
@@ -117,17 +119,20 @@ def add_collision(path: Path, report):
     stage = Usd.Stage.Open(str(path))
     scope = UsdGeom.Scope.Define(stage, f"/Asset/{COLLISION_SCOPE}")
     UsdGeom.Imageable(scope.GetPrim()).CreatePurposeAttr(UsdGeom.Tokens.guide)
-    box_faces = [0, 1, 3, 2, 4, 6, 7, 5, 0, 4, 5, 1, 2, 3, 7, 6, 0, 2, 6, 4, 1, 5, 7, 3]
-    prism_faces = [0, 2, 1, 3, 4, 5, 0, 1, 4, 3, 1, 2, 5, 4, 2, 0, 3, 5]
+    from scipy.spatial import ConvexHull
     names = []
     for name, points in report["collision_pieces_mm"].items():
         points = to_body(points) / 1000.0
-        if len(points) not in (6, 8):
-            raise SystemExit(f"collision piece {name} must be a box (8 corners) or a triangular prism (6)")
+        hull = ConvexHull(points)
+        faces = hull.simplices.copy()
+        for face, equation in zip(faces, hull.equations):
+            a, b, c = points[face]
+            if np.dot(np.cross(b - a, c - a), equation[:3]) < 0:
+                face[1], face[2] = face[2], face[1]
         mesh = UsdGeom.Mesh.Define(stage, f"/Asset/{COLLISION_SCOPE}/{name}")
         mesh.CreatePointsAttr(Vt.Vec3fArray([Gf.Vec3f(*point) for point in points.tolist()]))
-        mesh.CreateFaceVertexCountsAttr(Vt.IntArray([4] * 6 if len(points) == 8 else [3, 3, 4, 4, 4]))
-        mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(box_faces if len(points) == 8 else prism_faces))
+        mesh.CreateFaceVertexCountsAttr(Vt.IntArray([3] * len(faces)))
+        mesh.CreateFaceVertexIndicesAttr(Vt.IntArray(faces.ravel().tolist()))
         mesh.CreateSubdivisionSchemeAttr("none")
         mesh.CreateExtentAttr([Gf.Vec3f(*points.min(0)), Gf.Vec3f(*points.max(0))])
         UsdPhysics.CollisionAPI.Apply(mesh.GetPrim())
@@ -143,12 +148,13 @@ def build_bracket(work: Path, d415_path: Path):
     back_mm, body_cx_mm = d415_extent(d415_path)
     folder = work / "wrist_mount"
     folder.mkdir()
-    report = run_cad(folder, camera_mm, tilt_deg, round(back_mm, 2), round(body_cx_mm, 2))
+    report = run_cad(folder, camera_mm, tilt_deg, round(back_mm, 2), round(body_cx_mm, 2),
+                     config["wrist_camera"]["rotation_in_rg2_deg"]["value"])
     triangles = to_body(np.concatenate([camera_assets.read_stl(folder / f"{name}.stl") for name in PIECES])) * 0.001
     points, faces = camera_assets.weld(triangles)
     usd = folder / "wrist_mount.usdc"
     camera_assets.write_usd(usd, points, faces, {"Printed": (np.ones(len(faces), bool), PRINTED)},
-                            f"FreeCAD model ({CAD}) moved to the pack's RG2 body frame; estimated from one photo, not measured")
+                            f"FreeCAD model ({CAD}) moved to the pack's RG2 body frame; photo-estimated bracket geometry around the configured optical pose")
     colliders = add_collision(usd, report)
     return report, {"triangles": int(len(faces)), "colliders": colliders, "camera_in_cad_frame_mm": camera_mm, "tilt_deg": tilt_deg,
                     "d415_back_mm": round(back_mm, 2), "d415_body_centre_x_mm": round(body_cx_mm, 2)}

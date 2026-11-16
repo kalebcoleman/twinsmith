@@ -126,6 +126,7 @@ def test_intrinsics_follow_config_resolution_and_fov(config, tmp_path):
 
 
 def test_factory_intrinsics_override_nominal_fov(config, tmp_path):
+    config["wrist_camera"]["color_intrinsics"] = dict(width=1280, height=720, fx=923.8, fy=923.6, cx=622.9, cy=351.8)
     config["wrist_camera"].pop("color_fov_deg")
     wrist = build(config, tmp_path)["cameras"]["wrist"]
     k = wrist["intrinsics"]
@@ -410,15 +411,14 @@ def test_shipped_config_has_the_wrist_camera_only_on_the_rg2_bracket():
     assert "offset_in_tool0_m" not in wrist and "rotation_in_tool0_deg" not in wrist     # derived, never typed
     x, y, z = wrist["offset_in_rg2_m"]
     # Off the RG2's back face (+X; the body is 36 mm thick), clear of the plane the fingers move in, level with the body.
-    assert 0.018 + 0.0115 + 0.005 <= x <= 0.14                 # 127 mm since 2026-11-14: further out than first modelled
+    assert 0.018 + 0.0115 + 0.005 <= x <= 0.14                 # measured colour optical origin
     assert abs(y) <= 0.1 and 0.07 <= z <= 0.148
     rotation = cameras._euler_xyz_deg_to_quat(wrist["rotation_in_rg2_deg"])
     forward = cameras._rotate_vector(rotation, [0.0, 0.0, 1.0])
     tilt = wrist["rotation_in_rg2_deg"][0]
-    assert wrist["rotation_in_rg2_deg"][1:] == [0.0, -90.0] and 10.0 <= tilt <= 40.0
-    # Tilted about its long axis toward the tool axis (the camera is on the body's +X side), so it sees the fingertips.
-    assert forward == pytest.approx([-math.sin(math.radians(tilt)), 0.0, math.cos(math.radians(tilt))])
-    assert cameras._rotate_vector(rotation, [1.0, 0.0, 0.0]) == pytest.approx([0.0, -1.0, 0.0])   # long axis along the finger-opening axis
+    assert 29.0 < tilt < 30.0
+    # Preserve the measured nonzero pitch/yaw rather than rounding to a pure tilt.
+    assert forward == pytest.approx([-0.4912871342, 0.0125419270, 0.8709073727])
     assert cameras._rotate_vector(rotation, [0.0, 1.0, 0.0])[0] > 0.75           # image down is away from the gripper
     # The optical axis crosses the tool axis beyond the fingertips (0.217 m from the RG2 origin), within reach of them.
     crossing = z + x / math.tan(math.radians(tilt))
@@ -448,12 +448,12 @@ def test_topics_capture_and_fiducials_are_declared_not_verified(config, tmp_path
     assert report["fiducials"]["used"] is False
     text = json.dumps(report).lower()
     assert "apriltag" not in text
-    assert "aruco" not in text
+    assert report["cameras"]["wrist"]["calibration"]["board"]["type"] == "charuco"  # evidence only; no board authored
     assert "fiducial" in text  # only as an explicit statement that none is used
     assert any("pyrealsense2" in item for item in report["limitations"])
 
 
-def test_d415_is_the_unconfirmed_proxy_and_never_d455(config, tmp_path):
+def test_d415_uses_pack_geometry_and_never_d455(config, tmp_path):
     report = build(config, tmp_path)
     convention = report["asset_conventions"]["d415"]
     assert convention["dimensions_m"] == pytest.approx([0.099, 0.020, 0.023])
@@ -791,3 +791,23 @@ def test_capture_helper_uses_official_sensor_and_never_invents_pixels(monkeypatc
     data, info = cameras.read_frame(SensorWithData("/World/cam", resolution=(1, 1)))
     assert data == ["renderer pixels"]
     assert info == {"annotator": "rgb"}
+
+
+def test_measured_optical_pose_round_trips_through_stack_and_usd(config, tmp_path):
+    """Controller tool0 and pack flange differ; USD camera adds exactly one Rx(pi)."""
+    calibration = config["wrist_camera"]["calibration"]
+    measured = calibration["parent_from_child"]
+    wrist = build(config, tmp_path)["cameras"]["wrist"]
+    optical = wrist["optical"]
+    assert optical["translation_m"] == pytest.approx([row[3] for row in measured[:3]], abs=1e-12)
+    for column, axis in enumerate(([1, 0, 0], [0, 1, 0], [0, 0, 1])):
+        assert cameras._rotate_vector(optical["quaternion_wxyz"], axis) == pytest.approx(
+            [row[column] for row in measured[:3]], abs=1e-12)
+    assert wrist["calibration"] == calibration
+    assert len(calibration["poses_used"]) == 15
+    assert calibration["reference_bota_mounted"] is False
+    config["bota"]["mounted"] = True
+    extended = build(config, tmp_path)["cameras"]["wrist"]["optical"]
+    assert extended["translation_m"] == pytest.approx(
+        [measured[0][3], measured[1][3], measured[2][3] + .048], abs=1e-12)
+    assert same_rotation(extended["quaternion_wxyz"], optical["quaternion_wxyz"])

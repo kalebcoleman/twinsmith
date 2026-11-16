@@ -833,9 +833,16 @@
   },
   "wrist_camera": {
     "color_intrinsics": {
-      "value": {"width": 1280, "height": 720, "fx": 923.8, "fy": 923.6, "cx": 622.9, "cy": 351.8},
-      "status": "unconfirmed",
-      "source": "D415 factory colour intrinsics printed by the lab calibration capture on 2026-11-16, transcribed from the supplied terminal screenshot at one decimal place. Use these ahead of the nominal colour FOV. Replace with the full precision saved intrinsics when the run is exported. This is a pinhole approximation; distortion coefficients and a completed hand-eye extrinsic solve have not been imported."
+      "value": {
+        "width": 1280,
+        "height": 720,
+        "fx": 923.8001708984375,
+        "fy": 923.6292114257812,
+        "cx": 622.886474609375,
+        "cy": 351.83782958984375
+      },
+      "status": "confirmed",
+      "source": "Full-precision factory COLOR intrinsics from the 2026-11-16 capture intrinsics.json; inverse_brown_conrady reports five zero distortion coefficients. These values supersede nominal FOV. Intrinsics file SHA256 4387fe4b66c1c75be365a42543d672c6e4a4f68d9f36e9096f321c0f1492fd80."
     },
     "model": {
       "value": "Intel RealSense D415",
@@ -865,7 +872,7 @@
         720
       ],
       "status": "confirmed",
-      "source": "The lab calibration capture on 2026-11-16 opens the wrist D415 colour stream at 1280x720, matching Max's merged_localization.py. The printed factory intrinsics are recorded in color_intrinsics at screenshot precision."
+      "source": "1280 x 720 colour capture mode recorded in the 2026-11-16 calibration intrinsics.json."
     },
     "clipping_range_m": {
       "value": [
@@ -877,12 +884,12 @@
     },
     "offset_in_rg2_m": {
       "value": [
-        0.127,
-        0.035,
-        0.102
+        0.08742378344884799,
+        0.0011915213556659106,
+        0.09273948509468993
       ],
-      "status": "unconfirmed",
-      "source": "Unconfirmed, estimated from photo and from Kaleb's two corrections on 2026-11-14 to the first comparison image, then one photo. (1) 'The camera is in line with the gripper', not off to one side: the D415's body is centred on the gripper's mid-plane, so the optical origin (the colour sensor) is 35 mm along the finger-opening axis, +Y of the RG2 body frame. (2) The real camera is 'further from the robot and higher up', on a longer arm than the first model had. With the sideways position fixed at zero, the photo of the real bracket (runs/ur5e-rg2-real2sim/reference/real_wrist_bracket.jpg in the workspace, not in this repository) puts the body's centre 127 mm behind the tool axis (two fits agree within 3 mm; it was 66 mm) and between 20 and 60 mm from the RG2 body frame's origin along the approach axis (it was 117 mm). This value is 127 mm behind the tool axis and 102 mm along the approach axis: the distance from the fit, and the height as far toward the wrist as the bracket model's arm shape allows (a plate level with or above the collar needs a different arm). So the modelled camera is still 40 to 80 mm lower than the fit says. PROVISIONAL: Kaleb will take better photos and hopes to get the bracket's own CAD file from Aldrin; replace all three numbers from those. Whether the body or the lens is the centred point is not measured."
+      "status": "confirmed",
+      "source": "Measured estimate from 2026-11-16 ChArUco hand-eye fit (15 views). Converted from UR controller flange/tool0-from-COLOR_OPTICAL through the shipped RG2 stack (no Bota); see calibration for frames, hashes and accuracy limits. Not independently validated metric accuracy."
     },
     "offset_in_tool0_alternatives_m": {
       "value": {
@@ -907,12 +914,12 @@
     },
     "rotation_in_rg2_deg": {
       "value": [
-        39.0,
-        0.0,
-        -90.0
+        29.42373343302855,
+        -0.881226331397599,
+        -89.90040720811024
       ],
-      "status": "unconfirmed",
-      "source": "Unconfirmed, estimated from photo: one photo of the real bracket taken from below (Kaleb, 2026-11-14; runs/ur5e-rg2-real2sim/reference/real_wrist_bracket.jpg in the workspace, not in this repository). Extrinsic XYZ degrees in the RG2 body frame: [tilt, 0, -90]. With no tilt the camera looks along the gripper's approach axis (+Z) with its long axis along the finger-opening axis (Y): optical +x = RG2 -Y and optical +y (image down) = RG2 +X, away from the gripper, so the gripper is toward the top of the image. The first angle tilts the camera about its long axis so the optical axis leans toward the tool axis: 39 degrees. PROVISIONAL, and no longer the photo's own reading: the tilt was first fitted at 25 degrees (uncertainty about 8) with the camera 66 mm behind the tool axis, from the visible width of the camera's vent-slot side against its front and the direction of the plate's top edge. On 2026-11-14 the camera was moved to 127 mm behind the tool axis (offset_in_rg2_m), and at the height the bracket model allows a 25 degree tilt would look past the fingertips; 39 degrees keeps the optical axis crossing the tool axis at the same point as before, 40 mm beyond the fingertips, so the fingertips stay in the upper part of the image. If the real camera is higher up, as the photo fit says, 25 degrees does the same there. Measure the angle between the plate and the RG2's back face. The 180 degree turn about the optical axis (gripper toward the top) is read from the lens order on the glass (the colour sensor and left imager are at the +Y end), the USB-C cable leaving the other end and the unbroken row of vent slots on the side facing the gripper (the top of the D415: the underside has the 1/4-20 hole, https://www.realsenseai.com/wp-content/uploads/2023/10/Intel-RealSense-D400-Series-Datasheet-September-2023.pdf figure 10-8). The USD camera looks along -Z, so the builder adds Rx(180) internally."
+      "status": "confirmed",
+      "source": "Measured estimate from the same full-precision hand-eye matrix; extrinsic XYZ degrees in the RG2 frame, retaining its small pitch and yaw terms. USD camera Rx(180) is applied separately. See calibration for accuracy limits."
     },
     "mount_position": {
       "value": "clamped to the RG2 body, off its back face",
@@ -922,7 +929,7 @@
     "bracket_mass_kg": {
       "value": 0.1,
       "status": "unconfirmed",
-      "source": "Estimate, weigh it with its screws: the model in exts/workcell/cad/rg2_camera_bracket.py has 99.1 cm3 of solid (123 g in solid PLA at 1.24 g/cm3); about 80 g as printed with infill, plus four M4 bolts and nuts (about 20 g). Added to the RG2 body's mass in the simulation, at bracket_cog_in_rg2_m, so the bracket and the camera are in the simulated force/torque reading as they are on the real arm."
+      "source": "Unmeasured estimate: 80 g printed plastic plus 20 g cross bolts/nuts. The v4 model contains 105.21 cm3 of material; print infill and cable load are unknown. Weigh the actual mount."
     },
     "camera_mass_kg": {
       "value": 0.064,
@@ -935,9 +942,135 @@
       "source": "Proposed: realsense2_camera with camera_namespace and camera_name both set to this. Max's localizer reads the camera through pyrealsense2, not ROS topics."
     },
     "calibration": {
-      "value": "factory colour intrinsics at screenshot precision; ChArUco hand-eye calibration pending",
-      "status": "unconfirmed",
-      "source": "Lab capture on 2026-11-16 uses an 8 x 6 ChArUco board with 30 mm squares, 22 mm markers and DICT_7X7_50. No completed hand-eye result has been imported. The new side photos and wrist image challenge the provisional mount pose, especially its assumed body-centred lateral placement; do not treat it as calibrated."
+      "value": {
+        "date": "2026-11-16",
+        "method": "refined",
+        "parent_frame": "UR controller flange/tool0: +Z out of flange (not pack flange +X)",
+        "child_frame": "COLOR optical: OpenCV +X right, +Y down, +Z forward; not housing or USD camera",
+        "parent_from_child": [
+          [
+            0.9998802149740479,
+            -0.009069496727622351,
+            -0.01254192698748479,
+            -0.0011915213556659104
+          ],
+          [
+            0.0017380156671700881,
+            0.8709959420434676,
+            -0.49128713421516845,
+            0.08742378344884798
+          ],
+          [
+            0.01537969456759214,
+            0.49120648730744576,
+            0.8709073726993518,
+            0.09023948509468992
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "reference_rg2_in_tool0": {
+          "translation_m": [
+            0.0,
+            3.574918139293004e-18,
+            -0.002500000000000004
+          ],
+          "quaternion_wxyz": [
+            -0.7071067811865476,
+            0.0,
+            0.0,
+            -0.7071067811865476
+          ]
+        },
+        "reference_bota_mounted": false,
+        "tcp_offset_m_rad": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "tcp_offset_source": "typed from the pendant",
+        "rail_mm": 655.0,
+        "board": {
+          "type": "charuco",
+          "squares_x": 8,
+          "squares_y": 6,
+          "square_mm": 30.0,
+          "marker_mm": 22.0,
+          "dictionary": "DICT_7X7_50"
+        },
+        "poses_used": [
+          "images/pose_01.png",
+          "images/pose_02.png",
+          "images/pose_03.png",
+          "images/pose_04.png",
+          "images/pose_05.png",
+          "images/pose_06.png",
+          "images/pose_07.png",
+          "images/pose_08.png",
+          "images/pose_09.png",
+          "images/pose_10.png",
+          "images/pose_11.png",
+          "images/pose_12.png",
+          "images/pose_13.png",
+          "images/pose_14.png",
+          "images/pose_15.png"
+        ],
+        "quality": {
+          "reprojection_px": 0.8617921471595764,
+          "board_spread_mm": {
+            "rms": 1.7000097557467835,
+            "max": 3.8269626951012987
+          },
+          "board_spread_deg": {
+            "rms": 0.42717436872015846,
+            "max": 0.6820726651342419
+          },
+          "per_pose_px": [
+            0.7515357136726379,
+            0.6818578243255615,
+            0.7688267230987549,
+            0.7199573516845703,
+            0.6349009275436401,
+            1.0238362550735474,
+            1.3135521411895752,
+            0.6364823579788208,
+            0.6797967553138733,
+            0.9055432081222534,
+            0.7318140268325806,
+            1.4811646938323975,
+            0.5872610807418823,
+            0.6276596188545227,
+            0.8099775314331055
+          ],
+          "started_from": "tsai"
+        },
+        "classical_methods_agreement": {
+          "mm": 1.1507460177912487,
+          "deg": 0.026517049125414808
+        },
+        "classical_translation_z_m": {
+          "tsai": 0.07958630536366947,
+          "park": 0.07940467742000573,
+          "daniilidis": 0.07871900194548527
+        },
+        "dataset_archive_sha256": "6f93a14106dedcdaad59ad2eb8f66db8316169a5343ec1001d2e459f39201b28",
+        "results_sha256": "3bd307174722463010fa977a9b0e4d2856f7c50157f6632a21272c563be5d18b",
+        "limitations": [
+          "In-sample fit; board printed scale and flatness are not independently verified.",
+          "Classical methods give about 79 mm flange Z while refinement gives 90 mm; classical agreement is not accuracy.",
+          "Leave-one-view-out refits initialized from full fit: median held-out 0.779 px, maximum 1.714 px (pose 12), maximum transform change 0.915 mm / 0.103 degrees. Same-session robustness, not independent accuracy or global convergence.",
+          "No calibration images excluded. Housing and bracket geometry are modeled separately; do not adjust this optical pose to hide mesh errors."
+        ]
+      },
+      "status": "confirmed",
+      "source": "Recorded calibration evidence, not a claim of millimetric accuracy. Original images, controller TCP/joints, board, intrinsics and full results are in external run handeye_2026-11-16_113647, verified against its manifest and archive hash."
     },
     "mass_kg": {
       "value": 0.064,
@@ -946,18 +1079,18 @@
     },
     "cog_in_rg2_m": {
       "value": [
-        0.1271,
-        0.0,
-        0.1018
+        0.08757,
+        -0.03375,
+        0.09312000000000001
       ],
       "status": "unconfirmed",
       "source": "The centre of the D415's body at the configured pose (the bracket model's report, camera.body_centre_mm, in the RG2 body frame); the body is taken as of one density. It follows offset_in_rg2_m and rotation_in_rg2_deg: a test compares it with the pack."
     },
     "bracket_cog_in_rg2_m": {
       "value": [
-        0.0194,
-        -0.0018,
-        0.0866
+        0.013801195323638433,
+        -0.006306933561448531,
+        0.08628374793270602
       ],
       "status": "unconfirmed",
       "source": "Centre of volume of the two printed pieces (the bracket model's report) with the four cross bolts, in the RG2 body frame; one density assumed."
@@ -1198,9 +1331,9 @@
       "source": "Kaleb, 2026-11-14: the base cell is the robot, gripper stack, wrist camera, bench and mounting hardware only; task objects are separate packs. Built from ur5e-jenga-workcell/v2 by scripts/workcell_split_packs.py."
     },
     "version": {
-      "value": "v3",
+      "value": "v4",
       "status": "confirmed",
-      "source": "v2 with the wrist bracket replaced by a parametric copy of the real printed bracket on the RG2 (exts/workcell/cad/rg2_camera_bracket.py), built by scripts/workcell_bracket_assets.py. v2 was v1 with RealSense's own D415 mesh and a placeholder bracket (scripts/workcell_camera_assets.py)."
+      "source": "ur5e-workcell/v4: v3 robot/bench assets with the wrist bracket rebuilt around the 2026-11-16 measured optical pose (scripts/workcell_calibrated_camera_assets.py)."
     }
   },
   "assets": {
