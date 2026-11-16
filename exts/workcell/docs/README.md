@@ -14,7 +14,7 @@ workcell integration provides four grouped tools and nine actions:
 | `workcell__perception` | `status` |
 | `workcell__jenga` | `build`, `status` |
 
-`quick_start` resolves the external `ur5e-workcell/v3` pack and builds a stopped
+`quick_start` resolves the external `ur5e-workcell/v4` pack and builds a stopped
 scene on the session's engine, PhysX or Newton. `physics` mode uses gravity; `mirror_real` uses zero gravity (PhysX only)
 but does not synchronize with hardware. An unsaved stage is replaced only with explicit consent.
 `shutdown` releases workcell state without clearing the stage. Robot, perception and
@@ -62,6 +62,6 @@ restoring realized initial poses without resetting velocities or solver state.
 - Asset policy: [asset packs](../../../docs/ASSET-PACKS.md)
 
 The repository ships no pack binaries. Set `TWINSMITH_ASSET_ROOT` to override the asset
-root; the loader appends `ur5e-workcell/v3` (the pack and version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
+root; the loader appends `ur5e-workcell/v4` (the pack and version in `config/lab_hardware.json`). Configuration uses logical asset IDs,
 not file paths or a legacy-store fallback. Preserve the manifest, provenance, hashes and
 dependency checks described in the workcell README when creating a private pack.

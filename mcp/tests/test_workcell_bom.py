@@ -12,7 +12,7 @@ _LOADER = importlib.util.spec_from_file_location("workcell_asset_pack", WORKCELL
 asset_pack = importlib.util.module_from_spec(_LOADER)
 _LOADER.loader.exec_module(asset_pack)
 ASSET_ROOT = asset_pack.default_root()    # the work cell's own order: the variable, then <workspace>/assets
-PRIVATE_PACK = ASSET_ROOT / "ur5e-workcell/v3"      # the version config/lab_hardware.json pins
+PRIVATE_PACK = ASSET_ROOT / "ur5e-workcell/v4"      # the version config/lab_hardware.json pins
 TASK_PACK = ASSET_ROOT / "jenga/v1"
 TASKS = ROOT / "exts/workcell/tasks"
 SPEC = importlib.util.spec_from_file_location(
@@ -270,7 +270,7 @@ def test_manifest_checks_schema_hashes_and_bom_coverage(tmp_path):
 def test_installed_private_pack_matches_bom_and_hashes():
     report = bom.verify_manifest(PRIVATE_PACK / "pack.yaml", rows=bom.load_bom(),
                                  root=PRIVATE_PACK, expected_id="ur5e-workcell",
-                                 expected_version="v3")
+                                 expected_version="v4")
     assert report["hashes_verified"] and report["files"] == 26
     assert "materials" in report["asset_ids"] and not {"jenga_block", "finger_pad"} & set(report["asset_ids"])
     task = bom.verify_manifest(TASK_PACK / "pack.yaml", rows=bom.load_bom(TASKS / "jenga_tower.bom.csv"),

@@ -69,8 +69,12 @@ Everything else below is rebuilt from this repository and public sources.
 6. **Asset packs.** Restore `ur5e-jenga-workcell/v2` from your backup into `<workspace>/assets/`, then build the
    packs the cell uses. Every script only reads its source and leaves an existing pack alone. The second one
    downloads RealSense's D415 mesh (pinned commit, checked by SHA-256) and runs FreeCAD. The third builds
-   `ur5e-workcell/v3`, the pack the cell reads, from `v2` and the vendors' three STEP files (each checked by SHA-256);
-   it runs FreeCAD for about ten minutes.
+   `ur5e-workcell/v3`, the source of the calibrated pack, from `v2` and the vendors' three STEP files (each checked by SHA-256);
+   it runs FreeCAD for about ten minutes. Its wrist bracket is v3's own: the frozen model
+   `exts/workcell/cad/rg2_camera_bracket_v3.py` at v3's photo-estimated camera pose, which the script pins, not the
+   measured pose now in the configuration. A rebuilt v3 has the same geometry as the first one but not the same file
+   hashes (FreeCAD writes a time into each STEP file). The fourth copies v3 into v4 and rebuilds only the camera bracket
+   around the measured optical pose, using FreeCAD without another download.
 
    ```bash
    cd mcp
@@ -78,7 +82,8 @@ Everything else below is rebuilt from this repository and public sources.
    uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_camera_assets.py
    export TWINSMITH_RG2_STEP=<file> TWINSMITH_QC_STEP=<file> TWINSMITH_BOTA_STEP=<file>
    uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_bracket_assets.py
-   for pack in ur5e-workcell/v3 jenga/v1; do
+   uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/workcell_calibrated_camera_assets.py
+   for pack in ur5e-workcell/v4 jenga/v1; do
      uv run --locked --isolated --python 3.12 --extra scene-test python ../scripts/assets.py doctor "$pack"
    done
    cd ..
