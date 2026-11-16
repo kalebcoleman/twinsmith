@@ -46,6 +46,10 @@ CEILING_M = 0.25                # above this it is not on the table: the gripper
 CAP_M = 0.010                   # a height disagreement counts up to this much
 TOLERANCE_M = 0.004             # heights this close agree
 MAX_FRAMES = 5
+# A clip with a camera pose is measured in that pose's frame, whose z = 0 is meant to be the table top. A real camera's
+# pose and depth put the table a few millimetres off that, and tilted: heights are taken from the table the camera
+# sees instead, when it is within these bounds of z = 0. Beyond them the frame is kept as given and the report says so.
+TABLE_BIAS_M, TABLE_TILT_DEG, TABLE_POINTS = 0.010, 1.0, 2000
 # Costs are 0 (perfect) to 1. A match needs a shape cost under SHAPE_MAX; colour is weighed in to choose among pieces.
 SHAPE_MAX, COLOUR_WEIGHT, COLOUR_MAX, MARGIN = 0.30, 0.6, 0.4, 0.08
 SLOT_AGREE, SLOT_CELLS = 0.7, 25
@@ -142,6 +146,7 @@ class Rest:
             self.heights[a[0]:b[0], a[1]:b[1]] = np.fmax(patch, centre[2] + half[2] - low[2])
         filled = np.argwhere(~np.isnan(self.heights))
         self.area = len(filled) * CELL * CELL
+        self.top_area = int((self.heights >= np.nanmax(self.heights) - TOLERANCE_M).sum()) * CELL * CELL      # of its highest level
         self.centroid = low[:2] + (filled.mean(0) + 0.5) * CELL
         self.label = "flat" if self.height < shape.sizes[0] + 1e-4 else "on end" if self.height > shape.sizes[2] - 1e-4 else "on its side"
         foot = [(c, h) for c, h in placed if c[2] - h[2] < low[2] + 1e-4]
@@ -297,6 +302,23 @@ def _table_frame(points):
     return pose
 
 
+def _table_plane(points):
+    """The table top among points that are in no mask: ``(a, b, c)`` of z = a x + b y + c fitted to the points within
+    3 mm of it, starting level at their median height, and how many points that is. None when too few are near z = 0."""
+    near = points[np.abs(points[:, 2]) < 2 * TABLE_BIAS_M]
+    if len(near) < TABLE_POINTS:
+        return None
+    if len(near) > 60000:
+        near = near[np.random.default_rng(0).choice(len(near), 60000, replace=False)]
+    plane, design = np.array([0.0, 0.0, float(np.median(near[:, 2]))]), np.column_stack([near[:, :2], np.ones(len(near))])
+    for _ in range(5):
+        close = np.abs(near[:, 2] - design @ plane) < 0.003
+        if close.sum() < TABLE_POINTS:
+            return None
+        plane = np.linalg.lstsq(design[close], near[close, 2], rcond=None)[0]
+    return plane, int(close.sum())
+
+
 class Scan:
     """What one look holds: ``objects`` (each a segment's top surface on the height grid, its colour and its name
     ``tag:id``), the grid itself (``height``, ``colour`` and ``owner`` per cell) and the cameras that looked."""
@@ -338,6 +360,26 @@ class Scan:
                 files = sorted((run / tag).glob("labels_*.png"))
                 labels = np.asarray(Image.open(files[min(index, len(files) - 1)]))
                 masks += [(f"{tag}:{i}", labels == i) for i in np.unique(labels) if i]
+            if self.frame == "world":                                    # heights from the table the camera sees
+                covered = np.zeros(metres.shape, dtype=bool)
+                for _, mask in masks:
+                    covered |= mask
+                found, reference = _table_plane(world[valid & ~covered]), {"applied": False}
+                if found is None:
+                    reference["why"] = f"fewer than {TABLE_POINTS} points of bare table within {2 * TABLE_BIAS_M * 1000:g} mm of the frame's z = 0"
+                else:
+                    (a, b, c), count = found
+                    under = world[valid][:, :2].mean(0)                  # the middle of what the camera sees
+                    reference.update(height_mm=round(float(a * under[0] + b * under[1] + c) * 1000, 2),
+                                     tilt_deg=round(math.degrees(math.atan(math.hypot(a, b))), 3), points=count)
+                    if abs(reference["height_mm"]) > TABLE_BIAS_M * 1000 or reference["tilt_deg"] > TABLE_TILT_DEG:
+                        reference["why"] = (f"the table seen is more than {TABLE_BIAS_M * 1000:g} mm or {TABLE_TILT_DEG:g} degrees from the "
+                                            "frame's z = 0: the camera pose or the depth is off by more than a bias")
+                    else:
+                        reference["applied"] = True
+                        world = world - np.stack([np.zeros_like(metres), np.zeros_like(metres), a * world[..., 0] + b * world[..., 1] + c], -1)
+                if index == picked[0]:
+                    self.reference = reference
             step, level = np.zeros(metres.shape), ndimage.median_filter(world[..., 2], size=3)
             for axis in (0, 1):                                         # the height change to the neighbouring pixels
                 change = np.abs(np.diff(level, axis=axis))
@@ -368,7 +410,8 @@ class Scan:
                 flat = world[valid & ~taken][:, 2]
                 flat = flat[np.abs(flat) < 0.02]
                 self.table = {"blind_percent": round(100 * float(self.cameras[-1]["blind"].mean()), 1), "points": int(len(flat)), "median_height_mm": round(float(np.median(flat)) * 1000, 2) if len(flat) else None,
-                              "spread_mm": round(float(np.percentile(flat, 84) - np.percentile(flat, 16)) * 500, 2) if len(flat) else None}
+                              "spread_mm": round(float(np.percentile(flat, 84) - np.percentile(flat, 16)) * 500, 2) if len(flat) else None,
+                              **({"reference": self.reference} if self.frame == "world" else {})}
         everything = np.concatenate([points for parts in gathered.values() for points, _ in parts]) if gathered else np.zeros((1, 3))
         self.origin = everything[:, :2].min(0) - 0.05
         shape = np.ceil((everything[:, :2].max(0) + 0.05 - self.origin) / CELL).astype(int)
@@ -389,6 +432,7 @@ class Scan:
                 return None, tint
             z = top[filled[:, 0], filled[:, 1]]
             return {"name": name, "cells": filled, "xy": self.origin + (filled + 0.5) * CELL, "z": z, "area": len(filled) * CELL * CELL,
+                    "top_area": int((z >= np.percentile(z, 90) - TOLERANCE_M).sum()) * CELL * CELL,
                     # Of its upper surface: side faces, which a mask also covers, are lit differently.
                     "colour": np.median(tint[filled[:, 0], filled[:, 1]][z >= np.percentile(z, 90) - 1.5 * TOLERANCE_M], axis=0),
                     "centroid": (self.origin + (filled + 0.5) * CELL).mean(0)}, tint
@@ -470,7 +514,11 @@ def fit(scan, item, shape):
     found = []
     for rest in shape.rests:
         best = None
-        if item["area"] > 1.3 * rest.area + 2e-4 or item["area"] < 0.12 * rest.area:
+        # Too big to be this shape lying this way: by its whole footprint and by its upper surface alone. A camera that
+        # looks at an angle also sees the piece's walls, and a depth camera draws a skirt of mixed pixels down every
+        # edge; on a thin piece those add half again to the footprint, and nothing to the upper surface.
+        if (item["area"] > 1.3 * rest.area + 2e-4 and item.get("top_area", item["area"]) > 1.3 * rest.top_area + 2e-4) \
+                or item["area"] < 0.12 * rest.area:
             continue
         rng = np.random.default_rng(0)
         some, most = (rng.choice(len(item["z"]), min(len(item["z"]), count), replace=False) for count in (700, 2500))
