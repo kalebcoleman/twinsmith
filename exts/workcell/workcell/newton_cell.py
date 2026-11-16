@@ -20,6 +20,7 @@ except ImportError:  # loaded by file path in host tests
     _spec.loader.exec_module(rail_axis)
 
 DRIVE_KEYS = {"stiffness_nm_per_rad", "damping_nms_per_rad", "armature_kgm2"}
+CONTACT_KEYS = {"solref", "solimp", "solmix"}
 ARM_JOINTS = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
 
 
@@ -46,7 +47,34 @@ def validate(config):
         _number(values["stiffness_nm_per_rad"], f"newton.drives.{joint}.stiffness_nm_per_rad")
         _number(values["damping_nms_per_rad"], f"newton.drives.{joint}.damping_nms_per_rad", positive=False)
         _number(values["armature_kgm2"], f"newton.drives.{joint}.armature_kgm2")
+    fingertip_contact(config)
     return drives
+
+
+def fingertip_contact(config):
+    """``fingertips.newton_contact``, checked: MuJoCo's contact softness for the fingertip colliders, or None when the
+    config has none (the solver's defaults then apply). ``solref`` is (time constant in seconds, damping ratio); the
+    time constant may not be under two steps, where the solver would clamp it. ``solimp`` is (impedance at first
+    touch, impedance at full depth, depth of that change in metres, midpoint, power); ``solmix`` weighs these values
+    against the other body's."""
+    section = config.get("fingertips")
+    values = section.get("newton_contact") if isinstance(section, dict) else None
+    if values is None:
+        return None
+    if not isinstance(values, dict) or set(values) != CONTACT_KEYS:
+        raise ValueError(f"fingertips.newton_contact needs exactly {sorted(CONTACT_KEYS)}")
+    solref, solimp = values["solref"], values["solimp"]
+    if not isinstance(solref, (list, tuple)) or len(solref) != 2 or not isinstance(solimp, (list, tuple)) or len(solimp) != 5:
+        raise ValueError("fingertips.newton_contact: solref has 2 numbers and solimp has 5")
+    for index, value in enumerate([*solref, *solimp]):
+        _number(value, f"fingertips.newton_contact value {index}")
+    _number(values["solmix"], "fingertips.newton_contact.solmix")
+    least = 2.0 / _number(config["newton"]["physics_hz"], "newton.physics_hz")
+    if solref[0] < least - 1e-12:
+        raise ValueError(f"fingertips.newton_contact.solref's time constant {solref[0]} s is under two steps ({least:g} s)")
+    if not 0 < solimp[0] <= solimp[1] < 1 or not 0 < solimp[3] < 1 or solimp[4] < 1:
+        raise ValueError("fingertips.newton_contact.solimp needs 0 < dmin <= dmax < 1, a midpoint between 0 and 1 and a power of at least 1")
+    return {"solref": [float(v) for v in solref], "solimp": [float(v) for v in solimp], "solmix": float(values["solmix"])}
 
 
 def stability(drives, rate_hz):
@@ -69,7 +97,7 @@ def prepare(stage, config, assembly_path, timeline):
     from sim_tools.newton_support import apply_buffers, collision_settings, prepare_buffers, scene_settings
 
     drives = validate(config)
-    newton = config["newton"]
+    newton, pads = config["newton"], fingertip_contact(config)
     scene = stage.GetPrimAtPath("/World/PhysicsScene")
     settings = scene_settings(scene, newton["physics_hz"], tower=True)
     impratio = scene.GetAttribute("mjc:option:impratio")
@@ -86,11 +114,19 @@ def prepare(stage, config, assembly_path, timeline):
                 if static and static.HasAuthoredValue():   # unauthored reads the default 0.0: keep dynamic then
                     api.CreateDynamicFrictionAttr().Set(float(static.Get()))
                     newton_mu += 1
-    colliders = 0
+    colliders, stiff_pads = 0, []
     for prim in stage.Traverse():
         if prim.HasAPI(UsdPhysics.CollisionAPI):
             collision_settings(prim)
             colliders += 1
+            # The gripper's own fingertips (scene.fingertip_friction finds them the same way): how far they give way.
+            if pads and prim.GetName() == "fingertip" and str(prim.GetPath()).startswith(str(assembly_path) + "/"):
+                prim.CreateAttribute("mjc:solref", Sdf.ValueTypeNames.DoubleArray).Set(pads["solref"])
+                prim.CreateAttribute("mjc:solimp", Sdf.ValueTypeNames.DoubleArray).Set(pads["solimp"])
+                prim.CreateAttribute("mjc:solmix", Sdf.ValueTypeNames.Double).Set(pads["solmix"])
+                stiff_pads.append(str(prim.GetPath()))
+    if pads and len(stiff_pads) != 2:
+        raise ValueError(f"fingertips.newton_contact is configured, but the assembly has {len(stiff_pads)} fingertip colliders, not 2")
     joints = {prim.GetName(): prim for prim in Usd.PrimRange(stage.GetPrimAtPath(assembly_path)) if prim.IsA(UsdPhysics.Joint)}
     authored = {}
     for name, d in drives.items():
@@ -124,4 +160,5 @@ def prepare(stage, config, assembly_path, timeline):
     buffers["link_incoming_joint_force"] = True
     return dict(settings=settings, colliders_with_contact_gap=colliders, drives=authored, buffers=buffers,
                 materials_with_static_mu=newton_mu,
+                **({"fingertip_contact": dict(pads, colliders=stiff_pads)} if pads else {}),
                 stability=margins, **({"rail_drive": rail_drive} if rail_drive else {}))
