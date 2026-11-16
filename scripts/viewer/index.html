@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puzzle build viewer</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<header id="bar">
+  <h1 id="title"></h1>
+  <span id="badge"></span>
+  <button id="play" type="button">Play</button>
+  <label>Speed <select id="speed"><option>1</option><option selected>3</option><option>6</option><option>12</option></select>x</label>
+  <input id="scrub" type="range" min="0" step="0.05" value="0" aria-label="Time in the build">
+  <span id="clock"></span>
+  <label><input id="ahead" type="checkbox" checked> play each lookahead before its step</label>
+</header>
+<main id="panels"></main>
+<script src="run.js"></script>
+<script src="viewer.js"></script>
+</body>
+</html>

@@ -736,7 +736,7 @@ On Sim 6.2 one GPU Newton exact-step probe returned `STEP_TIMING_MISMATCH`; insp
 do not assume exact stepping succeeds on every Newton scene. See [compatibility](COMPATIBILITY.md#target-engine).
 The likely cause is two timesteps on one scene; see [Newton in the generic tools](#newton-in-the-generic-tools).
 The older three releases need a scoped internal playing-flag adapter, restored even on error.
-Direct Newton steps invalidate captured CUDA graphs to avoid stale dt/state buffers.
+On 6.2.0.0 a paused Newton step uses the release's own captured CUDA graph (0.45 ms a step against 7.6 ms on the work cell, same result); on older releases direct Newton steps invalidate captured CUDA graphs to avoid stale dt/state buffers.
 Newton requires meter stages and a qualified extension/library stack. Paused saves copy up to
 256 runtime rigid-body poses into a private flattened export; the live/source USD stays unchanged.
 This is a pose snapshot, not a solver checkpoint. Runtime mass/COM velocities are optional via
