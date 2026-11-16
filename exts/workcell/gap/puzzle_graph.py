@@ -119,10 +119,13 @@ def author(plan, folder):
     place = Subgraph(name="place_base", skill="placing-puzzle-base")
     place.add_node("slide", type="tool", tool="workcell.place_base", inputs={"piece": base})
     place.add_node("look", type="tool", tool="workcell.rescan", inputs={"piece": base})
-    place.add_exit("placed")
+    for outcome in ("placed", "retry"):
+        place.add_exit(outcome)
+        place.add_edge(outcome, "END")
     place.set_on_error("failed")
-    for a, b in (("START", "slide"), ("slide", "look"), ("look", "placed"), ("placed", "END")):
+    for a, b in (("START", "slide"), ("slide", "look")):
         place.add_edge(a, b)
+    place.add_conditional_edges("look", {"placed": "placed", "retry": "retry"}, router_field="result")
 
     count = second_opinion("count_parts", "vlm.query", COUNT_PROMPT, "cross_check.py")
     judge = second_opinion("judge_assembly", "vlm.query_yes_no", JUDGE_PROMPT.format(count=len(pieces)))
@@ -136,7 +139,7 @@ def author(plan, folder):
     wf.add_conditional_edges("locate", {"located": "count_parts", "failed": "abort"}, router_field="exit")
     wf.add_conditional_edges("count_parts", {"answered": "place_base", "unanswered": "place_base"}, router_field="exit")
     following = [sg.name for sg in steps] + ["judge_assembly"]
-    wf.add_conditional_edges("place_base", {"placed": following[0], "failed": "abort"}, router_field="exit")
+    wf.add_conditional_edges("place_base", {"placed": following[0], "retry": "place_base", "failed": "abort"}, router_field="exit")
     for sg, after in zip(steps, following[1:]):
         wf.add_conditional_edges(sg.name, {"placed": after, "retry": sg.name, **{outcome: "abort" for outcome in ("aborted", "missed", "empty", "failed")}},
                                  router_field="exit")

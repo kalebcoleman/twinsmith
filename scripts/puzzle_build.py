@@ -54,6 +54,8 @@ PUZZLE = "/World/Puzzle"
 HOVER_M, LIFT_M, CARRY_M, RETREAT_M, MARGIN_M = 0.10, 0.12, 0.15, 0.08, 0.02
 LOOKAHEAD_TRIES = 5
 BASE_MOVED_M, BASE_MOVED_DEG = 0.003, 2.0       # a later look that puts the base further than this from where it was: it has moved
+BASE_PLACED_M, BASE_PLACED_DEG = 0.010, 5.0     # the base is in the middle when a look finds it this near its goal
+BASE_SLIDES, BASE_NEAR_M = 2, 0.05              # it is slid at most this many times; again only from this near its goal
 TINTS = [(230, 25, 75), (60, 180, 75), (255, 225, 25), (0, 130, 200), (245, 130, 48), (145, 30, 180), (70, 240, 240), (240, 50, 230)]
 
 
@@ -97,6 +99,7 @@ class Build:
         self.paths = {name: f"{PUZZLE}/{name}" for name in self.names}
         self.estimate, self.placed, self.held, self.looks, self.marks, self.adjust, self.avoid = {}, [], None, 0, [], {}, {}
         self.metrics = {name: {"attempts": 0} for name in self.slots}
+        self.base_slides = 0                                # how many times the base has been slid to the middle
         self.ahead = False                                  # true while simulating ahead: no metric is recorded
         self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
         self.started = time.time()
@@ -118,7 +121,7 @@ class Build:
             built = self.cell.build(task, self.config["start_joint_deg"], 0.05, self.args.discard_changes)
             name, qualified = assembly.cell_pack(built.get("pack"))
             if not qualified and not self.args.unqualified_cell_pack:
-                raise SystemExit(f"The cell was built from {name}, but the gripper and camera keep-out boxes, the layouts' blind region and "
+                raise SystemExit(f"The cell was built from {name}, but the gripper and camera keep-out boxes, what the gripper hides from the camera and "
                                  f"the measured runs are of {assembly.KEEP_OUT_PACK}: a grasp checked here may put the camera into a piece. "
                                  "Pass --unqualified-cell-pack to run anyway; metrics.json then says so. The stage has been replaced.")
             if self.args.table_camera:
@@ -273,9 +276,10 @@ class Build:
         with self.log.step("release", piece, waypoints=[waypoint("rise", rise)]):
             self.cell.open_to(width + self.config["open_beyond_m"])
             self.cell.gripper_line(rise, speeds["approach_m_s"])
+        self.base_slides += 1
         self.base_goal = self.estimate[piece] = target      # where it should now be; the next look measures it
         self.mark(f"{piece} in the middle")
-        return {"result": "slid", "target": se3(target)}
+        return {"result": "slid", "target": se3(target), "slide": self.base_slides}
 
     def _grasp_plan(self, piece, hold):
         """A chosen grasp as the run's log keeps it: its definition on the CAD and which way of holding was taken."""
@@ -462,9 +466,14 @@ class Build:
         if piece == self.base:
             self.estimate.update(seen)
             metres, degrees = assembly.pose_error(self.pack, piece, self.estimate[piece], self.base_goal)
-            if metres > 0.01 or degrees > 5.0:
+            how_far = {"position_error_mm": round(metres * 1000, 2), "rotation_error_deg": round(degrees, 2)}
+            if metres > BASE_PLACED_M or degrees > BASE_PLACED_DEG:
+                # The plate slips in the fingers on its way (they hold a 7 mm island) and stops short. Where it stopped is
+                # now measured, so one more slide from there, a short one, may close the rest.
+                if self.base_slides < BASE_SLIDES and metres <= BASE_NEAR_M:
+                    return {"result": "retry", **how_far}
                 raise Refused(f"the base is {metres * 1000:.0f} mm and {degrees:.0f} degrees from the middle")
-            return {"result": "placed", "position_error_mm": round(metres * 1000, 2), "rotation_error_deg": round(degrees, 2)}
+            return {"result": "placed", **how_far}
         if self.base in seen:                               # a base with pieces in it is measured worse than the bare one was:
             metres, degrees = assembly.pose_error(self.pack, self.base, seen[self.base], self.estimate[self.base])
             if metres <= BASE_MOVED_M and degrees <= BASE_MOVED_DEG:                 # its pose is replaced only when it has moved
@@ -644,7 +653,8 @@ def main():
     pack = puzzle_scan.load_pack(config["pack"], args.colours)
     target = cell.pose(puzzle_scan.yaw_matrix(math.radians(config["base_target"]["yaw_deg"])),
                        [*config["base_target"]["position_m"], pack.shape(config["base"]).rests[0].drop])
-    layout = assembly.scatter(pack, config["base"], target, np.random.default_rng(args.seed))
+    layout = assembly.scatter(pack, config["base"], target, np.random.default_rng(args.seed),
+                              blind=assembly.hidden_on_table(config["survey"]["look_at_m"], config["survey"]["height_m"]))
     build, started = Build(args, config, pack), time.time()
     try:
         record = run(build, args, config, layout, started)

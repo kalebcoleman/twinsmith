@@ -6,9 +6,9 @@
  "rail_mm": 655.0,
  "start_joint_deg": [90, -80, 100, -110, -90, 0],
  "survey": {
-  "what": "Wrist D415 straight down, gripper closed. The camera always sees its own fingertips at the top middle of the picture.",
-  "look_at_m": [0.02, -0.432, 0.0],
-  "height_m": 0.6
+  "what": "Wrist D415 straight down, gripper closed. The camera always sees its own gripper: it fills the top middle of the picture and the fingertips end at the picture's centre, so the point looked at is just on the robot's side of the base in the middle, and nothing of the base is hidden.",
+  "look_at_m": [0.02, -0.37, 0.0],
+  "height_m": 0.72
  },
  "base_target": {
   "what": "The middle of the table. The yaw puts the forks' slots across the rail, so each fork is brought in from its own side with the gripper level; the base may also arrive half a turn round.",

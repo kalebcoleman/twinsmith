@@ -9,6 +9,7 @@ gap:
   allowed_tools: [workcell.place_base, workcell.rescan]
   exit_conditions:
     placed: The base was seen within 10 mm and 5 degrees of the middle.
+    retry: The base stopped short of that but within 50 mm; the same subgraph may run once more, from where it now is.
     failed: The way was not free, no grasp was in reach, or the base stopped somewhere else.
   produces_outputs: {}
   required_inputs: {}
@@ -27,4 +28,6 @@ gripper's force, and the arm moves in a straight line at table height, turning t
 
 ## Recommended subgraph state flow
 
-`START -> slide (workcell.place_base) -> look (workcell.rescan) -> placed -> END`, with `on_error: failed`.
+`START -> slide (workcell.place_base) -> look (workcell.rescan)`; `result: placed` -> `placed`, `retry` -> `retry`.
+`on_error: failed`. The plate slips in the fingers on its way and stops short, by 3 to 20 mm in the simulator; the look
+measures where it stopped, and `retry` routes back to this subgraph for one short slide from there.

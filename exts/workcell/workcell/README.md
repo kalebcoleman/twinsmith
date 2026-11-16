@@ -194,8 +194,9 @@ piece. It talks to one simulator bridge on this machine and cannot reach a real 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
 seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
-The keep-out boxes of the gripper and the camera (`scripts/puzzle_assembly.py`), the layouts' blind region and the
-measured runs below are of `ur5e-workcell/v3`. On a cell built from another pack the run stops after building it, unless
+The keep-out boxes of the gripper and the camera, and what the closed gripper hides in the wrist camera's own picture
+(both in `scripts/puzzle_assembly.py`), and the measured runs below are of `ur5e-workcell/v4`, the pack with the
+calibrated wrist camera. On a cell built from another pack the run stops after building it, unless
 `--unqualified-cell-pack` is given; `metrics.json` then records `cell_pack_qualified: false`, and nothing measured
 below describes that run.
 The demo's settings are `scripts/puzzle_build.json`: the puzzle, where the base goes, the speeds, and one grasp per
@@ -205,9 +206,9 @@ piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a 
 |---|---|
 | Layout | `puzzle_assembly.scatter`: the pieces flat at random inside what the wrist camera sees from the survey pose, apart from each other, the base 0.24 to 0.32 m to one side, the middle and the way there free. Built as a task by `quick_start`, once per layout |
 | Rail, then arm | The rail is parked with its own blocking move. After that only the six arm joints move, solved from the UR base where the rail has put it (read from `sim__arm(action="fk")`) with the UR5e's closed-form solution (`workcell_session.ur_ik`; its forward kinematics agree with the simulator's to 5 micrometres). A straight line is solved waypoint by waypoint, each near the one before; a large move goes to the solution nearest the posture the cell was built in, with elbow and wrist clear of the table. `sim__arm(action="ik")` solves nearest the arm's pose now and takes no seed: along a turning line its answers jumped (the arm ended 90 degrees from its targets), and after a level insertion it led the elbow onto the table |
-| Survey | Wrist D415 straight down from 0.6 m. The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
+| Survey | Wrist D415 straight down from 0.72 m, gripper closed. At the calibrated camera pose the gripper fills the top middle of the picture and its fingertips end at the picture's centre, so the point looked at is 90 mm to the robot's side of the middle of the table: the base in the middle is then wholly in view, and a layout puts no piece where the gripper hides the table (`puzzle_assembly.hidden_on_table`). The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
 | Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
-| Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers |
+| Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers. Slid, it slips in the fingers and stops short, by 3 to 20 mm: the look that follows measures where it stopped, and a base more than 10 mm (and less than 50 mm) from the middle is slid once more from there |
 | Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
 | Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
 | Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
@@ -254,27 +255,38 @@ run names the panels to show (`panels` in `run.js`), and `Viewer.load(run)` moun
 growing run shows it live and a page with other panels (a lab display) reads the same records. Neither is built yet:
 today the page is written once, when the run ends. The grip force plotted is the commanded limit, not a measurement.
 
-Measured (2026-11-16, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v3` and `puzzles/v1`, the green puzzle: a base,
+Measured (2026-11-16, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v4` and `puzzles/v1`, the green puzzle: a base,
 two bars, two forks; one run on each of three layouts; the runs, their videos and their viewers are in the puzzle
 project, not this repository):
 
-| Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Lookahead | Simulated | Wall |
-|---|---|---|---|---|---|---|---|
-| seed 5 | yes | 4 of 4 | 0.51 to 1.10 mm | 0.56, 0.86 mm | go for all, each on its first try | 173.1 s | 329 s |
-| seed 1 | yes | 4 of 4 | 0.48 to 1.08 mm | 0.92, 1.28 mm | go for all, each on its first try | 163.9 s | 331 s |
-| seed 3 | yes | 4 of 4 | 0.76 to 1.20 mm | 0.84, 2.22 mm | go for all, each on its first try | 166.4 s | 340 s |
+| Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Base after its slide | Lookahead | Simulated | Wall |
+|---|---|---|---|---|---|---|---|---|
+| seed 5 | yes | 4 of 4 | 0.28 to 0.94 mm | 0.51, 0.94 mm | 3.9 mm from the middle | go for all, each on its first try | 171.4 s | 330 s |
+| seed 1 | yes | 4 of 4 | 0.48 to 0.93 mm | 0.47, 1.36 mm | 13.3 mm, then 3.3 mm after a second slide | go for all, each on its first try | 197.6 s | 381 s |
+| seed 3 | yes | 4 of 4 | 0.74 to 1.13 mm | 0.70, 1.40 mm | 18.6 mm, then 3.2 mm after a second slide | go for all, each on its first try | 187.6 s | 373 s |
 
-All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.7 mm apart on
+All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.6 mm apart on
 the 25.9 mm bars and 19.2 to 19.5 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The
-graph ended in success three times with fifteen of fifteen checkpoints passed. The vision-language model
-(Qwen3-VL-32B, served locally) counted five parts where the scan had five and answered yes to "complete" on all three.
+graph ended in success three times; fifteen of seventeen checkpoints passed, the two that did not being the base's
+first stop in seeds 1 and 3, which the second slide put right. The vision-language model (Qwen3-VL-32B, served
+locally) counted five parts where the scan had five and answered yes to "complete" on all three.
+
+These three runs replace the ones made on `ur5e-workcell/v3` (final errors 0.48 to 1.20 mm, survey errors up to
+2.22 mm, 164 to 173 s simulated), and three things differ from them. The camera keep-out box was measured again on the
+v4 cell: the D415's body reaches 93 mm to the gripper's -x side, 72 to 108 mm to its -y side and 102 to 147 mm above
+the pad centre. The survey looks from 0.72 m in place of 0.6 m, for the reason in the table above, so a pixel is
+0.78 mm on the table, not 0.65 mm; the survey errors did not grow. And with the new hidden region seeds 1 and 3 draw
+other layouts than before, with the base 0.28 and 0.29 m from the middle: over that distance it stopped 13 and 19 mm
+short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
+was added. On v3 the same move had stopped 3 to 8 mm short and passed.
 
 What the lookahead does for a fork: picked lying flat and turned upright in the hand, it sits 2.4 to 5.6 mm from the
 grasp as defined. Lowered from the grasp as defined it jams (it did in the first simulated try of all six forks, 16 mm
 from the slot with other pieces pushed 16 to 28 mm, while the correction was only applied in a second try). Corrected
 over the slot before lowering, it seats in the first try, and the real insertion uses the same grasp.
 
-Where the wall time goes (the viewer's last panel), and what was done about it. On the same three layouts the first
+Where the wall time goes (the viewer's last panel), and what was done about it, measured on `ur5e-workcell/v3` before
+the calibrated camera. On the same three layouts the first
 measurement was 1768 to 1863 s of wall time for 166 to 175 s simulated, 10.6 times slower than real time, 84 percent
 of it inside the solver. Three changes, each checked on the three layouts, brought that to 329 to 340 s, 1.9 to 2.0
 times slower than real time:
@@ -295,7 +307,7 @@ moved by -0.66 to +0.69 mm with no bias. That is the pipeline's own repeatabilit
 unchanged code on these layouts differed by up to 0.61 mm, because a piece comes to rest anywhere within its slot's
 play, and the survey reads the symmetric base either way round from one run to the next.
 
-Seed 5 now, 329 s for 173 s simulated:
+Seed 5 then (on v3; on v4 it is 330 s for 171 s simulated), 329 s for 173 s simulated:
 
 | Seconds | Share | Spent on |
 |---|---|---|
@@ -318,7 +330,9 @@ above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from t
 said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
 run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
 layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
-against the pieces before a move; the arm's links are not. Nothing here has seen a real camera or a real robot.
+against the pieces before a move; the arm's links are not. The base slips in the fingers when slid, and why it slips
+more from one side of the table than the other was not found; the second slide corrects it and does not explain it.
+Nothing here has seen a real camera or a real robot.
 
 Machine-readable data:
 

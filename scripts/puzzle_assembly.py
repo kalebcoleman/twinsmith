@@ -27,16 +27,24 @@ import puzzle_scan
 AXES = ((0, 0, 1), (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0))    # ways out of a base, in its frame; up first
 TOUCH_M = 0.0003                # boxes this deep in each other are resting on each other, not in each other's way
 NEAR_M = 0.003                  # a piece on its way out is clear of the rest when nothing is this near
-# Keep-out boxes of the RG2 and the wrist camera, measured on the built cell (ur5e-workcell/v3) in the gripper frame:
+# Keep-out boxes of the RG2 and the wrist camera, measured on the built cell (KEEP_OUT_PACK) in the gripper frame:
 # ((x low, x high) beyond half the pad gap, (y low, y high), (z low, z high) from the pad centre), mirrored in x.
 FINGER_KEEP_OUT = (((0.0, 0.0114), (-0.0103, 0.0103), (-0.015, 0.015)),          # a fingertip pad
                    ((0.004, 0.024), (-0.012, 0.012), (-0.043, -0.016)),           # the finger link above it
                    ((-0.030, 0.026), (-0.017, 0.017), (-0.090, -0.043)))          # the knuckles
-# (x, y, z) ranges from the TCP (the pad centre with the pads together): the body with the wrist, and the camera on
-# its bracket.
+# (x, y, z) ranges from the TCP (the pad centre with the pads together): the RG2's body up to the wrist, the Quick
+# Changer and wrist 3 where they stand proud of it, the bracket's arm, and the camera on the bracket's plate. The
+# camera's optical origin is 85 mm to the gripper's -y side and 126 mm above the TCP; its body reaches 93 mm to -x.
 BODY_KEEP_OUT = (((-0.042, 0.042), (-0.038, 0.044), (-0.262, -0.070)),
-                 ((-0.058, 0.042), (-0.150, -0.027), (-0.147, -0.113)))
-KEEP_OUT_PACK = "ur5e-workcell/v3"     # the cell pack those boxes were measured on; another pack's camera sits elsewhere
+                 ((-0.049, 0.042), (-0.038, 0.047), (-0.262, -0.202)),
+                 ((-0.047, 0.042), (-0.077, -0.024), (-0.148, -0.119)),
+                 ((-0.093, 0.017), (-0.108, -0.071), (-0.148, -0.102)))
+# What the closed gripper hides in the wrist camera's own picture, on the same cell: rectangles of view tangents
+# ((x low, x high), (y low, y high)) from the optical axis, x to the picture's right and y down. The fingertips end on
+# the optical axis; the knuckles fill the top of the picture (its top edge is at -0.381).
+GRIPPER_IN_VIEW = (((-0.115, 0.153), (-0.160, 0.005)),                            # the fingers and the fingertips
+                   ((-0.235, 0.277), (-0.385, -0.160)))                           # the knuckles and the body
+KEEP_OUT_PACK = "ur5e-workcell/v4"     # the cell pack all of the above were measured on; another pack's camera sits elsewhere
 
 
 def cell_pack(built):
@@ -44,6 +52,15 @@ def cell_pack(built):
     name as ``id/version``, and whether the keep-out boxes above were measured on it."""
     name = f"{(built or {}).get('id')}/{(built or {}).get('version')}"
     return name, name == KEEP_OUT_PACK
+
+
+def hidden_on_table(look_at_m, height_m, margin_m=0.005):
+    """The parts of the table the closed gripper hides from the wrist camera looking straight down from ``height_m``
+    above ``look_at_m``, the picture's right along the world's +x and its top toward +y (the survey pose):
+    [((x low, y low), (x high, y high))], each grown by ``margin_m``."""
+    x, y = look_at_m[:2]
+    return [((x + height_m * tx[0] - margin_m, y - height_m * ty[1] - margin_m),
+             (x + height_m * tx[1] + margin_m, y - height_m * ty[0] + margin_m)) for tx, ty in GRIPPER_IN_VIEW]
 
 
 def pose(turn, at):
@@ -264,23 +281,23 @@ def path_clear(pack, base, start, target, others, margin_m=0.02):
                for at in slide_path(start, target) for name, there in others.items())
 
 
-def scatter(pack, base, target, rng, region=((-0.36, -0.64), (0.40, -0.30)), blind=((-0.10, -0.34), (0.14, -0.15)),
-            side_m=(0.24, 0.32), gap_m=0.035, tries=4000):
+def scatter(pack, base, target, rng, region=((-0.36, -0.64), (0.40, -0.30)), blind=(), side_m=(0.24, 0.32), gap_m=0.035,
+            tries=4000):
     """One puzzle's pieces lying flat at random on the table, apart from each other, with the base off to one side of
     ``target`` (its pose in the middle) and both the middle and the way there left free. ``region`` is what the wrist
-    camera sees from the survey pose and the arm reaches; ``blind`` what the camera's own fingertips hide. Returns
-    {piece: world pose} with the base first."""
+    camera sees from the survey pose and the arm reaches; ``blind`` the rectangles of it the camera's own gripper
+    hides (``hidden_on_table``), where no piece is put. Returns {piece: world pose} with the base first."""
     low, high = np.array(region[0]), np.array(region[1])
 
     def lying(name, xy):
         rest = pack.shape(name).rests[0]
         return pose(puzzle_scan.yaw_matrix(rng.uniform(0, 2 * math.pi)) @ rest.turn, [xy[0], xy[1], rest.drop])
 
-    hidden = np.array([blind[0], [blind[1][0], blind[0][1]], blind[1], [blind[0][0], blind[1][1]]])
+    hidden = [np.array([a, [b[0], a[1]], b, [a[0], b[1]]]) for a, b in blind]
 
     def inside(name, at):
-        corners = footprint(pack, name, at)
-        return (corners > low).all() and (corners < high).all() and _apart(footprint(pack, name, at, gap_m), hidden)
+        corners, grown = footprint(pack, name, at), footprint(pack, name, at, gap_m)
+        return (corners > low).all() and (corners < high).all() and all(_apart(grown, part) for part in hidden)
 
     for _ in range(tries):
         side = rng.choice([-1, 1])

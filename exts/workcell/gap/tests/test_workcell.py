@@ -75,6 +75,8 @@ def test_the_authored_graph_validates(graph, tmp_path):
     assert list(workflow["subgraphs"]) == ["locate", "count_parts", "place_base", "assemble_bar", "assemble_cap", "judge_assembly"]
     assert workflow["subgraphs"]["assemble_cap"]["skill"] == "assembling-puzzle-pieces"
     routes = workflow["conditional_edges"]
+    assert routes["place_base"]["mapping"] == {"placed": "assemble_bar", "retry": "place_base", "failed": "abort"}       # a base that stopped short is slid once more
+    assert workflow["subgraphs"]["place_base"]["conditional_edges"]["look"]["mapping"] == {"placed": "placed", "retry": "retry"}
     assert routes["assemble_bar"]["mapping"]["placed"] == "assemble_cap" and routes["assemble_bar"]["mapping"]["retry"] == "assemble_bar"
     assert routes["assemble_cap"]["mapping"]["placed"] == "judge_assembly" and routes["assemble_bar"]["mapping"]["aborted"] == "abort"
     assert sorted(p.name for p in (tmp_path / "graph/scripts").glob("*.py")) == ["cross_check.py", "verify_grip.py", "verify_reach.py"]
