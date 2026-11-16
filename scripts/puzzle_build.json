@@ -1,0 +1,51 @@
+{
+ "schema": 1,
+ "description": "The puzzle build demo: which puzzle, where the base goes, how each piece is gripped. Positions are in the cell's world frame: metres, z = 0 on the bench top, the rail along x, the table toward -y. Grasps are in each piece's own CAD frame.",
+ "pack": "puzzles/v1",
+ "base": "base3",
+ "rail_mm": 655.0,
+ "start_joint_deg": [90, -80, 100, -110, -90, 0],
+ "survey": {
+  "what": "Wrist D415 straight down, gripper closed. The camera always sees its own fingertips at the top middle of the picture.",
+  "look_at_m": [0.02, -0.432, 0.0],
+  "height_m": 0.6
+ },
+ "base_target": {
+  "what": "The middle of the table. The yaw puts the forks' slots across the rail, so each fork is brought in from its own side with the gripper level; the base may also arrive half a turn round.",
+  "position_m": [0.0, -0.46],
+  "yaw_deg": 90.0
+ },
+ "grip_force_n": 40.0,
+ "grip_force_source": "The lab's RG2 driver (RISL_onrobot_ros, custom_libraries/onrobot.py) sends force_val=400, in units of 0.1 N, with every move: 40 N, the RG2's maximum (datasheet: 3 to 40 N). Not measured on the real gripper.",
+ "open_beyond_m": 0.016,
+ "speeds": {"approach_m_s": 0.05, "insert_m_s": 0.01, "slide_m_s": 0.04, "joint_deg_s": 45.0},
+ "seated": {"position_m": 0.0015, "rotation_deg": 2.0},
+ "grasps": {
+  "base3": {
+   "what": "The centre island between the two bar slots, across its 23.1 mm width; the fingertips stand in the bar slots. The island is 7 mm high, enough to slide the plate on the table and not to lift it.",
+   "point_m": [0.0, 0.0, 0.0265], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0231
+  },
+  "line_brown": {
+   "what": "Across the bar's 25.9 mm width at its middle, the pads' lower edge 7.5 mm above the face the bar lies on: with the bar on the slot floor that is 0.5 mm above the 7 mm slot walls.",
+   "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259
+  },
+  "line_red": {
+   "what": "As line_brown.",
+   "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259
+  },
+  "fork_orange": {
+   "what": "The centre tab across its 21 mm width, from the fork's flat side: the fork is picked lying flat and turned upright in the hand, and goes into its slot with the gripper level.",
+   "point_m": [0.0, -0.0255, 0.006], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.021
+  },
+  "fork_yellow": {
+   "what": "As fork_orange.",
+   "point_m": [0.0, -0.0255, 0.006], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.021
+  }
+ },
+ "table_camera": {
+  "what": "A second camera for the video only: any camera on a tripod beyond the table's far edge. Off unless --table-camera is given; drawn on the stage for the run, not part of the ur5e-workcell pack, and no step of the build reads it.",
+  "width": 1280, "height": 720, "fx": 900.0, "fy": 900.0,
+  "position_m": [0.02, -1.12, 0.42], "look_at_m": [0.02, -0.45, 0.03]
+ },
+ "sam3_prompts": ["block=block", "plastic_block=plastic block"]
+}

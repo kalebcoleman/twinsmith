@@ -181,6 +181,78 @@ listed as `unexplained`, not posed; a U piece standing on end looks the same fro
 down, so its turn about the vertical is a guess, flagged as one; two touching pieces of one colour and one height
 under one mask stay one object. Nothing here has seen a real camera.
 
+### Building a puzzle
+
+`scripts/puzzle_build.py` has the simulated UR5e assemble one puzzle of the pack on Newton: the pieces lie loose on the
+table and the base off to one side; the robot finds them, slides the base to the middle, and picks and inserts each
+piece. It talks to one simulator bridge on this machine and cannot reach a real robot.
+
+    python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
+        --allow-concurrent-gpu --table-camera --colours <colours.json>
+
+It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
+say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
+seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
+The demo's settings are `scripts/puzzle_build.json`: the puzzle, where the base goes, the speeds, and one grasp per
+piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a width).
+
+| Step | How |
+|---|---|
+| Layout | `puzzle_assembly.scatter`: the pieces flat at random inside what the wrist camera sees from the survey pose, apart from each other, the base 0.24 to 0.32 m to one side, the middle and the way there free. Built as a task by `quick_start`, once per layout |
+| Rail, then arm | The rail is parked with its own blocking move. After that only the six arm joints move, solved from the UR base where the rail has put it (read from `sim__arm(action="fk")`) with the UR5e's closed-form solution (`workcell_session.ur_ik`; its forward kinematics agree with the simulator's to 5 micrometres). A straight line is solved waypoint by waypoint, each near the one before; a large move goes to the solution nearest the posture the cell was built in, with elbow and wrist clear of the table. `sim__arm(action="ik")` solves nearest the arm's pose now and takes no seed: along a turning line its answers jumped (the arm ended 90 degrees from its targets), and after a level insertion it led the elbow onto the table |
+| Survey | Wrist D415 straight down from 0.6 m. The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
+| Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
+| Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers |
+| Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. A try that does not seat the piece is repeated once with the grasp corrected by how the piece sat in the hand over the slot; then go or abort |
+| Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
+| Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
+
+The run is a Graph-as-Policy workflow. `exts/workcell/gap` is a skill registry (made with `gap registry init` and
+`gap skills new`): the tool bundle `workcell` (eleven tools, each a call to the running `puzzle_build.py`) and the
+skills `surveying-puzzle-pieces`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
+authors the workflow with `gap.builder`, one subgraph per skill and per piece, and runs it with `gap.execute` through a
+small connector. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
+(`verify_reach`, `verify_grip`), and after each placement a checkpoint compares the piece with its slot in the
+simulator's truth. Two more subgraphs ask the owner's vision-language model (`[planning] vlm_url`, through
+open-robot-skills' `vlm` bundle) for a second opinion: how many parts it counts after the survey, and whether the
+puzzle looks complete at the end. Those answers are recorded and decide nothing: SAM 3.1 and the CAD match do.
+The graph's trace (`<out>/trace/dag_trace.json`, `node_data/`) has every node's inputs and outputs.
+
+Outputs in `<out>`: `metrics.json` (per piece: named correctly, gripped, seated, final pose error against the CAD,
+what the lookahead said; the graph's result and checkpoints), `build.mp4` (the table camera and the wrist camera side
+by side, captioned), `key_*.png`, `look_*_masks.png` (each look with its SAM 3.1 masks) and the graph.
+
+Measured (2026-11-15, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v3` and `puzzles/v1`, the green puzzle: a base,
+two bars, two forks; one run on each of three layouts; the runs and their videos are in the puzzle project, not this
+repository):
+
+| Layout | Completed | Seated | Final error against the CAD | Survey error, median and max | Lookahead | Simulated | Wall |
+|---|---|---|---|---|---|---|---|
+| seed 5 | yes | 4 of 4 | 0.49 to 0.90 mm | 0.73, 1.00 mm | go for all; three after a second try | 175.0 s | 30 min |
+| seed 1 | yes | 4 of 4 | 0.92 to 1.27 mm | 0.92, 1.28 mm | go for all; two after a second try | 171.1 s | 29 min |
+| seed 3 | yes | 4 of 4 | 0.81 to 1.39 mm | 1.28, 2.22 mm | go for all; two after a second try | 166.3 s | 29 min |
+
+All twelve pieces were named correctly by the survey, gripped and lifted (the pads stopped 24.5 to 24.7 mm apart on
+the 25.9 mm bars and 19.2 to 19.5 mm on a fork's 21 mm tab, at 40 N), and seated within 1.5 mm and 2 degrees. The
+graph ended in success three times with fifteen of fifteen checkpoints passed; the stock reach check read 0.8 to
+1.2 mm and the grip check `held` every time. The vision-language model (Qwen3-VL-32B, served locally) counted five
+parts where the scan had five and answered yes to "complete" on all three.
+
+What the lookahead did: a fork is picked lying flat and turned upright in the hand, where it sits 2.6 to 5.4 mm from the
+grasp as defined. Its first simulated try jammed in five of six cases (the fork 16 mm from its slot, other pieces
+pushed 16 to 28 mm) and pushed another piece 3.7 mm in the sixth; the second try, with the grasp corrected by how the
+fork sat in the hand, seated it in all six, and the real insertion used that grasp. A bar needed the second try once.
+
+Limits. One run per layout is three builds, not a success rate, and earlier runs of the same layouts stopped for
+reasons that were then fixed: a base that is the same after half a turn was read the other way round after the first
+placement (the robot now keeps the reading it placed the base with); the wrist's last joint wound past its 360 degree
+limit over successive large moves (a large move now unwinds it); and the bridge's unseeded solver, as in the table
+above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from the CAD pose although the lookahead had
+said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
+run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
+layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
+against the pieces before a move; the arm's links are not. Nothing here has seen a real camera or a real robot.
+
 Machine-readable data:
 
 - BOM: `<repo>/exts/workcell/workcell/bom.csv`
