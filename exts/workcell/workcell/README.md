@@ -113,6 +113,14 @@ How a piece is recognised:
   each slot is checked against the scan directly, with the colour read off the surface itself, so a bar cut into three
   fragments by the forks crossing it is still found. A piece found in a slot is given the pack's assembled pose
   (`assemblies` in `pack.yaml`) and the base as its `parent`, so it does not start inside the base's walls.
+- **The table, as the camera sees it.** With a camera pose, the frame's z = 0 is meant to be the table top; a real
+  camera's hand-eye pose and depth put the table a few millimetres off it, and tilted. Heights are taken from a plane
+  fitted to the bare table in the picture, when that plane is within 10 mm and 1 degree of z = 0; otherwise the frame is
+  kept as given and `table.reference` says why. A piece's height in the estimate is its height above that table.
+- **Too big to be the piece.** A shape is not tried on a segment whose footprint is more than 1.3 times the shape's,
+  unless the segment's upper surface alone is the right size: a camera looking at an angle also sees the piece's walls,
+  and a depth camera draws a skirt of mixed pixels down every edge, which on a thin piece adds half again to the
+  footprint and nothing to the upper surface.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside
   another, or lying on it, is a region of its own) and matched like any segment. With the first prompts tried SAM 3.1
   returned no mask at all for the base plates and the dark pieces, and this path carried much of the work; with the
@@ -180,7 +188,29 @@ placed 21 mm along its own length, with no flag. One base swap, reported exactly
 moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remains wrong: a piece not resting flat (tipped into a slot, leaning) is
 listed as `unexplained`, not posed; a U piece standing on end looks the same from straight above whichever end is
 down, so its turn about the vertical is a guess, flagged as one; two touching pieces of one colour and one height
-under one mask stay one object. Nothing here has seen a real camera.
+under one mask stay one object.
+
+**One real picture (2026-11-16).** The lab's wrist D415, held still 0.40 m above the table and tilted 23 degrees, over
+the red puzzle's five parts lying loose, each with fiducial tags stuck on it; colour at 1280 x 720, depth at 848 x 480
+aligned to it; the camera pose from the hand-eye calibration and the robot's own pose. One clip, no ground truth.
+
+| | Result |
+|---|---|
+| SAM 3.1, `block` and `plastic block` | five objects, one clean mask each; nothing else masked but a 2.6 cm2 blob at the picture's edge |
+| Depth inside the masks | 86 to 100 % valid. At 1280 x 720 depth the same view gave 24 to 92 %: everything nearer than 0.41 m was missing, the D415's minimum range at that resolution |
+| Table reference | the table read 2.9 mm below the frame's z = 0 and 0.42 degrees tilted; applied |
+| Matched, with the pack's own colours | 2 of 5 (the base, and one U piece named as the other with the flag "could be") |
+| Matched, with colours measured on this clip | 5 of 5: shape cost 0.07 to 0.22 (limit 0.30), colour cost 0.003 to 0.02 (limit 0.40); the yellow part flagged "poor fit" |
+| Each part's CAD outline drawn from the camera, against its mask | intersection over union 0.82 to 0.98; centroids 1 to 2 mm apart for four parts, 4 mm for the maroon U |
+| Estimate built on Newton and rendered from the same camera pose | the five parts where the picture has them, the right way round; no part moved more than 0.1 mm settling |
+
+Before the two changes above this picture gave one part of five: the table 2.9 mm low put the maroon U's true pose
+under the table by more than the 4 mm allowed, so a pose a quarter turn off won; and the yellow part's footprint, 58 cm2
+with its walls and skirt against the CAD's 38.6 cm2, was over the size limit, so its shape was never tried (its upper
+surface is 38.3 cm2). What this is not: the colours were measured on the same clip they were used on (the tags' numbers
+named the masks, nothing else), so the colour step is fitted to this picture; the tags are not modelled and sit inside
+the masks; there is no ground truth, and a 1 to 4 mm agreement of outlines is not an accuracy; the slots' clearance is
+1.0 to 1.4 mm a side. The simulator's own figures above were not run again with these changes; the CPU tests were.
 
 Machine-readable data:
 

@@ -145,6 +145,70 @@ def test_a_clip_without_a_camera_pose_is_measured_from_its_table(pack, tmp_path)
     assert apart == pytest.approx(math.dist(centre("bar_red"), centre("ell")), abs=0.002)
 
 
+def off_frame(folder, drop_m, tilt_deg=0.0):
+    """Give a clip a camera pose whose z = 0 is ``drop_m`` above the table the camera sees, tilted about x: what a real
+    camera's calibration and depth do. Returns that frame from the true one."""
+    off = scan._pose(scan.rpy_matrix([tilt_deg, 0.0, 0.0]), [0.0, 0.0, -drop_m])
+    camera = json.loads((folder / "clip/camera.json").read_text())
+    camera["frames"][0]["world_from_camera"] = (off @ np.array(camera["frames"][0]["world_from_camera"])).tolist()
+    (folder / "clip/camera.json").write_text(json.dumps(camera))
+    return off
+
+
+def test_heights_are_taken_from_the_table_the_camera_sees_when_it_is_near_the_frames(pack, tmp_path):
+    truth = {"plate": flat(pack, "plate", (-0.08, 0.02), 25), "bar_red": flat(pack, "bar_red", (0.06, -0.05), 70),
+             "bar_yellow": flat(pack, "bar_yellow", (0.07, 0.06), -40), "ell": flat(pack, "ell", (0.0, -0.08), 130)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    off = off_frame(tmp_path, 0.0045, 0.4)                # the table reads 4.5 mm low and 0.4 degrees tilted
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    reference = looked.table["reference"]
+    assert reference["applied"] and reference["tilt_deg"] == pytest.approx(0.4, abs=0.05) and -6.0 < reference["height_mm"] < -3.0
+    assert abs(looked.table["median_height_mm"]) < 0.3     # what is left once heights are taken from that table
+    estimate = scan.match(looked, pack)
+    assert not estimate["not_seen"] and not estimate["unexplained"]
+    assert all(piece["support"] == "table" and not piece["flags"] for piece in estimate["pieces"])      # none is "raised", none is doubted
+    for piece in estimate["pieces"]:                       # where the frame says they are, on the table
+        there = off @ truth[piece["name"]]
+        assert math.dist(piece["position_m"][:2], there[:2, 3]) < 0.002
+
+
+def test_a_table_far_from_the_frames_is_not_taken_for_a_bias(pack, tmp_path):
+    truth = {"bar_red": flat(pack, "bar_red", (0.03, 0.02), 0), "ell": flat(pack, "ell", (-0.05, -0.03), 90)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    off_frame(tmp_path, 0.015)                             # 15 mm: a wrong camera pose, not a depth bias
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    reference = looked.table["reference"]
+    assert not reference["applied"] and reference["height_mm"] == pytest.approx(-15.0, abs=0.5) and "more than 10 mm" in reference["why"]
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    off_frame(tmp_path, 0.05)                              # no table near z = 0 at all
+    assert "fewer than" in scan.Scan(tmp_path / "clip", tmp_path / "run").table["reference"]["why"]
+
+
+def test_a_thin_piece_with_a_skirt_of_mixed_depth_down_its_edges_is_still_its_shape(pack, tmp_path):
+    from PIL import Image
+    from scipy import ndimage
+
+    truth = {"ell": flat(pack, "ell", (0.0, -0.02), 130), "bar_red": flat(pack, "bar_red", (0.08, 0.05), 20)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    labels = np.asarray(Image.open(tmp_path / "run/pieces/labels_0000.png")).copy()
+    depth = np.asarray(Image.open(tmp_path / "clip/depth/00000.png")).copy()
+    ell = labels == list(truth).index("ell") + 1
+    skirt = ndimage.binary_dilation(ell, iterations=3) & (labels == 0)        # a depth camera's mixed pixels, and the mask over them
+    depth[skirt] = np.round((0.45 - 0.008) / 0.0001).astype(depth.dtype)      # half way up the 16 mm piece
+    labels[skirt] = list(truth).index("ell") + 1
+    Image.fromarray(labels).save(tmp_path / "run/pieces/labels_0000.png")
+    Image.fromarray(depth).save(tmp_path / "clip/depth/00000.png")
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    seen = next(item for item in looked.objects if item["name"] == "pieces:1")
+    rest = pack.shape("ell").rests[0]
+    assert seen["area"] > 1.3 * rest.area + 2e-4           # by its footprint it is too big to be the piece
+    assert seen["top_area"] == pytest.approx(rest.top_area, rel=0.2)          # its upper surface is the piece's
+    found = {piece["name"]: piece for piece in scan.match(looked, pack)["pieces"]}
+    assert set(found) == set(truth)
+    there = truth["ell"]
+    assert math.dist(found["ell"]["position_m"][:2], there[:2, 3]) < 0.003
+
+
 def test_the_estimate_of_the_real_pack_becomes_a_task_the_cell_can_load(tmp_path, monkeypatch):
     try:
         real = scan.load_pack("puzzles/v1")
