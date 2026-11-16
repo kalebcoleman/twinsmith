@@ -209,6 +209,80 @@ def test_a_thin_piece_with_a_skirt_of_mixed_depth_down_its_edges_is_still_its_sh
     assert math.dist(found["ell"]["position_m"][:2], there[:2, 3]) < 0.003
 
 
+def tipped(pack, name, xy, yaw_deg, about, degrees, lift=0.0):
+    """A piece lying flat, then tipped ``degrees`` about a horizontal axis and set down on its lowest point (plus ``lift``)."""
+    rest = pack.shape(name).rests[0]
+    turn = scan._axis_turn(np.array(about, dtype=float), math.radians(degrees)) @ scan.yaw_matrix(math.radians(yaw_deg)) @ rest.turn
+    return scan._pose(turn, [xy[0], xy[1], scan._lowest(pack.shape(name), turn) + lift])
+
+
+def error(pack, name, found, truth):
+    """Position of the centroid and rotation of an estimated piece against the truth, allowing for its symmetries: (mm, degrees)."""
+    shape, turn = pack.shape(name), np.array(found["rotation"])
+    centroid = lambda pose: pose[:3, :3] @ shape.centroid + pose[:3, 3]
+    there = scan._pose(turn, found["position_m"])
+    return (1000 * float(np.linalg.norm(centroid(there) - centroid(truth))),
+            min(scan.angle_between(truth[:3, :3] @ s, turn) for s, _ in shape.symmetries))
+
+
+def test_a_piece_tipped_against_another_is_posed_in_all_six_freedoms(pack, tmp_path):
+    truth = {"plate": flat(pack, "plate", (-0.08, 0.02), 25), "ell": tipped(pack, "ell", (0.07, -0.03), 130, (1, 0, 0), 24),
+             "bar_yellow": tipped(pack, "bar_yellow", (0.06, 0.07), -40, (0, 1, 0), -31)}
+    estimate = look(pack, truth, tmp_path, noise_m=0.0006)
+    found = {piece["name"]: piece for piece in estimate["pieces"]}
+    assert set(found) == set(truth) and not estimate["unexplained"]
+    assert found["plate"]["rest"] == "flat" and not found["plate"]["flags"] and "tilt_deg" not in found["plate"]      # the fast path, untouched
+    for name, degrees in (("ell", 24), ("bar_yellow", 31)):
+        piece = found[name]
+        assert piece["rest"] == "tilted" and piece["tilt_deg"] == pytest.approx(degrees, abs=2.0) and piece["support"] == "table"
+        assert any(flag.startswith("tilted") for flag in piece["flags"]) and name in estimate["doubtful"]
+        millimetres, turned = error(pack, name, piece, truth[name])
+        assert millimetres < 3.0 and turned < 4.0, (name, millimetres, turned)
+        assert piece["shape_cost"] <= scan.SHAPE_MAX                       # the same limit as a piece lying flat
+
+
+def test_a_bar_lying_across_two_pieces_is_found_raised_and_the_pieces_under_it_too(pack, tmp_path):
+    under = {"plate": flat(pack, "plate", (-0.03, 0.0), 0), "ell": flat(pack, "ell", (0.09, 0.0), 90)}
+    bridge = tipped(pack, "bar_red", (0.035, 0.0), 90, (0, 1, 0), 3.0, lift=0.0)           # one end on the 20 mm plate, the other on the 16 mm ell
+    bridge[2, 3] = 0.018 + scan._lowest(pack.shape("bar_red"), bridge[:3, :3])
+    estimate = look(pack, {**under, "bar_red": bridge}, tmp_path, noise_m=0.0006)
+    found = {piece["name"]: piece for piece in estimate["pieces"]}
+    assert set(found) == {"plate", "ell", "bar_red"}
+    assert found["bar_red"]["support"] == "raised" and any("on top of something" in flag for flag in found["bar_red"]["flags"])
+    millimetres, turned = error(pack, "bar_red", found["bar_red"], bridge)
+    assert millimetres < 4.0 and turned < 5.0, (millimetres, turned)
+    for name in under:                                                    # each partly hidden by the bar, still where it lies
+        assert error(pack, name, found[name], under[name])[0] < 3.0
+
+
+def test_a_pose_that_another_pose_rivals_says_so_and_gives_the_other(pack, tmp_path):
+    # A bar tipped on end against nothing in view: from above, leaning one way or the other can fit alike.
+    truth = {"bar_red": tipped(pack, "bar_red", (0.0, 0.0), 0, (1, 0, 0), 40)}
+    estimate = look(pack, truth, tmp_path, noise_m=0.0006)
+    piece = estimate["pieces"][0]
+    assert piece["name"] == "bar_red" and piece["rest"] == "tilted"
+    if "other_pose" in piece:                                             # when it is ambiguous, the rival is given whole
+        assert set(piece["other_pose"]) == {"degrees_away", "shape_cost", "rest", "position_m", "rpy_deg"}
+        assert any("fits nearly as well" in flag for flag in piece["flags"])
+    json.dumps(estimate)
+
+
+def test_the_gripper_in_the_picture_is_not_an_object_on_the_table(pack, tmp_path):
+    from PIL import Image
+
+    truth = {"bar_red": flat(pack, "bar_red", (0.03, 0.02), 0)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run")
+    labels = np.asarray(Image.open(tmp_path / "run/pieces/labels_0000.png")).copy()
+    depth = np.asarray(Image.open(tmp_path / "clip/depth/00000.png")).copy()
+    labels[10:120, 20:140] = 2                                            # a mask over a fingertip 10 cm from the lens ...
+    depth[10:120, 20:140] = 1000
+    depth[100:120, 20:140] = np.round((0.45 - 0.009) / 0.0001).astype(depth.dtype)      # ... with a rim of mixed depth near the table
+    Image.fromarray(labels).save(tmp_path / "run/pieces/labels_0000.png")
+    Image.fromarray(depth).save(tmp_path / "clip/depth/00000.png")
+    estimate = scan.match(scan.Scan(tmp_path / "clip", tmp_path / "run"), pack)
+    assert [piece["name"] for piece in estimate["pieces"]] == ["bar_red"] and not estimate["unexplained"]
+
+
 def test_the_estimate_of_the_real_pack_becomes_a_task_the_cell_can_load(tmp_path, monkeypatch):
     try:
         real = scan.load_pack("puzzles/v1")

@@ -121,6 +121,17 @@ How a piece is recognised:
   unless the segment's upper surface alone is the right size: a camera looking at an angle also sees the piece's walls,
   and a depth camera draws a skirt of mixed pixels down every edge, which on a thin piece adds half again to the
   footprint and nothing to the upper surface.
+- **A piece that does not lie flat.** What no flat rest explains (each object alone, and objects of one colour within
+  3 cm of each other together) is fitted with nothing assumed about how it lies: every face up, every turn about the
+  vertical, level and tipped onto the object's own largest flat face, then refined in all six freedoms against its
+  heights. Its height is whatever fits, but none of it may be under the table. The score and its limit are the flat
+  fit's own. A piece the flat fit did accept, but poorly, or raised, or standing on end or on its side, or from one
+  level of a mask, is tried the same way and takes that pose only when its cost is lower by 0.05. Such a piece's row
+  says how it stands (`rest: tilted`, `tilt_deg`, `lowest_point_mm`, `support`), and when another pose fits nearly as
+  well it is given whole (`other_pose`), not chosen between. Two poses up to 8 mm inside each other are one piece
+  resting on the other: the upper is moved straight up by that much and says so (`moved_up_mm`).
+- **The gripper in the picture.** A mask that is mostly more than 0.25 m above the table is the gripper the camera
+  rides on, and neither it nor the mixed depth round its edge is an object.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside
   another, or lying on it, is a region of its own) and matched like any segment. With the first prompts tried SAM 3.1
   returned no mask at all for the base plates and the dark pieces, and this path carried much of the work; with the
@@ -185,8 +196,8 @@ position error 0.9 mm median and 2.1 mm at the 95th percentile, how the piece li
 bar lying loose in shadow was named as the red bar, with the flag "could be line_brown": lightness is all that
 separates those two, and a shadow now changes it. One green bar with half its length hidden under the gripper was
 placed 21 mm along its own length, with no flag. One base swap, reported exactly. Built back on Newton, no piece
-moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remains wrong: a piece not resting flat (tipped into a slot, leaning) is
-listed as `unexplained`, not posed; a U piece standing on end looks the same from straight above whichever end is
+moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remained wrong then: a piece not resting flat (tipped into a slot, leaning) was
+listed as `unexplained`, not posed (it is now tried in any pose, above); a U piece standing on end looks the same from straight above whichever end is
 down, so its turn about the vertical is a guess, flagged as one; two touching pieces of one colour and one height
 under one mask stay one object.
 
@@ -213,6 +224,24 @@ the masks; there is no ground truth, and a 1 to 4 mm agreement of outlines is no
 1.0 to 1.4 mm a side. In the simulator the two changes do nothing: on the twenty recorded looks of the three v4 puzzle
 builds the old and the new matcher give the same pieces at the same poses to the last digit (the table there is at
 z = 0 to 0.001 degrees, and no segment was over the size limit). The simulator's own figures above were not run again.
+
+**Real pictures of pieces lying on and against each other (2026-11-16).** The same camera and view, fourteen clips of
+the red puzzle's parts as a person arranged them, colours as above (measured on the first of those clips).
+
+| Clips | Flat fit only | With the fit in any pose |
+|---|---|---|
+| Eight with every part flat on the table, removed, or assembled in the base | all parts found | the same parts at the same poses, to the last digit |
+| Two with the green bar lying across the orange U and the yellow part, the orange U on the maroon one | 3 of 5 | 5 of 5: the bar tilted 20 degrees and raised 14 mm, the orange U tilted 24 degrees |
+| One with the yellow part leaning on the base and the bar across two U pieces | 4 of 5 | 5 of 5: the yellow part tilted 29 degrees |
+| Three with the bar from the maroon U onto the base, the orange U standing, the yellow part leaning | 2 of 5 | 4 of 5; the maroon U, of which only the leg ends show under the bar, is listed and not posed |
+
+Built on Newton at those poses and rendered from the capture's camera before any physics step, the two-part stacks and
+the leaning part are where the pictures have them, the right part on top. Run for 2 s afterwards, the stacked parts
+move by up to 6.7 mm and 13 degrees: the poses are near a resting arrangement, not at one. On ray-cast pictures with
+perfect masks, made apart from this code with the poses hidden from it, 7 of 8 parts at random orientations came out
+within 5 mm and 5 degrees; the eighth, a U a quarter turn off, was flagged with the true pose as its `other_pose`. What
+one view cannot settle is reported, not resolved: a part mostly hidden under another, and poses a quarter or a half
+turn apart that look alike from where the camera is. A stacked scene takes 8 to 17 s to match, a flat one 4 to 5 s.
 
 ### Building a puzzle
 
