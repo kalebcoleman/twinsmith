@@ -210,7 +210,9 @@ with its walls and skirt against the CAD's 38.6 cm2, was over the size limit, so
 surface is 38.3 cm2). What this is not: the colours were measured on the same clip they were used on (the tags' numbers
 named the masks, nothing else), so the colour step is fitted to this picture; the tags are not modelled and sit inside
 the masks; there is no ground truth, and a 1 to 4 mm agreement of outlines is not an accuracy; the slots' clearance is
-1.0 to 1.4 mm a side. The simulator's own figures above were not run again with these changes; the CPU tests were.
+1.0 to 1.4 mm a side. In the simulator the two changes do nothing: on the twenty recorded looks of the three v4 puzzle
+builds the old and the new matcher give the same pieces at the same poses to the last digit (the table there is at
+z = 0 to 0.001 degrees, and no segment was over the size limit). The simulator's own figures above were not run again.
 
 ### Building a puzzle
 
