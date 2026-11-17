@@ -430,7 +430,9 @@ def bar(rows, main, ours, reference=None):
 
 def summary(args):
     out = Path(args.out).resolve()
-    rows = sorted((json.loads(path.read_text()) for path in out.glob("*/**/row.json")), key=lambda row: (row["case"], row["label"]))
+    rows = [json.loads(path.read_text()) for path in out.glob("*/**/row.json")]
+    rows = sorted((row for row in rows if Path(row["folder"]) == out / row["label"] / row["case"]),          # a column's rows, not a trial's kept beside them
+                  key=lambda row: (row["case"], row["label"]))
     (out / "metrics.json").write_text(json.dumps(rows, indent=1) + "\n")
     labels = [label for label in (args.main, args.ours, args.reference) if label and any(row["label"] == label for row in rows)]
     labels += sorted({row["label"] for row in rows} - set(labels))
