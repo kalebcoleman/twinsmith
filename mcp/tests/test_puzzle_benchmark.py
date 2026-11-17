@@ -107,10 +107,11 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
         assert 0.24 <= abs(poses["plate"][0, 3] - middle[0, 3]) <= 0.32
         if "side" in spec:
             assert np.sign(poses["plate"][0, 3] - middle[0, 3]) == spec["side"], kind
+        banded = [at for name, at in loose.items() if name in spec.get("band_for", loose)]     # the pieces a band holds for: all, unless it names some
         if "pieces_y" in spec:
-            assert all(spec["pieces_y"][0] <= at[1, 3] <= spec["pieces_y"][1] for at in loose.values()), kind
+            assert all(spec["pieces_y"][0] <= at[1, 3] <= spec["pieces_y"][1] for at in banded), kind
         if "pieces_x" in spec:
-            assert all(spec["pieces_x"][0] <= at[0, 3] <= spec["pieces_x"][1] for at in loose.values()), kind
+            assert all(spec["pieces_x"][0] <= at[0, 3] <= spec["pieces_x"][1] for at in banded), kind
         gap = spec.get("gap_m", 0.035)
         names = list(loose)
         for index, first in enumerate(names):
@@ -119,6 +120,9 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
         if "cluster_m" in spec:
             spots = np.array([at[:2, 3] for at in loose.values()])
             assert np.linalg.norm(spots - spots.mean(0), axis=1).max() <= 2 * spec["cluster_m"], kind
+    # A band that names its pieces holds for them and leaves the others anywhere.
+    far = [laid({"pieces_y": [-0.64, -0.52], "band_for": ["cap"]}, seed) for seed in range(8)]
+    assert all(poses["cap"][1, 3] <= -0.52 for poses in far) and any(poses["bar"][1, 3] > -0.52 for poses in far)
     with pytest.raises(ValueError, match="no layout of this kind"):        # a band no piece fits in
         bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(1), {"pieces_y": [-0.31, -0.30]}, REGION, HIDDEN, tries=3)
 
