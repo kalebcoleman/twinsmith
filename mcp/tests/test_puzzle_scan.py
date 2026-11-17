@@ -337,3 +337,16 @@ def test_two_pieces_are_never_left_in_one_place(pack):
     assert scan._overlap(pack, a, {"name": "bar_yellow", "pose": flat(pack, "bar_yellow", (0.03, 0.0), 0)}) <= 0
     slot = flat(pack, "plate", (0.0, 0.0), 0) @ scan._pose(np.eye(3), ASSEMBLIES["plate"][0]["position_m"])
     assert scan._overlap(pack, {"name": "plate", "pose": flat(pack, "plate", (0.0, 0.0), 0)}, {"name": "bar_red", "pose": slot}) < 1e-6
+
+
+def test_a_piece_is_lifted_off_another_only_when_lifting_takes_it_out_of_it(pack):
+    rest = pack.shape("bar_yellow").rests[0]
+    under = {"name": "bar_red", "pose": flat(pack, "bar_red", (0.0, 0.0), 0)}
+    across = {"name": "bar_yellow", "pose": pose((0.0, 0.0), 90, rest.turn, rest.drop + 0.015)}        # lying across it, 5 mm into its top
+    assert scan._overlap(pack, under, across) == pytest.approx(0.005)
+    lifted = scan._lifted_clear(pack, across, under, 0.005)
+    assert lifted[2, 3] == pytest.approx(rest.drop + 0.0205) and scan._overlap(pack, under, {"name": "bar_yellow", "pose": lifted}) <= 0
+    assert across["pose"][2, 3] == pytest.approx(rest.drop + 0.015)                                    # the piece's own pose is not touched
+    beside = {"name": "bar_yellow", "pose": pose((0.015, 0.0), 0, rest.turn, rest.drop + 0.005)}       # beside it, 5 mm into its side
+    assert scan._overlap(pack, under, beside) == pytest.approx(0.005)
+    assert scan._lifted_clear(pack, beside, under, 0.005) is None                                      # no lift parts them
