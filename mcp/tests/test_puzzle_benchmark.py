@@ -92,7 +92,7 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
     laid = lambda spec, seed: bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(seed), spec, REGION, HIDDEN)
     low, high = np.array(REGION[0]), np.array(REGION[1])
     hidden = [np.array([a, [b[0], a[1]], b, [a[0], b[1]]]) for a, b in HIDDEN]
-    for kind in ("scatter", "base_left", "base_right", "tight", "far", "near", "pieces_left"):
+    for kind in ("scatter", "base_left", "base_right", "tight", "far", "near", "pieces_left", "short_slide"):
         spec = CONFIG["layouts"][kind]
         poses = laid(spec, 5)
         again = laid(spec, 5)
@@ -104,7 +104,8 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
             assert (corners > low).all() and (corners < high).all(), (kind, name)
             assert all(assembly._apart(corners, patch) for patch in hidden), (kind, name)
         assert assembly.path_clear(pack, "plate", poses["plate"], middle, loose, margin_m=0.02), kind      # the way to the middle is free
-        assert 0.24 <= abs(poses["plate"][0, 3] - middle[0, 3]) <= 0.32
+        nearest, furthest = spec.get("base_side_m", [0.24, 0.32])
+        assert nearest <= abs(poses["plate"][0, 3] - middle[0, 3]) <= furthest, kind
         if "side" in spec:
             assert np.sign(poses["plate"][0, 3] - middle[0, 3]) == spec["side"], kind
         banded = [at for name, at in loose.items() if name in spec.get("band_for", loose)]     # the pieces a band holds for: all, unless it names some
@@ -125,6 +126,18 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
     assert all(poses["cap"][1, 3] <= -0.52 for poses in far) and any(poses["bar"][1, 3] > -0.52 for poses in far)
     with pytest.raises(ValueError, match="no layout of this kind"):        # a band no piece fits in
         bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(1), {"pieces_y": [-0.31, -0.30]}, REGION, HIDDEN, tries=3)
+
+
+def test_another_puzzles_pieces_lie_on_the_table_too_and_leave_the_puzzles_own_where_they_were():
+    both = scan.Pack({**PIECES, "peg": {"boxes": [box([0, 0, 0], [0.02, 0.02, 0.01])], "colour": [0.1, 0.6, 0.1]}}, SLOTS, "toy/v1")
+    middle = target(both)
+    laid = lambda spec: bench.lay_out(assembly, scan, both, "plate", middle, np.random.default_rng(5), spec, REGION, HIDDEN)
+    alone, crowded = laid({}), laid({"also": ["peg"]})
+    assert list(crowded) == ["plate", "cap", "bar", "peg"]                 # the base first, then its own pieces, then the others
+    assert all(np.array_equal(alone[name], crowded[name]) for name in alone)      # the same dice for the puzzle's own
+    peg = assembly.footprint(both, "peg", crowded["peg"], 0.035)
+    assert all(assembly._apart(peg, assembly.footprint(both, name, at)) for name, at in alone.items())
+    assert all(assembly._apart(peg, assembly.footprint(both, "plate", at, 0.03)) for at in assembly.slide_path(crowded["plate"], middle))
 
 
 def a_build(folder, seated, attempts=None, stopped="unset", scans=1, base_checks=None, success=None):
