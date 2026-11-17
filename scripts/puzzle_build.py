@@ -42,6 +42,7 @@ from PIL import Image, ImageDraw
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcp"))
 import puzzle_assembly as assembly  # noqa: E402
+import puzzle_base_check  # noqa: E402
 import puzzle_scan  # noqa: E402
 import puzzle_viewer  # noqa: E402
 import workcell_session as cell  # noqa: E402
@@ -106,6 +107,7 @@ class Build:
         self.ahead = False                                  # true while simulating ahead: no metric is recorded
         self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
         self.started, self.scans, self.disturbed = time.time(), 0, False
+        self.base_log, self.shifted, self.put_back, self.checker = {"checks": [], "shifts": [], "corrections": []}, {}, None, None
 
     # ---- the world --------------------------------------------------------------------------------
     def truth(self):
@@ -343,8 +345,11 @@ class Build:
         for piece in self.placed:
             self.estimate[piece] = self._seat(piece)
         metres, degrees = assembly.pose_error(self.pack, self.base, seen[self.base], self._base_target())
-        if metres <= BASE_PLACED_M and degrees <= BASE_PLACED_DEG:
+        if self.placed:                                     # a base with pieces in it is not slid again: the build goes on where it lies
+            self.base_goal = seen[self.base]
+        elif metres <= BASE_PLACED_M and degrees <= BASE_PLACED_DEG:
             self.base_goal = getattr(self, "base_goal", self._base_target())
+        if self.placed or (metres <= BASE_PLACED_M and degrees <= BASE_PLACED_DEG):
             following = next((step["piece"] for step in self.order if step["piece"] not in self.placed), "done")
         else:
             following, self.base_slides = self.base, 0
@@ -394,6 +399,214 @@ class Build:
         self.say(f"{piece}: moved 50 mm aside behind the robot's back (--disturb)")
         self.cell.place_bodies({self.paths[piece]: aside})
         self.cell.step(100)
+
+    # ---- the base, watched while a piece is brought to it ------------------------------------------
+    def _frame(self):
+        """One depth picture from the wrist camera, where it is now: (depth in metres, the camera for
+        ``puzzle_base_check.world_points``, milliseconds it took). The recorder stays up between pictures."""
+        began = time.perf_counter()
+        prim, body, intrinsics = self.cell.cameras["wrist"]
+        if self.checker is None:
+            self.checker = self.out / "base_checks"
+            if self.checker.exists():
+                shutil.rmtree(self.checker)
+            self.cell.kit(f"base_check = Recorder({prim!r}, {body!r}, {str(self.checker)!r}, {[intrinsics['width'], intrinsics['height']]!r}, {intrinsics!r})")
+        # Two pictures, the second one read: the simulator's renderer is one picture behind whatever was last put
+        # somewhere without moving there (a rehearsal put back, the test's slide of the base). A camera has no such lag.
+        index, frame, scale = self.cell.kit("await shoot([base_check]); shot = await shoot([base_check]); "
+                                            "result = [shot[0], base_check.frames[shot[0]], base_check.intrinsics['depth_scale']]")
+        depth = np.asarray(Image.open(self.checker / "depth" / f"{index:05d}.png"), dtype=np.float32) * scale
+        return depth, {**intrinsics, "pose": np.array(frame["world_from_camera"]), "depth_scale": scale}, round(1000 * (time.perf_counter() - began), 1), index
+
+    @stepped("base check")
+    def _base_check(self, piece, where):
+        """Is the base where the estimate has it? One depth picture and a fit of the base's CAD, with the pieces
+        seated in it, from its last pose (``puzzle_base_check``): no masks, no SAM pass. Changes nothing."""
+        depth, camera, frame_ms, index = self._frame()
+        settings = {key: value for key, value in self.config["base_check"].items() if key in puzzle_base_check.SETTINGS}
+        points = puzzle_base_check.world_points(depth, camera, settings.get("stride", puzzle_base_check.SETTINGS["stride"]))
+        loose = {name: at for name, at in self.estimate.items() if name not in (self.base, piece, *self.placed)}
+        found = puzzle_base_check.check(points, self.pack, self.base, self.estimate[self.base], {name: self.slots[name] for name in self.placed}, loose, settings)
+        truth = self.truth()[self.base]                     # to score the fit; the robot never reads it
+        (self.checker / f"check_{index:05d}.json").write_text(json.dumps({
+            "what": "What this base check was given, beside its picture (depth/, rgb/): puzzle_base_check.check can be run on it again. truth scores the fit only.",
+            "camera": {**{key: value for key, value in camera.items() if key != "pose"}, "pose": camera["pose"].tolist()}, "base": self.base, "pack": self.config["pack"],
+            "last": self.estimate[self.base].tolist(), "seated": list(self.placed), "loose": {name: at.tolist() for name, at in loose.items()},
+            "settings": settings, "piece": piece, "where": where, "truth": truth.tolist()}) + "\n")
+        off = np.linalg.inv(truth) @ found["pose"]
+        row = {**{key: value for key, value in found.items() if key != "pose"}, "piece": piece, "where": where, "frame": index, "frame_ms": frame_ms,
+               "sim_s": round(self.cell.steps / cell.PHYSICS_HZ, 3), "wall": time.time(),
+               "fit_against_truth_mm": round(1000 * float(np.linalg.norm(off[:2, 3])), 2),
+               "fit_against_truth_deg": round(abs(math.degrees(math.atan2(off[1, 0], off[0, 0]))), 3)}
+        self.base_log["checks"].append(row)
+        (self.out / "base_checks.json").write_text(json.dumps(self.base_log, indent=1) + "\n")
+        self.say(f"{piece}: base check at the {where}: {found['verdict']}" + (f", {found['moved_mm']:.1f} mm and {found['turned_deg']:.1f} degrees" if found["moved_mm"] else "")
+                 + f" ({found['fit_ms']:.0f} ms fit, {frame_ms:.0f} ms picture)")
+        return {**row, "pose": found["pose"].tolist()}
+
+    def _moved_base(self, piece, found):
+        """The base is elsewhere than the estimate had it: its slots and the pieces seated in it go with it, and what
+        is left of this piece's way (over the slot, then down) is laid out again from where the base now is."""
+        at, hold = np.array(found["pose"]), self.held
+        moved = at @ np.linalg.inv(self.estimate[self.base])
+        self.estimate[self.base] = self.base_goal = at
+        for name in self.placed:
+            self.estimate[name] = self._seat(name)
+        hold.update(seat=moved @ hold["seat"], place=moved @ hold["place"], axis=moved[:3, :3] @ hold["axis"])
+        over = self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), hold["width_m"])
+        hold["path"].update(carry=shifted(over, [0, 0, CARRY_M]), over=over, place=self._tcp(shifted(hold["place"], hold["axis"] * 0.001), hold["width_m"]))
+
+    def _ahead_place(self, piece):
+        """Simulate ahead, on Newton, what is left of a placement after the base moved: from the hand as it is, with
+        the piece in it, up, over the slot's new place, down, let go, away; judged as the lookahead judges, and the
+        stage put back. ``--no-lookahead`` simulates nothing here either."""
+        if self.args.no_lookahead:
+            return {"verdict": "go", "tries": []}
+        hold, speeds, held, clip = self.held, self.config["speeds"], self.held, f"{piece}_moved_{len(self.base_log['corrections']) + 1}"
+        self.cell.checkpoint(self.paths.values())
+        self.ahead = True
+        try:
+            self.cell.aside(self.out / "lookahead" / clip)
+            with self.log.step("try", piece, clip=clip) as attempt:
+                self.cell.place_bodies({self.paths[name]: self._twin_pose(name) for name in self.estimate if name != piece})
+                self.cell.step(50)
+                before = self.truth()
+                try:
+                    self.cell.gripper_carry(hold["path"]["carry"], speed_deg_s=speeds["joint_deg_s"])
+                    self.cell.gripper_line(hold["path"]["over"], speeds["approach_m_s"])
+                    self.cell.gripper_line(hold["path"]["place"], speeds["insert_m_s"], segment_m=0.005)
+                    self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
+                    back = shifted(self.cell.gripper_pose(), -self.cell.gripper_pose()[:3, 2] * RETREAT_M)
+                    self.cell.gripper_line(back, speeds["approach_m_s"])
+                    self.cell.step(250)
+                    after = self.truth()
+                    others = max(float(np.linalg.norm(after[name][:3, 3] - before[name][:3, 3])) for name in after if name != piece)
+                    row = {**self._seated(piece, after, after[self.base]), "blocked": None, "others_moved_mm": round(others * 1000, 2)}
+                    row["go"] = bool(row["seated"] and others < 0.003)
+                except cell.MoveFailed as error:
+                    row = {"go": False, "error": str(error), "blocked": str(error)}
+                attempt["result"] = row = {**row, "way": hold["way"], "adjusted": piece in self.adjust}
+            filmed = self.cell.back()
+            self.tries[clip] = {**{key: filmed[key] for key in ("fps", "zero_s", "captions", "samples", "grips")}, "piece": piece}
+        finally:
+            self.cell.restore()
+            self.ahead, self.held = False, held
+        return {"verdict": "go" if row["go"] else "abort", "tries": [row]}
+
+    def _set_down(self, piece, why):
+        """Put the piece back where it was picked and get clear: the table has to be scanned before it can be placed."""
+        hold, speeds = self.held, self.config["speeds"]
+        path = hold["path"]
+        with self.log.step("set down", piece, why=why, waypoints=[waypoint("lift", path["lift"]), waypoint("pick", path["pick"])]):
+            self.say(f"{piece}: {why}; putting it back to scan the table")
+            self.cell.gripper_line(shifted(self.cell.gripper_pose(), [0, 0, CARRY_M]), speeds["approach_m_s"])
+            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_line(shifted(path["pick"], [0, 0, 0.002]), speeds["approach_m_s"])
+            self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
+            self.cell.gripper_line(path["hover"], speeds["approach_m_s"])
+        self.held, self.put_back = None, piece
+
+    def _sees_base(self):
+        """Whether the wrist camera has the base in view while the held piece is over its slot: it rides on the
+        gripper and looks along it, so it does when the gripper points down there, and not when the gripper is level."""
+        return bool(self.held["place"][2, 2] < -0.7)
+
+    def _vouch(self, piece, where):
+        """Check the base from where the camera is, before the piece goes on (``where``: ``look``, from above the
+        base before the carry; ``hover``, over the slot). Steady: True. Moved, and the fit trusted: the slots move
+        with it, what is left of the placement is simulated ahead, the hand comes over the slot's new place (at the
+        hover), and the base is checked again. Anything else: the piece is put back and the answer is False."""
+        for _ in range(self.config["base_check"]["corrections"] + 1):
+            self._shift_base(piece, "before")
+            found = self._base_check(piece, where)
+            noticed = {"sim_s": self.cell.steps / cell.PHYSICS_HZ, "wall": time.time()}
+            if found["verdict"] == "steady":
+                return True
+            if found["verdict"] != "moved":
+                self._set_down(piece, found["why"])
+                return False
+            with self.log.step("correct", piece, moved_mm=found["moved_mm"], turned_deg=found["turned_deg"]) as row:
+                began = time.perf_counter()
+                self._moved_base(piece, found)
+                laid_out = time.perf_counter() - began
+                self.log.note(waypoints=[waypoint("over", self.held["path"]["over"]), waypoint("place", self.held["path"]["place"])])
+                with self.log.step("lookahead", piece, of="what is left of the placement, after the base moved") as ahead:
+                    began = time.perf_counter()
+                    ahead["result"] = verdict = self._ahead_place(piece)
+                    simulated = time.perf_counter() - began
+                if verdict["verdict"] != "go":
+                    self._set_down(piece, "the lookahead of the corrected placement said abort")
+                    raise Refused(f"{piece}: the base moved and the lookahead of the corrected placement said abort")
+                self.say(f"{piece}: the base moved {found['moved_mm']:.1f} mm and {found['turned_deg']:.1f} degrees; its slots go with it")
+                if where == "hover":
+                    self.cell.gripper_line(self.held["path"]["over"], self.config["speeds"]["approach_m_s"])
+                row["result"] = record = {"piece": piece, "where": where, "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"],
+                                          "lay_out_ms": round(1000 * laid_out, 2), "lookahead_wall_s": round(simulated, 2), "lookahead": verdict["verdict"],
+                                          "replan_sim_s": round(self.cell.steps / cell.PHYSICS_HZ - noticed["sim_s"], 3),
+                                          "replan_wall_s": round(time.time() - noticed["wall"], 2)}
+                self.base_log["corrections"].append(record)
+        self._set_down(piece, "the base keeps moving")
+        return False
+
+    def _look_check(self, piece):
+        """Before a piece is carried to its slot with the gripper level, where the camera will not see the base: look
+        at the base from above it, the piece in the hand, and check it there. A piece placed with the gripper pointing
+        down is checked at its hover instead."""
+        self.put_back = None
+        if self._sees_base():
+            return True
+        with self.log.step("look", piece, height_m=self.config["base_check"]["look_height_m"]):
+            self.say(f"{piece}: a look at the base from above before it is carried in level")
+            over = self.estimate[self.base][:3, 3] + [0.0, 0.0, self.config["base_check"]["look_height_m"]]
+            self.cell.camera_to(cell.pose(np.diag([1.0, -1.0, -1.0]), over))
+        return self._vouch(piece, "look")
+
+    def _descend(self, piece):
+        """Lower the piece into its slot. Simulating ahead, or with the gripper level (no view of the base): one
+        line. Else in stages, the base checked after each while the piece is still above the slot: when the check
+        does not say steady the arm goes back up to the pre-place hover and ``_vouch`` decides from there; nothing is
+        lowered on a base not vouched for."""
+        hold, speeds, watch = self.held, self.config["speeds"], self.config["base_check"]
+        if self.ahead or not self._sees_base():
+            self.cell.gripper_line(hold["path"]["place"], speeds["insert_m_s"], segment_m=0.005)
+            return
+        while True:
+            start, goal = self.cell.gripper_pose(), hold["path"]["place"]
+            far = float(np.linalg.norm(goal[:3, 3] - start[:3, 3]))
+            stages = max(1, math.ceil(far / watch["descent_step_m"]))
+            for stage in range(1, stages + 1):
+                self.cell.gripper_line(cell.blend(start, goal, stage / stages), speeds["insert_m_s"], segment_m=0.005)
+                if stage == stages:
+                    return
+                if far * (1 - stage / stages) < hold["clear_m"] - MARGIN_M:      # in the slot: the base cannot leave without the arm
+                    continue
+                self._shift_base(piece, "descent")
+                if self._base_check(piece, "descent")["verdict"] == "steady":
+                    continue
+                with self.log.step("retreat", piece, waypoints=[waypoint("over", hold["path"]["over"])]):
+                    self.say(f"{piece}: the base is not where it was; back up to the pre-place hover")
+                    self.cell.gripper_line(hold["path"]["over"], speeds["approach_m_s"])
+                if not self._vouch(piece, "hover"):
+                    return
+                break
+
+    def _shift_base(self, piece, where):
+        """``--shift-base PIECE:MM:DEG[:before|descent]``: slide the base, with what is seated in it, that far and
+        turn it that much about its own middle, as a hand would: just before the check that precedes the piece's
+        placement, or while the piece is lowered. Once each."""
+        for spec in self.args.shift_base or ():
+            name, mm, deg, when = (spec.split(":") + ["before"])[:4]
+            if name != piece or when != where or spec in self.shifted:
+                continue
+            truth = self.truth()
+            slide = cell.pose(puzzle_scan.yaw_matrix(math.radians(float(deg))), [0, 0, 0])
+            slide[:3, 3] = truth[self.base][:3, 3] - slide[:3, :3] @ truth[self.base][:3, 3] + float(mm) / 1000 * np.array([0.8, 0.6, 0.0])
+            with self.log.step("shift base", piece, mm=float(mm), deg=float(deg), when=when):
+                self.say(f"{piece}: the base is slid {float(mm):g} mm and turned {float(deg):g} degrees behind the robot's back (--shift-base)")
+                self.cell.place_bodies({self.paths[body]: slide @ truth[body] for body in (self.base, *self.placed)})
+                self.cell.step(50)
+            self.shifted[spec] = {"piece": piece, "mm": float(mm), "deg": float(deg), "when": when, "sim_s": round(self.cell.steps / cell.PHYSICS_HZ, 3), "wall": time.time()}
+            self.base_log["shifts"].append(self.shifted[spec])
 
     def _base_target(self):
         """Where the base goes: the configured place, at the configured yaw or half a turn from it, whichever is nearer."""
@@ -525,6 +738,8 @@ class Build:
         """Carry the held piece over its slot, lower it along the slot axis, let go, back away and rise."""
         hold, speeds = self.held, self.config["speeds"]
         width, path = hold["width_m"], hold["path"]
+        if not self.ahead and not self._look_check(piece):
+            return {"blocked": None, "result": "rescan"}
         with self.log.step("carry", piece, waypoints=[waypoint("carry", path["carry"]), waypoint("over", path["over"])]):
             self.say(f"{piece}: carrying it over its slot")
             self.cell.gripper_carry(path["carry"], speed_deg_s=speeds["joint_deg_s"])
@@ -542,14 +757,18 @@ class Build:
                         place=self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width))
             with self.log.step("correct", piece, waypoints=[waypoint("over", path["over"])]):
                 self.cell.gripper_line(path["over"], speeds["approach_m_s"])
+        if not self.ahead and self._sees_base() and not self._vouch(piece, "hover"):
+            return {"blocked": None, "result": "rescan"}
         with self.log.step("lower", piece, waypoints=[waypoint("place", path["place"])], speed_m_s=speeds["insert_m_s"]) as row:
             self.say(f"{piece}: inserting along the slot axis at {speeds['insert_m_s'] * 1000:g} mm/s")
             try:
-                self.cell.gripper_line(path["place"], speeds["insert_m_s"], segment_m=0.005)
+                self._descend(piece)
                 blocked = None
             except cell.MoveFailed as error:
                 blocked = str(error)
             row["result"] = {"blocked": blocked}
+        if self.put_back == piece:
+            return {"blocked": None, "result": "rescan"}
         with self.log.step("release", piece):
             self.cell.open_to(width + self.config["open_beyond_m"])
         back = shifted(self.cell.gripper_pose(), -self.cell.gripper_pose()[:3, 2] * RETREAT_M)
@@ -560,7 +779,7 @@ class Build:
             self.cell.step(250)
         self.held = None
         self.mark(f"{piece} inserted")
-        return {"blocked": blocked}
+        return {"blocked": blocked, "result": "inserted"}
 
     def _seated(self, piece, world, base_at):
         """How far a piece is from its slot in a base, and whether that counts as seated."""
@@ -731,6 +950,8 @@ class Build:
             output = runner.communicate(timeout=120)[0]
         finally:                                            # whatever stopped the run, the runner does not outlive it and its output is kept
             server.close()
+            if self.checker is not None:
+                self.cell.kit("result = base_check.close(1.0)")
             if runner.poll() is None:
                 runner.kill()
             if output is None:
@@ -827,6 +1048,9 @@ def main():
     parser.add_argument("--scan-cycle", type=Path, help="required with sam3: the multi-view cycle that turns the scan step's views into one estimate "
                                                         "(the puzzle project's cycle/multiview/mv_cycle.sh)")
     parser.add_argument("--disturb", metavar="PIECE", help="move this piece aside just before its first pick, to see the graph scan again and go on")
+    parser.add_argument("--shift-base", metavar="PIECE:MM:DEG[:before|descent]", action="append",
+                        help="slide the base that far and turn it that much just before this piece's placement is checked (before) or while it "
+                             "is lowered (descent), to see the build notice and still seat the piece; may be given more than once")
     args = parser.parse_args()
     if not args.mutate_stage or (args.perception == "sam3" and not args.allow_concurrent_gpu):
         parser.error("pass --mutate-stage, and --allow-concurrent-gpu with SAM 3.1: the run replaces the stage and starts GPU jobs beside the simulator")
@@ -860,6 +1084,7 @@ def run(build, args, config, layout, started):
     record["graph"] = {"folder": str(graph), "run": build.serve(graph, build.out / "trace")}
     record["graph"]["checks"] = graph_report(build.out / "trace", build.slots)
     record.update(build.finish(started))
+    record["base_checks"] = build.base_log
     (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")
     record["viewer"] = str(puzzle_viewer.build(build.out))
     return record

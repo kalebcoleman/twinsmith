@@ -16,7 +16,7 @@ gap:
     - workcell.approach: Choose a grasp for a piece from its CAD, open the gripper and bring the pads round it.
     - workcell.close: Close the RG2 on the piece at the configured force.
     - workcell.lift: Lift the gripped piece straight up.
-    - workcell.insert: Carry the held piece over its slot, lower it along the slot axis, let go and back away.
+    - workcell.insert: Carry the held piece over its slot, check the base, lower it (the base checked on the way), let go and back away; or put the piece back.
     - workcell.rescan: Look again from the survey pose and say whether a piece is where it should be.
     - workcell.release: Open the gripper.
     - workcell.state: The robot's gripper pose and opening, and every piece's true pose with its slot's.
@@ -37,4 +37,8 @@ time on `127.0.0.1:$WORKCELL_SKILLS_PORT`. Nothing here can reach a real robot.
 
 - A tool that cannot do what was asked raises, so its subgraph leaves through `on_error`.
 - `workcell.lookahead` changes nothing: it saves the stage's physics state, tries the move and puts the state back.
+- `workcell.insert` checks the base from one depth picture at the pre-place hover and while lowering. A base that moved takes its
+  slots with it and the rest of the placement is laid out again and simulated ahead; `result` is then still `inserted`. When the
+  check cannot vouch for the base, or other pieces are not where they were, the piece is put back where it was picked and
+  `result` is `rescan`.
 - `workcell.state` is ground truth from the simulator. Graphs use it for checkpoints, never for planning.

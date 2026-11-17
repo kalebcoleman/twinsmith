@@ -18,6 +18,13 @@
    {"name": "right", "eye_m": [0.32, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]}
   ]
  },
+ "base_check": {
+  "what": "The fast check of the base while a piece is brought to it (scripts/puzzle_base_check.py): one depth picture of the wrist camera at the pre-place hover and after every descent_step_m of lowering, fitted with the base's CAD from its last pose. The camera rides on the gripper and looks along it: a piece that goes in with the gripper level (the forks) is checked once instead, from look_height_m above the base, before it is carried in, and not again. A base found more than moved_mm or moved_deg away, by a fit that is trusted, takes its slots and seated pieces with it and the rest of the placement is laid out again and simulated ahead; at most corrections times per placement. A fit that is not trusted, or other pieces not where they were, puts the piece back and scans the table.",
+  "moved_mm": 3.0, "moved_deg": 1.5,
+  "descent_step_m": 0.010,
+  "look_height_m": 0.45,
+  "corrections": 3
+ },
  "base_target": {
   "what": "The middle of the table. The yaw puts the forks' slots across the rail, so each fork is brought in from its own side with the gripper level; the base may also arrive half a turn round.",
   "position_m": [0.0, -0.46],
