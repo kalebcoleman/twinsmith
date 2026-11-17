@@ -150,7 +150,8 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
     and advance physics ``steps`` after each, without a round trip per row. The count of steps starts at ``done``:
     each time it reaches a multiple of ``every`` every recorder in ``film`` saves a frame, and at each multiple of
     ``sample`` the joint positions are read. Returns ``{"shot": frames per recorder, "samples": [[count, position
-    per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping and filming."""
+    per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping (until the GPU has
+    finished the steps) and filming."""
     view, out = physics.view_for(articulation, articulation=True), {"shot": 0, "samples": [], "physics_s": 0.0, "render_s": 0.0}
     targets = physics.dof_row(view, view.get_dof_position_targets())        # read once: reading it back before every row cost 3 ms a row
     for row in rows:
@@ -163,6 +164,7 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
             count = min([left] + ([every - done % every] if film else []) + ([sample - done % sample] if sample else []))
             started = time.perf_counter()
             physics.step(_stage(), count)
+            wp.synchronize()                             # the step returns while the GPU still has steps queued: wait, or the clock reads short
             out["physics_s"] += time.perf_counter() - started
             left, done = left - count, done + count
             if sample and done % sample == 0:
