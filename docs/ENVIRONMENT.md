@@ -130,6 +130,7 @@ These must be the same for the host and for Kit: each reads its own environment.
 | `TWINSMITH_RG2_STEP` | unset | `scripts/workcell_bracket_assets.py` | A local copy of OnRobot's official RG2 STEP, needed only to rebuild the private work-cell pack. Checked against a pinned SHA-256; nothing is downloaded. |
 | `TWINSMITH_QC_STEP` | unset | `scripts/workcell_bracket_assets.py` | The same for OnRobot's official Quick Changer robot-side STEP. |
 | `TWINSMITH_BOTA_STEP` | unset | `scripts/workcell_bracket_assets.py` | The same for Bota Systems' official Rokubi STEP. |
+| `TWINSMITH_SCAN_WORKERS` | `1` | `scripts/puzzle_scan.py` | How many processes a scan-to-scene `match` shares its fits among, the calling one included; `1` starts no other. The estimate is the same with any number. Capped at the processors the last minute's load leaves idle; `--workers` overrides it. See [scan to scene](../exts/workcell/workcell/README.md#scan-to-scene). |
 
 ## Set by the code, read by the code
 

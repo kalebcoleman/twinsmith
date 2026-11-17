@@ -131,6 +131,13 @@ How a piece is recognised:
   well it is given whole (`other_pose`), not chosen between. Two poses up to 8 mm inside each other are one piece
   resting on the other when lifting the upper straight up by that much takes it out of the lower: it is moved and says
   so (`moved_up_mm`). Inside each other sideways, no lift parts them and one piece per place, below, applies.
+- **Too small to be a base plate.** That fit does not try a base plate on an object that shows less than half of the
+  least a plate can show from above, which is its smallest face (58 cm2 for `puzzles/v1`, so 29 cm2; the pack's largest
+  other piece shows 39 cm2 lying flat). The limit is the pack's own: `BASE_SEEN_MIN` times the smallest footprint of
+  the plate's boxes, with the factor of two for a plate half hidden, half out of the picture or half lost by its mask.
+  It can change an answer only where that fit would have named so small an object a base plate: a plate that does not
+  lie flat and of which less than that is seen as one object, or something that is no plate. A plate lying flat is
+  found by the flat fit, which this does not touch. `BASE_SEEN_MIN = 0` turns it off.
 - **The gripper in the picture.** A mask that is mostly more than 0.25 m above the table is the gripper the camera
   rides on, and neither it nor the mixed depth round its edge is an object.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside
@@ -168,6 +175,16 @@ Use `block` and `plastic block` together: each sometimes joins two touching piec
 matcher takes the same thing masked twice as one object. On four recorded pile and assembled layouts they masked 29
 of 30 pieces (one fork lying against another piece was joined to it). Shadows help: without them the same prompts cut
 each fork in two at its centre tab. No real picture has been tried.
+
+**More than one process.** `match --workers N` (or `TWINSMITH_SCAN_WORKERS=N`, or `match(scan, pack, workers=N)`)
+shares the fits that do not depend on each other among N processes, the calling one included. The default is 1: no
+other process is started. The estimate is the same with any number, since a fit is the same arithmetic wherever it
+runs. The others are the script started again (`puzzle_scan.py _helper`), not forks, and they import nothing of the
+caller's, so a caller with threads, a simulator connection or no `__main__` guard is not disturbed; one that fails to
+start or dies only leaves its share to the caller. The variable is capped at the processors the last minute's load
+leaves idle. A function replaced in the module at run time is not replaced in the helpers; its numeric settings are
+sent to them. On the 29 real wrist-camera clips of 2026-11-16 (3 to 9 objects each), reading a clip and matching it
+took 5.6 s in one process and 3.2 s in four, on a 32-processor PC that simulators were also using.
 
 The estimate lists, besides the poses: `not_seen` (pieces of the pack it did not find), `unexplained` (segments no
 piece accounts for, with the reason), and per piece its `rest` (flat, on its side, on end, assembled), what it

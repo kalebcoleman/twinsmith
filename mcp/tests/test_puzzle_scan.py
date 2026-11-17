@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import math
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -350,3 +351,150 @@ def test_a_piece_is_lifted_off_another_only_when_lifting_takes_it_out_of_it(pack
     beside = {"name": "bar_yellow", "pose": pose((0.015, 0.0), 0, rest.turn, rest.drop + 0.005)}       # beside it, 5 mm into its side
     assert scan._overlap(pack, under, beside) == pytest.approx(0.005)
     assert scan._lifted_clear(pack, beside, under, 0.005) is None                                      # no lift parts them
+
+
+def one_box_at_a_time(shape, turn, at, xy):
+    """The heights ``_top_at`` gives, worked out the plain way: one box after another, each line clipped by each slab."""
+    best = np.full(len(xy), -np.inf)
+    for centre, half in shape.boxes:
+        origin = np.column_stack([xy, np.zeros(len(xy))]) - (turn @ centre + at)
+        low, high = np.full(len(xy), -np.inf), np.full(len(xy), np.inf)
+        for axis in range(3):
+            along, start = turn[2, axis], origin @ turn[:, axis]
+            if abs(along) < 1e-9:
+                outside = np.abs(start) > half[axis]
+                low, high = np.where(outside, np.inf, low), np.where(outside, -np.inf, high)
+            else:
+                a, b = (-half[axis] - start) / along, (half[axis] - start) / along
+                low, high = np.maximum(low, np.minimum(a, b)), np.minimum(high, np.maximum(a, b))
+        best = np.maximum(best, np.where(high >= low, high, -np.inf))
+    return best
+
+
+def test_every_box_in_one_operation_gives_the_numbers_of_one_box_at_a_time(pack):
+    rng = np.random.default_rng(5)
+    for trial in range(90):
+        shape = pack.shapes[trial % len(pack.shapes)]
+        turn = scan.yaw_matrix(rng.uniform(0, 6.3)) @ scan.ROTATIONS[int(rng.integers(24))]      # level: slabs along the vertical
+        if trial % 3:
+            turn = scan._axis_turn(np.array([1.0, 0, 0]), (0.4, 1e-7)[trial % 3 - 1]) @ turn      # tipped, and all but level
+        at = np.array([*rng.uniform(-0.3, 0.3, 2), 0.0])
+        xy = at[:2] + rng.uniform(-0.08, 0.08, (400, 2))
+        heights = scan._top_at(shape, turn, at, xy)
+        assert np.isfinite(heights).any() and not np.isfinite(heights).all()
+        assert np.array_equal(heights, one_box_at_a_time(shape, turn, at, xy))                # not close: the same numbers
+        assert scan._lowest(shape, turn) == -min(float((turn @ centre)[2] - np.abs(turn[2] * half).sum()) for centre, half in shape.boxes)
+        top = shape.top(turn, at + [0, 0, 0.03])
+        assert np.array_equal(top[:, 2], one_box_at_a_time(shape, turn, at + [0, 0, 0.03], top[:, :2]))
+
+
+def test_the_median_is_numpys_whatever_it_is_given():
+    rng = np.random.default_rng(6)
+    for trial in range(400):
+        values = rng.normal(size=int(rng.integers(1, 40)))
+        if trial % 4 == 0:
+            values = np.round(values, 1)                                    # ties
+        if trial % 9 == 0:
+            values[int(rng.integers(len(values)))] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")                                 # numpy may say that it met something that is no number
+            wanted = float(np.median(values))
+        got = scan._median(values)
+        assert got == wanted or (math.isnan(got) and math.isnan(wanted))
+
+
+def test_a_base_plate_is_not_tried_on_an_object_far_too_small_to_be_one(tmp_path, monkeypatch):
+    # The least a plate shows from above is its smallest face, from the pack's own boxes: standing on edge, the 100 x 20 mm
+    # side that the slot's 24 x 10 mm notch is cut out of.
+    plates = scan.Pack({"plate": PIECES["plate"]}, {"plate": []}, "toy/plate")
+    plate = plates.shape("plate")
+    assert plate.least_area == pytest.approx(0.100 * 0.020 - 0.024 * 0.010)
+    limit = scan.BASE_SEEN_MIN * plate.least_area
+    assert scan.BASE_SEEN_MIN == 0.5 and limit == pytest.approx(0.00088)                   # half of that face: 8.8 cm2
+    assert scan.too_small_for_base({"area": limit - 4e-6}, plate) and not scan.too_small_for_base({"area": limit + 4e-6}, plate)   # a cell either side
+    # Two blocks that are no piece of the pack, 20 mm wide and 39 and 41 mm long: with the bit of their walls the camera
+    # sees, one shows a few percent under 8.8 cm2 and the other a few percent over.
+    blocks = {"under": {"boxes": [box([0, 0, 0], [0.0195, 0.01, 0.01])], "colour": [0.7, 0.03, 0.03]},
+              "over": {"boxes": [box([0, 0, 0], [0.0205, 0.01, 0.01])], "colour": [0.1, 0.5, 0.1]}}
+    drawn = scan.Pack(blocks, {}, "toy/blocks")
+    scan.synthetic(drawn, {"under": flat(drawn, "under", (-0.08, 0.0), 20), "over": flat(drawn, "over", (0.08, 0.0), 20)}, CAMERA, tmp_path / "clip", tmp_path / "run")
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    area = {item["name"]: item["area"] for item in looked.objects}
+    assert 0.93 * limit < area["pieces:1"] < limit < area["pieces:2"] < 1.07 * limit
+    tried, fit_free = [], scan.fit_free
+    monkeypatch.setattr(scan, "fit_free", lambda scanned, item, shape: tried.append(item["name"]) or fit_free(scanned, item, shape))
+    estimate = scan.match(looked, plates)
+    assert tried == ["pieces:2"]                                               # the one just over is tried as the plate, the one just under is not
+    assert not estimate["pieces"] and sorted(one["object"] for one in estimate["unexplained"]) == ["pieces:1", "pieces:2"]
+    tried.clear()
+    monkeypatch.setattr(scan, "BASE_SEEN_MIN", 0.0)                            # the test turned off: both, as before it was there
+    assert scan.match(looked, plates)["unexplained"] == estimate["unexplained"] and tried == ["pieces:1", "pieces:2"]
+
+
+def test_no_pose_of_a_plate_shows_less_than_its_smallest_face(pack):
+    plate, rng, least = pack.shape("plate"), np.random.default_rng(7), np.inf
+    for trial in range(300):
+        w, x, y, z = (lambda q: q / np.linalg.norm(q))(rng.normal(size=4))
+        turn = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        least = min(least, len(plate.top(turn, np.zeros(3), cell=0.001)) * 1e-6)
+    assert least > 0.97 * plate.least_area                                     # tipped off a face it shows more, not less
+
+
+def test_helper_processes_give_the_estimate_of_one_process_alone(pack, tmp_path, monkeypatch):
+    truth = {"plate": flat(pack, "plate", (-0.08, 0.02), 25), "ell": tipped(pack, "ell", (0.07, -0.03), 130, (1, 0, 0), 24),
+             "bar_yellow": tipped(pack, "bar_yellow", (0.06, 0.07), -40, (0, 1, 0), -31), "bar_red": flat(pack, "bar_red", (-0.02, -0.11), 70)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run", noise_m=0.0006)
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    alone = scan.match(looked, pack)                                           # no helpers unless they are asked for
+    assert {piece["name"]: piece["rest"] for piece in alone["pieces"]} == {"plate": "flat", "ell": "tilted", "bar_yellow": "tilted", "bar_red": "flat"}
+
+    def same(a, b):                                                            # every number of every pose, not nearly: exactly
+        assert len(a) == len(b)
+        for one, two in zip(a, b):
+            assert [set(pose) for pose in one] == [set(pose) for pose in two]
+            for pose, other in zip(one, two):
+                assert pose["rest"] is other["rest"] or pose["rest"] == other["rest"]      # a flat fit's rest: the shape's own, not a copy
+                assert all(np.array_equal(pose[key], other[key]) for key in ("cost", "turn", "at", "lift", "agree", "colour"))
+        return True
+
+    jobs = [(kind, item, number) for kind in ("fit", "fit_free") for item in looked.objects for number in range(len(pack.shapes))]
+    whole = {"name": "two as one", **{key: np.concatenate([item[key] for item in looked.objects[:2]]) for key in ("cells", "xy", "z")},
+             "area": sum(item["area"] for item in looked.objects[:2]), "colour": looked.objects[0]["colour"]}
+    whole["centroid"] = whole["xy"].mean(0)
+    jobs.append(("fit", whole, 0))                                             # objects put together are no object of the scan: sent whole
+    here = [(scan.fit_free if kind == "fit_free" else scan.fit)(looked, item, pack.shapes[number]) for kind, item, number in jobs]
+    assert any(isinstance(pose["rest"], scan.Rest) for found in here for pose in found)
+    helpers = scan.Helpers(looked, pack, 3)
+    try:
+        assert len(helpers.others) == 2 and Path(helpers.setup).exists()
+        assert same(helpers.run(jobs), here) and len(helpers.others) == 2
+        helpers.others[0].kill()                                               # one dies: its share is done here, and it is not asked again
+        helpers.others[0].wait()
+        assert same(helpers.run(jobs), here) and len(helpers.others) == 1
+        monkeypatch.setattr(scan, "FREE_STARTS", 2)                            # a setting changed after the helpers started is not theirs:
+        assert not all(len(found) <= 2 for found in helpers.run(jobs[len(looked.objects) * len(pack.shapes):-1]))
+        monkeypatch.undo()
+        setup = helpers.setup
+    finally:
+        helpers.close()
+    assert not helpers.others and not Path(setup).exists()
+    assert json.dumps(scan.match(looked, pack, workers=3), sort_keys=True) == json.dumps(alone, sort_keys=True)
+    monkeypatch.setattr(scan, "FREE_STARTS", 2)                                # one changed before they start is sent with the scan
+    fewer = scan.match(looked, pack)
+    assert json.dumps(scan.match(looked, pack, workers=3), sort_keys=True) == json.dumps(fewer, sort_keys=True) != json.dumps(alone, sort_keys=True)
+
+
+def test_helpers_are_off_unless_asked_for_and_never_more_than_the_idle_processors(monkeypatch):
+    monkeypatch.setattr(scan.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (2.0, 2.0, 2.0))
+    monkeypatch.delenv("TWINSMITH_SCAN_WORKERS", raising=False)
+    assert scan.workers() == 1
+    monkeypatch.setenv("TWINSMITH_SCAN_WORKERS", "4")
+    assert scan.workers() == 4
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (13.4, 9.0, 5.0))       # simulators at work: two and a half processors idle
+    assert scan.workers() == 2
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (40.0, 30.0, 20.0))
+    assert scan.workers() == 1
+    monkeypatch.setenv("TWINSMITH_SCAN_WORKERS", "many")
+    assert scan.workers() == 1
