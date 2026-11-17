@@ -162,7 +162,7 @@ def lay(args):
     settings = json.loads((ROOT / "scripts/puzzle_build.json").read_text())
     pack, tables = puzzle_scan.load_pack(settings["pack"]), config.setdefault("tables", {})
     for case in cases(config):
-        if case["table"] in tables:
+        if case["table"] in tables or (args.cases and case["table"] not in args.cases):
             continue
         mine = merged(settings, case["settings"])
         target = workcell_session.pose(puzzle_scan.yaw_matrix(math.radians(mine["base_target"]["yaw_deg"])),
@@ -453,7 +453,7 @@ def main():
     parser.add_argument("action", choices=["cases", "lay", "run", "summary"])
     parser.add_argument("--config", type=Path, default=CONFIG)
     parser.add_argument("--group", default="base", help="base, disturbance, stretch/<name> or all")
-    parser.add_argument("--cases", nargs="+", help="these cases by name, in place of a group")
+    parser.add_argument("--cases", nargs="+", help="run: these cases by name, in place of a group; lay: only these tables")
     parser.add_argument("--port", type=int, help="run: the simulator to build on; its stage is replaced")
     parser.add_argument("--out", type=Path, help="run and summary: the folder of the whole benchmark run")
     parser.add_argument("--label", help="run: what these builds are called in the summary (a branch, say)")
