@@ -1,0 +1,298 @@
+{
+ "schema": 1,
+ "description": "The puzzle build's table of in-hand corrections (--correction table): one entry per piece type. A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD; in_hand is how it sat when measured, and the place is shifted by it. flipped says whether it was measured with the gripper half round from the grasp as defined; held the other way round, the shift is turned with the gripper. An entry with apply false is kept as a measurement and not used: that piece is placed by its grasp as defined. Simulation only: nothing here was measured on a real gripper or a real piece.",
+ "measured": {
+  "how": "One lookahead per piece on Newton, in one measuring run of scripts/puzzle_build.py on one layout: after the survey and the base's slide, each piece's pick and insertion is rehearsed from the poses the run believes, with the pieces before it in the build order put in the base where the CAD has them. Over the slot the piece's pose and the gripper's are read from the simulator; that reading is the entry. No piece is placed for real in a measuring run.",
+  "command": "python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes --perception oracle --write-corrections <this file>",
+  "date": "2026-11-17",
+  "seed": 11,
+  "perception": "oracle",
+  "pack": "puzzles/v1",
+  "base": "base3",
+  "cell_pack": "ur5e-workcell/v4",
+  "backend": "newton",
+  "grip_force_n": 40.0,
+  "friction_in_the_solver": {
+   "pieces": {
+    "base3": [
+     0.4,
+     1.0
+    ],
+    "line_brown": [
+     0.4,
+     1.0
+    ],
+    "line_red": [
+     0.4,
+     1.0
+    ],
+    "fork_orange": [
+     0.4,
+     1.0
+    ],
+    "fork_yellow": [
+     0.4,
+     1.0
+    ]
+   },
+   "pads": [
+    0.7
+   ]
+  }
+ },
+ "pieces": {
+  "line_brown": {
+   "shift_mm": 1.705,
+   "shift_deg": 0.037,
+   "apply": true,
+   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
+   "in_hand": [
+    [
+     0.999999798,
+     2.4408e-05,
+     -0.000634555,
+     -9.9494e-05
+    ],
+    [
+     -2.4453e-05,
+     0.999999997,
+     -7.0015e-05,
+     -0.000936971
+    ],
+    [
+     0.000634554,
+     7.003e-05,
+     0.999999796,
+     0.001421559
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "flipped": false,
+   "grasp": {
+    "point_m": [
+     0.0,
+     0.0,
+     0.0095
+    ],
+    "closing_axis": [
+     1,
+     0,
+     0
+    ],
+    "approach_axis": [
+     0,
+     0,
+     -1
+    ],
+    "width_m": 0.0259
+   },
+   "measured": {
+    "lookahead_verdict": "go",
+    "lookahead_tries": 1,
+    "way_of_holding": 0,
+    "rehearsal_final_error_mm": 0.49,
+    "rehearsal_final_error_deg": 0.0,
+    "rehearsal_moved_another_piece_mm": 1.34,
+    "rehearsal_moved_most": "base3",
+    "pieces_in_the_base": []
+   }
+  },
+  "line_red": {
+   "shift_mm": 4.006,
+   "shift_deg": 0.082,
+   "apply": true,
+   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
+   "in_hand": [
+    [
+     0.999999804,
+     4.127e-06,
+     -0.000625929,
+     -9.8112e-05
+    ],
+    [
+     -4.933e-06,
+     0.999999171,
+     -0.001287697,
+     0.002239273
+    ],
+    [
+     0.000625923,
+     0.0012877,
+     0.999998975,
+     0.003320558
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "flipped": false,
+   "grasp": {
+    "point_m": [
+     0.0,
+     0.0,
+     0.0095
+    ],
+    "closing_axis": [
+     1,
+     0,
+     0
+    ],
+    "approach_axis": [
+     0,
+     0,
+     -1
+    ],
+    "width_m": 0.0259
+   },
+   "measured": {
+    "lookahead_verdict": "abort",
+    "lookahead_tries": 1,
+    "way_of_holding": 0,
+    "rehearsal_final_error_mm": 1.1,
+    "rehearsal_final_error_deg": 0.0,
+    "rehearsal_moved_another_piece_mm": 8.42,
+    "rehearsal_moved_most": "base3",
+    "pieces_in_the_base": [
+     "line_brown"
+    ]
+   }
+  },
+  "fork_orange": {
+   "shift_mm": 2.378,
+   "shift_deg": 0.48,
+   "apply": true,
+   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
+   "in_hand": [
+    [
+     0.999999687,
+     1.0554e-05,
+     -0.000791367,
+     -0.000101005
+    ],
+    [
+     -1.716e-05,
+     0.999965158,
+     -0.00834759,
+     -0.001058632
+    ],
+    [
+     0.000791252,
+     0.008347601,
+     0.999964845,
+     -0.002126471
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "flipped": true,
+   "grasp": {
+    "point_m": [
+     0.0,
+     -0.0255,
+     0.006
+    ],
+    "closing_axis": [
+     1,
+     0,
+     0
+    ],
+    "approach_axis": [
+     0,
+     0,
+     -1
+    ],
+    "width_m": 0.021
+   },
+   "measured": {
+    "lookahead_verdict": "go",
+    "lookahead_tries": 1,
+    "way_of_holding": 0,
+    "rehearsal_final_error_mm": 0.26,
+    "rehearsal_final_error_deg": 0.07,
+    "rehearsal_moved_another_piece_mm": 0.05,
+    "rehearsal_moved_most": "line_brown",
+    "pieces_in_the_base": [
+     "line_brown",
+     "line_red"
+    ]
+   }
+  },
+  "fork_yellow": {
+   "shift_mm": 5.336,
+   "shift_deg": 0.57,
+   "apply": true,
+   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
+   "in_hand": [
+    [
+     0.999999702,
+     -1.9556e-05,
+     -0.000771692,
+     -0.000102704
+    ],
+    [
+     1.1896e-05,
+     0.999950742,
+     -0.009925378,
+     0.002049444
+    ],
+    [
+     0.000771848,
+     0.009925366,
+     0.999950444,
+     -0.004925239
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "flipped": true,
+   "grasp": {
+    "point_m": [
+     0.0,
+     -0.0255,
+     0.006
+    ],
+    "closing_axis": [
+     1,
+     0,
+     0
+    ],
+    "approach_axis": [
+     0,
+     0,
+     -1
+    ],
+    "width_m": 0.021
+   },
+   "measured": {
+    "lookahead_verdict": "go",
+    "lookahead_tries": 1,
+    "way_of_holding": 0,
+    "rehearsal_final_error_mm": 0.35,
+    "rehearsal_final_error_deg": 0.07,
+    "rehearsal_moved_another_piece_mm": 0.04,
+    "rehearsal_moved_most": "line_brown",
+    "pieces_in_the_base": [
+     "line_brown",
+     "line_red",
+     "fork_orange"
+    ]
+   }
+  }
+ }
+}

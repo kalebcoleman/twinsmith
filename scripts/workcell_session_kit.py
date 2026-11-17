@@ -186,6 +186,31 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
     return out
 
 
+def step_cost(steps=500, repeats=3):
+    """Milliseconds of wall time per physics step right now, with the GPU's queue waited for: one value per repeat."""
+    wp.synchronize()
+    out = []
+    for _ in range(repeats):
+        started = time.perf_counter()
+        physics.step(_stage(), steps)
+        wp.synchronize()
+        out.append(1000 * (time.perf_counter() - started) / steps)
+    return out
+
+
+def solver_friction(prefixes):
+    """The friction coefficients Newton's own model holds for the collision shapes under each prim path: {path:
+    sorted coefficients}. Read from the solver's model after Play, not from the stage: a material bound where Newton
+    does not look leaves the solver's default, and only this shows it."""
+    from isaacsim.physics.newton import acquire_stage
+
+    model = acquire_stage().model
+    labels = list(getattr(model, "shape_label", None) or getattr(model, "shape_key"))
+    mu = model.shape_material_mu.numpy()
+    return {prefix: sorted({round(float(mu[index]), 4) for index, label in enumerate(labels) if label == prefix or label.startswith(prefix + "/")})
+            for prefix in prefixes}
+
+
 class Checkpoint:
     """The physics state of one articulation and some rigid bodies, to put back after simulating ahead: joint
     positions, velocities and drive targets, and each body's pose and velocity. Not Newton's whole solver state: the

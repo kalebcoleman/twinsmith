@@ -8,18 +8,23 @@ Against a disposable Isaac Sim bridge on Newton, with the work cell (``ur5e-work
    looks straight down, the ``sam3`` tool (SAM 3.1) masks the pieces and ``puzzle_scan`` names and poses them.
 3. The build order comes from taking the CAD apart (``puzzle_assembly.build_order``). Graph-as-Policy runs it as a
    graph (``exts/workcell/gap``): this script serves the work cell's skills to that graph, one call at a time.
-4. The base is gripped by its centre island and slid to the middle. Each piece is then simulated ahead on Newton
-   (``lookahead``: the stage's state is saved, the pieces are put where the scan says they are, the pick and the
-   insertion are run, the result is judged and the state is put back), picked, carried over its slot, lowered along
-   the slot axis, released, and looked at again from the survey pose.
+4. The base is gripped by its centre island and slid to the middle. Each piece is picked, carried over its slot,
+   lowered along the slot axis, released, and looked at again from the survey pose. A piece does not sit in the hand
+   exactly as its grasp is defined, so the place is corrected by how it does sit (``--correction``): from a table
+   with one measured shift per piece type (``table``, ``puzzle_build_corrections.json``; nothing is simulated ahead),
+   or by simulating each pick ahead on Newton and reading it there (``lookahead``: the stage's state is saved, the
+   pieces are put where the scan says they are, the pick and the insertion are run, the result is judged go or abort
+   and the state is put back), or not at all (``none``).
 5. ``metrics.json``: per piece, whether it was named, gripped and seated, how far its final pose is from the CAD's,
-   and what the lookahead said; a video from the table camera and the wrist camera, and key frames.
+   which correction its place had and what a lookahead said; a video from the table camera and the wrist camera, and
+   key frames.
 
 Nothing here reaches a real robot: every call goes to the simulator bridge on this machine. It replaces the stage and
 starts GPU jobs (SAM 3.1) beside the simulator.
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
         --allow-concurrent-gpu [--table-camera] [--colours <colours.json>] [--perception oracle] [--unqualified-cell-pack]
+        [--correction table|lookahead|none]
 """
 
 import argparse
@@ -49,10 +54,14 @@ from twinsmith.robosim.bridge import _ffmpeg_exe  # noqa: E402
 from twinsmith.sam3 import Sam3  # noqa: E402
 
 CONFIG = Path(__file__).with_name("puzzle_build.json")
+CORRECTIONS = Path(__file__).with_name("puzzle_build_corrections.json")
+CORRECTION = "lookahead"                         # --correction when none is given
+HALF_TURN = np.diag([-1.0, -1.0, 1.0, 1.0])     # the gripper turned half round about the way it points
 REGISTRY = ROOT / "exts/workcell/gap"
 PUZZLE = "/World/Puzzle"
 HOVER_M, LIFT_M, CARRY_M, RETREAT_M, MARGIN_M = 0.10, 0.12, 0.15, 0.08, 0.02
 LOOKAHEAD_TRIES = 5
+GRASP_KEYS = ("point_m", "closing_axis", "approach_axis", "width_m")
 BASE_MOVED_M, BASE_MOVED_DEG = 0.003, 2.0       # a later look that puts the base further than this from where it was: it has moved
 BASE_PLACED_M, BASE_PLACED_DEG = 0.010, 5.0     # the base is in the middle when a look finds it this near its goal
 BASE_SLIDES, BASE_NEAR_M = 2, 0.05              # it is slid at most this many times; again only from this near its goal
@@ -83,6 +92,36 @@ def se3(at):
     return {"position": dict(zip("xyz", map(float, at[:3, 3]))), "orientation": {"w": w, "x": x, "y": y, "z": z}}
 
 
+def read_corrections(path, config, pieces):
+    """The table of in-hand corrections for ``pieces``: {piece: 4 x 4, the gripper as the piece really sits in it, in
+    the frame of the gripper as the grasp defines it; and whether that was measured with the gripper half round}.
+    A correction belongs to the grasp, the grip force and the pieces it was measured with: a table measured with
+    others is refused, and so is one without an entry for a piece. An entry marked ``"apply": false`` is a
+    measurement that is kept and not used: that piece is placed by its grasp as defined."""
+    table = json.loads(Path(path).read_text())
+    rows, measured = table["pieces"], table["measured"]
+    if measured["pack"] != config["pack"] or measured["grip_force_n"] != config["grip_force_n"]:
+        raise SystemExit(f"{path} was measured with {measured['pack']} at {measured['grip_force_n']} N; this build is of {config['pack']} at "
+                         f"{config['grip_force_n']} N. Measure it again (--write-corrections).")
+    out = {}
+    for piece in pieces:
+        if piece not in rows:
+            raise SystemExit(f"{path} has no correction for {piece}. Measure one (--write-corrections), or run with "
+                             "--correction lookahead.")
+        grasp = {key: config["grasps"][piece][key] for key in GRASP_KEYS}
+        if rows[piece]["grasp"] != grasp:
+            raise SystemExit(f"{path}: the correction for {piece} was measured with the grasp {rows[piece]['grasp']}, not with the configured "
+                             f"{grasp}. Measure it again (--write-corrections).")
+        if rows[piece].get("apply", True):
+            out[piece] = {"in_hand": np.array(rows[piece]["in_hand"], dtype=float), "flipped": bool(rows[piece]["flipped"])}
+    return out
+
+
+def in_hand_shift(shift):
+    """How far a piece sits in the hand from its grasp as defined: (millimetres, degrees) of a 4 x 4 shift."""
+    return (round(1000 * float(np.linalg.norm(shift[:3, 3])), 3), round(puzzle_scan.angle_between(shift[:3, :3], np.eye(3)), 3))
+
+
 class Build:
     """The work cell's skills for one layout. Each public method without a leading underscore that ``TOOLS`` names is
     one tool of the graph: it takes and returns plain data."""
@@ -99,6 +138,8 @@ class Build:
         self.paths = {name: f"{PUZZLE}/{name}" for name in self.names}
         self.estimate, self.placed, self.held, self.looks, self.marks, self.adjust, self.avoid = {}, [], None, 0, [], {}, {}
         self.metrics = {name: {"attempts": 0} for name in self.slots}
+        self.correction = args.correction                   # where a place's in-hand correction comes from: lookahead, table or none
+        self.table = read_corrections(args.corrections, config, self.slots) if self.correction == "table" else {}
         self.base_slides = 0                                # how many times the base has been slid to the middle
         self.ahead = False                                  # true while simulating ahead: no metric is recorded
         self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
@@ -131,7 +172,15 @@ class Build:
             self.say("parking the rail")
             row["result"] = rail = self.cell.park_rail(self.config["rail_mm"])
         return {"backend": built["backend"], "cell_pack": built["pack"], "cell_pack_qualified": qualified,
-                "keep_out_measured_on": assembly.KEEP_OUT_PACK, "rigid_bodies": built["newton"]["rigid_bodies"], "rail": rail}
+                "keep_out_measured_on": assembly.KEEP_OUT_PACK, "rigid_bodies": built["newton"]["rigid_bodies"], "rail": rail,
+                "friction_in_the_solver": self.friction()}
+
+    def friction(self):
+        """The friction coefficients Newton's own model holds for the pieces' collision shapes and the fingertip pads
+        (not what the stage says): {"pieces": {piece: [coefficients]}, "pads": [coefficients]}."""
+        pads = [f"{finger}/fingertip" for finger in self.cell.fingers]
+        found = self.cell.friction([*self.paths.values(), *pads])
+        return {"pieces": {name: found[path] for name, path in self.paths.items()}, "pads": sorted({value for pad in pads for value in found[pad]})}
 
     def say(self, caption):
         self.doing = self.cell.caption = caption
@@ -306,17 +355,19 @@ class Build:
         others = {name: self._twin_pose(name) if name in self.placed else at for name, at in self.estimate.items() if name != piece}
         axis = self.estimate[self.base][:3, :3] @ np.array(step["axis"], dtype=float)
         hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
-        hold.update(axis=axis, clear_m=step["clear_m"] + MARGIN_M)
+        hold.update(axis=axis, clear_m=step["clear_m"] + MARGIN_M, corrected_by=None)
         self.trying = hold
-        if piece in self.adjust:                            # the lookahead's grasp: how the piece really sat in the hand
-            hold["place"] = hold["seat"] @ self.adjust[piece]
+        if piece in self.adjust:                            # the lookahead's: how the piece really sat in the simulated hand
+            hold.update(place=hold["seat"] @ self.adjust[piece], corrected_by="lookahead")
+        elif piece in self.table:                           # the table's: how a piece of this type sat when it was measured
+            hold.update(place=hold["seat"] @ hold["in_piece"] @ self._table_shift(piece, hold["flipped"]), corrected_by="table")
         width, speeds = hold["width_m"], self.config["speeds"]
         if not self.ahead:
             self.metrics[piece]["attempts"] += 1
         pick, over = self._tcp(hold["pick"], width), self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), width)
         hold["path"] = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, LIFT_M]),
                         "carry": shifted(over, [0, 0, CARRY_M]), "over": over, "place": self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width)}
-        self.log.note(grasp=self._grasp_plan(piece, hold), adjusted=piece in self.adjust, slot_axis=[round(float(v), 4) for v in hold["axis"]],
+        self.log.note(grasp=self._grasp_plan(piece, hold), adjusted=bool(hold["corrected_by"]), corrected_by=hold["corrected_by"], slot_axis=[round(float(v), 4) for v in hold["axis"]],
                       waypoints=[waypoint(name, at) for name, at in hold["path"].items()])
         self.say(f"{piece}: approaching")
         self.cell.open_to(width + self.config["open_beyond_m"])
@@ -327,6 +378,13 @@ class Build:
         return {"commanded": se3(pick), "width_m": width,
                 "target_obb": {"center": dict(zip("xyz", map(float, self.estimate[piece][:3, 3]))),
                                "extent": dict(zip("xyz", map(float, size / 2))), "rotation": se3(self.estimate[piece])["orientation"]}}
+
+    def _table_shift(self, piece, flipped):
+        """The table's shift for a piece, for a hold with the gripper as defined or half round from it. An entry was
+        measured one way round; the other way round it is turned with the gripper (the two fingers are alike, so
+        the piece sits in the turned gripper as it sat in the other: reasoned from that, not measured)."""
+        row = self.table[piece]
+        return row["in_hand"] if flipped == row["flipped"] else HALF_TURN @ row["in_hand"] @ HALF_TURN
 
     @stepped("close")
     def close(self, piece):
@@ -362,8 +420,11 @@ class Build:
         hold["in_hand"] = np.linalg.inv(self.truth()[piece]) @ shifted(gripper, -gripper[:3, 2] * cell.pad_setback(width))
         if not self.ahead:                                  # how far the piece sits from the grasp as defined: what friction and grip force set
             defined = np.linalg.inv(hold["in_piece"])
-            self.metrics[piece]["in_hand_shift_mm"] = round(1000 * min(float(np.linalg.norm((defined @ assembly.pose(turn, shift) @ hold["in_hand"])[:3, 3]))
-                                                                       for turn, shift in self.pack.shape(piece).symmetries), 2)
+            sits = [assembly.pose(turn, shift) @ hold["in_hand"] for turn, shift in self.pack.shape(piece).symmetries]
+            self.metrics[piece]["in_hand_shift_mm"] = round(1000 * min(float(np.linalg.norm((defined @ sat)[:3, 3])) for sat in sits), 2)
+            assumed = np.linalg.inv(np.linalg.inv(hold["seat"]) @ hold["place"])        # how the place assumes it sits: the grasp, or the grasp corrected
+            self.metrics[piece].update(corrected_by=hold["corrected_by"],
+                                       place_assumed_off_mm=round(1000 * min(float(np.linalg.norm((assumed @ sat)[:3, 3])) for sat in sits), 2))
         if self.ahead and piece not in self.adjust:         # simulating ahead: the twin shows how the piece sits in the hand, so the
             self.adjust[piece] = hold["in_hand"]            # place is corrected by it before lowering, and the real pick starts with it
             hold["place"] = hold["seat"] @ hold["in_hand"]
@@ -404,12 +465,17 @@ class Build:
         slot the try reads how the piece sits in the hand and corrects the place by it before lowering; the real pick
         then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece.
         Then go or abort. The stage is put
-        back as it was. Every try is filmed as a clip of its own, ``lookahead/<piece>_<try>``."""
-        self.say(f"{piece}: lookahead on Newton")
-        if self.args.no_lookahead:
-            return {"verdict": "go", "tries": []}
-        tries, placed = [], list(self.placed)
+        back as it was. Every try is filmed as a clip of its own, ``lookahead/<piece>_<try>``.
+
+        With ``--correction table`` or ``none`` nothing is simulated: the answer is go at once, and the place is
+        corrected from the table or not at all (``approach``)."""
         self.adjust.pop(piece, None)
+        if self.correction != "lookahead":
+            self.say(f"{piece}: no lookahead; the place is " + ("corrected from the table" if self.correction == "table" else "not corrected"))
+            self.log.note(simulated=False, correction=self.correction)
+            return {"verdict": "go", "tries": []}
+        self.say(f"{piece}: lookahead on Newton")
+        tries, placed = [], list(self.placed)
         self.avoid.pop(piece, None)
         self.cell.checkpoint(self.paths.values())
         self.ahead = True
@@ -427,9 +493,9 @@ class Build:
                         rise = self.lift(piece)["rise_m"]
                         blocked = self.insert(piece)["blocked"]
                         after = self.truth()
-                        moved = max(float(np.linalg.norm(after[name][:3, 3] - before[name][:3, 3])) for name in after if name != piece)
+                        moved, most = max((float(np.linalg.norm(after[name][:3, 3] - before[name][:3, 3])), name) for name in after if name != piece)
                         row = {**self._seated(piece, after, after[self.base]), "blocked": blocked, "rise_mm": round(rise * 1000, 1),
-                               "others_moved_mm": round(moved * 1000, 2)}
+                               "others_moved_mm": round(moved * 1000, 2), "moved_most": most}
                         row["go"] = bool(row["seated"] and moved < 0.003)
                     except (Refused, cell.MoveFailed) as error:
                         row = {"go": False, "error": str(error), "during": self.doing}
@@ -448,10 +514,15 @@ class Build:
         finally:
             self.cell.restore()
             self.ahead, self.placed, self.held = False, placed, None
+        verdict = {"verdict": "go" if tries[-1]["go"] else "abort", "tries": tries}
+        record = dict(verdict)
+        if piece in self.adjust:                            # how the piece sat in the simulated hand: what a table of corrections is made of
+            shift = np.linalg.inv(hold["in_piece"]) @ self.adjust[piece]
+            record["correction"] = {"in_hand": np.round(shift, 9).tolist(), "flipped": hold["flipped"], "way": hold["way"],
+                                    "shift_mm": in_hand_shift(shift)[0], "shift_deg": in_hand_shift(shift)[1]}
         if not tries[-1]["go"]:
             self.adjust.pop(piece, None)
-        verdict = {"verdict": "go" if tries[-1]["go"] else "abort", "tries": tries}
-        self.metrics[piece].setdefault("lookahead", []).append(verdict)
+        self.metrics[piece].setdefault("lookahead", []).append(record)
         return verdict
 
     def _twin_pose(self, name):
@@ -595,7 +666,9 @@ class Build:
                    "final_poses": {name: np.round(at, 6).tolist() for name, at in truth.items()},
                    "simulated_seconds": round(self.cell.steps / cell.PHYSICS_HZ, 1), "wall_seconds": round(time.time() - started, 1),
                    "pieces": self.metrics, "survey": getattr(self, "survey_report", None), "order": self.order,
-                   "perception": self.args.perception}
+                   "perception": self.args.perception, "correction": self.correction,
+                   "corrections_table": str(self.args.corrections) if self.correction == "table" else None}
+        summary["physics_step_ms_at_end"] = self.cell.step_cost()   # after the last reading: these steps are in no picture and no metric
         summary["video"] = str(self._video(film))
         return summary
 
@@ -624,6 +697,52 @@ class Build:
         return out
 
 
+def write_corrections(path, record, config):
+    """A table of corrections from a measuring run (``measure``): per piece, the shift its lookahead read, with how
+    it was measured. An entry comes from a rehearsal that seated the piece; whether that rehearsal said go or
+    abort (it also aborts when something else moved) is recorded with it. Refuses to write a table that lacks a
+    piece. Every entry is written with ``"apply": true``; setting one to false, with the reason, is a decision made
+    by whoever compares builds with and without it."""
+    rows, order = {}, [step["piece"] for step in record["order"]]
+    for piece, metrics in record["pieces"].items():
+        read = [look for look in metrics.get("lookahead", []) if look["tries"][-1].get("seated") and "correction" in look]
+        if not read:
+            raise SystemExit(f"No table written: no lookahead of {piece} in this run seated the piece.")
+        measured, last = read[-1]["correction"], read[-1]["tries"][-1]
+        rows[piece] = {"shift_mm": measured["shift_mm"], "shift_deg": measured["shift_deg"], "apply": True,
+                       "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines "
+                               "it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its "
+                               "distance from the grasp as defined",
+                       "in_hand": measured["in_hand"], "flipped": measured["flipped"],
+                       "grasp": {key: config["grasps"][piece][key] for key in GRASP_KEYS},
+                       "measured": {"lookahead_verdict": read[-1]["verdict"], "lookahead_tries": len(read[-1]["tries"]),
+                                    "way_of_holding": measured["way"],
+                                    "rehearsal_final_error_mm": last["position_error_mm"], "rehearsal_final_error_deg": last["rotation_error_deg"],
+                                    "rehearsal_moved_another_piece_mm": last["others_moved_mm"], "rehearsal_moved_most": last.get("moved_most"),
+                                    "pieces_in_the_base": order[:order.index(piece)]}}
+    table = {"schema": 1,
+             "description": "The puzzle build's table of in-hand corrections (--correction table): one entry per piece type. A piece does "
+                            "not sit in the closed gripper exactly as its grasp is defined on the CAD; in_hand is how it sat when measured, "
+                            "and the place is shifted by it. flipped says whether it was measured with the gripper half round from the grasp "
+                            "as defined; held the other way round, the shift is turned with the gripper. An entry with apply false is kept "
+                            "as a measurement and not used: that piece is placed by its grasp as defined. Simulation only: nothing here "
+                            "was measured on a real gripper or a real piece.",
+             "measured": {"how": "One lookahead per piece on Newton, in one measuring run of scripts/puzzle_build.py on one layout: after "
+                                 "the survey and the base's slide, each piece's pick and insertion is rehearsed from the poses the run "
+                                 "believes, with the pieces before it in the build order put in the base where the CAD has them. Over the "
+                                 "slot the piece's pose and the gripper's are read from the simulator; that reading is the entry. No piece "
+                                 "is placed for real in a measuring run.",
+                          "command": f"python3 scripts/puzzle_build.py --port <port> --out <folder> --seed {record['seed']} --mutate-stage "
+                                     f"--discard-changes --perception {record['perception']} --write-corrections <this file>",
+                          "date": time.strftime("%Y-%m-%d"), "seed": record["seed"], "perception": record["perception"],
+                          "pack": config["pack"], "base": config["base"], "cell_pack": assembly.cell_pack(record["cell"]["cell_pack"])[0],
+                          "backend": record["cell"]["backend"], "grip_force_n": config["grip_force_n"],
+                          "friction_in_the_solver": record["cell"]["friction_in_the_solver"]},
+             "pieces": rows}
+    Path(path).write_text(json.dumps(table, indent=1) + "\n")
+    print(f"corrections written to {path}: " + ", ".join(f"{piece} {row['shift_mm']} mm {row['shift_deg']} deg" for piece, row in rows.items()))
+
+
 def graph_report(trace, pieces):
     """What the graph's own checks said, from its trace: the stock reach and grip checks per piece, and the
     vision-language model's two answers."""
@@ -634,7 +753,8 @@ def graph_report(trace, pieces):
             "vlm_count": output("count_parts.compare"), "vlm_judge": output("judge_assembly.ask")}
 
 
-def main():
+def arguments(argv=None):
+    """The command line, checked: ``correction`` is always one of table, lookahead and none."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, required=True, help="the simulator bridge to use; its stage is replaced")
     parser.add_argument("--out", type=Path, required=True, help="folder for metrics.json, the video and the pictures")
@@ -643,7 +763,16 @@ def main():
     parser.add_argument("--colours", type=Path, help="measured piece colours for this camera and light (puzzle_scan.py colours)")
     parser.add_argument("--perception", choices=["sam3", "oracle"], default="sam3",
                         help="oracle reads the simulator's own poses in place of the camera, to tell a handling failure from a seeing one")
-    parser.add_argument("--no-lookahead", action="store_true", help="skip simulating each piece ahead")
+    parser.add_argument("--correction", choices=["table", "lookahead", "none"],
+                        help="where each place's in-hand correction comes from. table: one fixed shift per piece type, read from "
+                             "--corrections; nothing is simulated ahead. lookahead: every pick is simulated ahead on Newton, which measures "
+                             "the shift for that pick and can say abort. none: the grasp as defined, uncorrected. "
+                             f"Default: {CORRECTION}")
+    parser.add_argument("--no-lookahead", action="store_true", help="the same as --correction none")
+    parser.add_argument("--corrections", type=Path, default=CORRECTIONS, help="the table of corrections for --correction table")
+    parser.add_argument("--write-corrections", type=Path,
+                        help="a measuring run in place of a build: after the survey and the base's slide, one lookahead per piece, and "
+                             "the shifts they read are written to this file as a table of corrections. No piece is placed")
     parser.add_argument("--table-camera", action="store_true", help="draw the config's table camera, for the video")
     parser.add_argument("--mutate-stage", action="store_true", help="required: this run replaces the open stage")
     parser.add_argument("--discard-changes", action="store_true", help="let quick_start drop unsaved edits")
@@ -651,9 +780,19 @@ def main():
                         help=f"run on a cell pack other than {assembly.KEEP_OUT_PACK}, the one the gripper and camera keep-out boxes were "
                              "measured on; metrics.json records cell_pack_qualified false")
     parser.add_argument("--allow-concurrent-gpu", action="store_true", help="required with sam3: SAM 3.1 runs on the simulator's GPU")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if not args.mutate_stage or (args.perception == "sam3" and not args.allow_concurrent_gpu):
         parser.error("pass --mutate-stage, and --allow-concurrent-gpu with SAM 3.1: the run replaces the stage and starts GPU jobs beside the simulator")
+    if args.no_lookahead and args.correction not in (None, "none"):
+        parser.error(f"--no-lookahead is --correction none; it was given with --correction {args.correction}")
+    if args.write_corrections and (args.no_lookahead or args.correction not in (None, "lookahead")):
+        parser.error("--write-corrections measures with lookaheads; it does not go with --correction table or none")
+    args.correction = "lookahead" if args.write_corrections else "none" if args.no_lookahead else args.correction or CORRECTION
+    return args
+
+
+def main():
+    args = arguments()
     config = json.loads(args.config.read_text())
     pack = puzzle_scan.load_pack(config["pack"], args.colours)
     target = cell.pose(puzzle_scan.yaw_matrix(math.radians(config["base_target"]["yaw_deg"])),
@@ -662,11 +801,11 @@ def main():
                               blind=assembly.hidden_on_table(config["survey"]["look_at_m"], config["survey"]["height_m"]))
     build, started = Build(args, config, pack), time.time()
     try:
-        record = run(build, args, config, layout, started)
+        record = (measure if args.write_corrections else run)(build, args, config, layout, started)
     except BaseException:
         build.abandon()
         raise
-    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
+    print(json.dumps({key: record.get(key) for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
 
 
 def run(build, args, config, layout, started):
@@ -684,6 +823,32 @@ def run(build, args, config, layout, started):
     record.update(build.finish(started))
     (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")
     record["viewer"] = str(puzzle_viewer.build(build.out))
+    return record
+
+
+def measure(build, args, config, layout, started):
+    """The measuring run for a table of corrections: the survey and the base's slide as in a build, then one lookahead
+    per piece in the build order and nothing placed. Each lookahead starts with the pieces before it in the base where
+    the CAD has them (as a lookahead in a build has the pieces already placed), so none depends on how an earlier one
+    ended. The graph is not run. Writes ``metrics.json`` and the table; returns the record."""
+    record = {"seed": args.seed, "layout": {name: at.tolist() for name, at in layout.items()}, "cell": build.start(layout), "measuring_run": True}
+    try:
+        build.survey()
+        build.place_base(build.base)
+        while build.rescan(build.base)["result"] == "retry":
+            build.place_base(build.base)
+    except (Refused, cell.MoveFailed) as error:
+        raise SystemExit(f"The measuring run could not put the base in the middle: {error}") from None
+    for step in build.order:
+        said = build.lookahead(step["piece"])
+        last = said["tries"][-1]
+        print(f"  {step['piece']}: lookahead said {said['verdict']}; " + (last.get("error") or
+              f"piece {last['position_error_mm']} mm from its slot, another moved {last['others_moved_mm']} mm"), flush=True)
+        build.placed.append(step["piece"])                  # the next rehearsal has it in the base
+        build.estimate[step["piece"]] = build._seat(step["piece"])
+    record.update(build.finish(started))
+    (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")
+    write_corrections(args.write_corrections, record, config)
     return record
 
 

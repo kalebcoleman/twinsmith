@@ -201,6 +201,18 @@ class Session:
         state = self.call("sim.joints.state", {"path": self.root})
         return dict(zip(state["names"], state["positions"]))
 
+    def friction(self, prefixes):
+        """The friction coefficients the solver's own model holds (Newton), not what the stage says: {prefix: the
+        sorted coefficients of the collision shapes under that prim path}."""
+        return self.kit(f"result = solver_friction({list(prefixes)!r})")
+
+    def step_cost(self, steps=500, repeats=3):
+        """Milliseconds of wall time one physics step takes on this simulator now, the GPU waited for: the median of
+        ``repeats`` runs of ``steps``. The steps are real: the scene moves on by them, unfilmed and unsampled."""
+        costs = self.kit(f"result = step_cost({int(steps)}, {int(repeats)})")
+        self.steps += steps * repeats
+        return round(float(np.median(costs)), 4)
+
     def poses(self, bodies=(), attached=None):
         return {path: np.array(m) for path, m in self.kit(f"result = poses({list(bodies)!r}, {attached or {}!r})").items()}
 
