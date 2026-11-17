@@ -79,6 +79,23 @@ Still open:
   and will not stand through a game; every before-and-after measurement of a tower in the cell contains some of it.
   Find which contact setting it follows (the friction cone's softness, `impratio`, the iteration count) before using
   the cell's tower for anything slower than a single move.
+- [ ] The Jenga blocks' friction on Newton. `jenga.py` binds each block's contact material on the block's root only
+  (`exts/workcell/workcell/jenga.py`, where the material is bound), as `puzzle.py` did until 2026-11-17. Newton reads
+  a collider's own binding: the puzzle pieces ran at the solver's 1.0 and not at their task's 0.4 until the material
+  was bound to each collision box. If the blocks are the same, every Jenga result on Newton was measured at 1.0. Read
+  it back from Newton's model (`workcell_session_kit.solver_friction`), bind the colliders, and measure the tower and
+  the push again; the tower's creep above may change with it.
+- [ ] The puzzle's bars and the slot walls. A bar's grasp leaves the pads 0.5 mm above the slot's 7 mm walls, and the
+  arm hangs about 1 mm below its targets at a pick, so a place corrected for how a bar sits in the hand puts the pads
+  on the walls and the base is pushed when the gripper opens. The bars are therefore placed uncorrected
+  ([the build's three ways](../exts/workcell/workcell/README.md#correcting-the-place-three-ways)). Raise the grasp
+  point, or hold the arm at its targets, before a bar's place is corrected again.
+- [ ] The puzzle build's settings were tuned with the pieces at 1.0: the base's slide (`BASE_SLIDES`, `BASE_NEAR_M`),
+  the lookahead's 3 mm rule for "another piece moved". At 0.4 the base slides on the bench far more easily. The slide
+  still passed in every build of 2026-11-17; the 3 mm rule now stops most lookahead builds at a bar.
+- [ ] A puzzle build stopped by values from Newton that are not finite numbers (met once in about 70 builds, as the
+  gripper opened in a lookahead's rehearsal, and six times in about 750 picks of the look-ahead study) ends with a
+  named error and its records; why Newton produces them there is not known.
 
 ### Work cell realism
 
