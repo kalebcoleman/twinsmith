@@ -159,6 +159,9 @@ class Build:
     """The work cell's skills for one layout. Each public method without a leading underscore that ``TOOLS`` names is
     one tool of the graph: it takes and returns plain data."""
 
+    TURN_LIFT_M = 0.03                                      # how high a piece is lifted to be turned on the table
+    TURN_LOOK_DEG = 3.0                                     # a look that reads a turned piece further than this from the gripper's turn is believed
+
     TOOLS = ("scan", "survey", "picture", "place_base", "rescan", "lookahead", "approach", "close", "lift", "insert", "release", "state")
 
     def __init__(self, args, config, pack):
@@ -384,6 +387,15 @@ class Build:
             raise Refused(f"the scan's cycle gave no estimate ({folder / 'cycle.log'}): {(done.stdout + done.stderr)[-300:]}")
         return json.loads((folder / "answer/estimate.json").read_text())
 
+    def _in_doubt(self, report):
+        """The pieces a scan's report leaves in doubt that the build still has to act on: this puzzle's own, not yet
+        placed. Another puzzle's pieces stay obstacles where they were seen, and a base with pieces in it is not
+        moved again and is read as it was last read (a base seen half a turn round is the same base), so doubt
+        about it stops nothing: a finished puzzle whose base a last look found pushed was scanned, left its base
+        in doubt, and the build ended refused with every piece seated."""
+        settled = {*self.placed, *([self.base] if self.placed else [])}
+        return sorted((set(report.get("doubtful", [])) & set(self.names)) - settled)
+
     def _seen(self, folder):
         """The scan's views taken and combined: (the cycle's report, the names of the views taken). From above first,
         the survey's own view, and from the sides only when that leaves a piece in doubt: the views from the sides
@@ -394,8 +406,8 @@ class Build:
         if self.args.perception == "oracle":
             return {}, [view["name"] for view in taken]
         report = self._combine(folder)
-        if report.get("doubtful"):
-            self.say(f"scan: {', '.join(report['doubtful'])} in doubt from above; the views from the sides")
+        if self._in_doubt(report):
+            self.say(f"scan: {', '.join(self._in_doubt(report))} in doubt from above; the views from the sides")
             (folder / "answer").rename(folder / "answer_from_above")
             self._sweep(folder / "scan", views[1:], taken)
             self.cell.camera_to(views[0][1])
@@ -457,7 +469,7 @@ class Build:
             following = next((step["piece"] for step in self.order if step["piece"] not in self.placed), "done")
         else:
             following, self.base_slides = self.base, 0
-        doubtful = sorted((set(report.get("doubtful", [])) & set(self.names)) - set(self.placed))       # another puzzle's pieces stay obstacles where they were seen
+        doubtful = self._in_doubt(report)
         if doubtful:
             raise Refused(f"the scan leaves {doubtful} in doubt; one more view would be: {(report.get('next_view') or {}).get('view')}")
         puzzle_scan.write_task(assembly.layout_estimate(self.pack, {piece: self._twin_pose(piece) for piece in self.estimate}), folder / "task",
@@ -729,17 +741,19 @@ class Build:
                   key=lambda value: abs((value - yaw_now + math.pi) % (2 * math.pi) - math.pi))
         return cell.pose(puzzle_scan.yaw_matrix(yaw), [*target["position_m"], now[2, 3]])
 
-    def _grasp(self, piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0):
+    def _grasp(self, piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0, grasp=None):
         """The first way of holding a piece that fits the CAD, that the arm reaches at both ends, and that a
-        lookahead has not found blocked. The gripper is checked as it comes down, open, and as it holds the piece."""
-        grasp = self.config["grasps"][piece]
+        lookahead has not found blocked: of those, the first that keeps wrist 3 in its window (``in_window``), or
+        the first of all. The gripper is checked as it comes down, open, and as it holds the piece. ``grasp`` is the
+        piece's own definition unless another is given (the one a piece is turned on the table by)."""
+        grasp = grasp or self.config["grasps"][piece]
         back, why = np.linalg.inv(self.cell.wrist_from_gripper), []
         with self.cell.timed("plan_s"):
             options = assembly.choose_grasps(self.pack, piece, grasp, now, target, around_now, around_then, cell.pad_setback, axis, clear_m,
                                              open_m=self.config["open_beyond_m"], hover_m=HOVER_M, refused=why)
         if not options:
             raise Refused(f"no grasp of {piece} fits: {'; '.join(why[:3]) or 'it does not lie the way its grasp takes it, from above'}")
-        low, high = np.radians(self.config["arm"]["wrist_3_deg"])
+        (low, high), rise = np.radians(self.config["arm"]["wrist_3_deg"]), math.radians(self.config["arm"]["wrist_3_rise_deg"])
         in_reach = []
         for way, option in enumerate(options):
             if way in self.avoid.get(piece, ()):
@@ -749,13 +763,84 @@ class Build:
                           for at in (option["pick"], option["place"], shifted(option["place"], np.array(axis) * clear_m))]
             except cell.MoveFailed:
                 continue
-            hold = {**option, "width_m": grasp["width_m"], "piece": piece, "way": way, "wrist_3_deg": [round(math.degrees(q), 1) for q in turned]}
-            if all(low <= q <= high for q in turned):       # the camera's cord: the way that winds wrist 3 least out of its window
+            hold = {**option, "width_m": grasp["width_m"], "piece": piece, "way": way, "wrist_3_deg": [round(math.degrees(q), 1) for q in turned],
+                    "in_window": all(low <= q <= high for q in turned) and turned[1] - turned[0] <= rise}
+            if hold["in_window"]:                           # the camera's cord: a way that does not wind wrist 3 out of its window
                 return hold
             in_reach.append(hold)
         if in_reach:
             return in_reach[0]
         raise Refused(f"no grasp of {piece} that fits is within reach")
+
+    def _turn(self, piece, hold, others, axis, clear_m):
+        """Turn a lying piece on the table, where it lies, so that it can be picked with wrist 3 inside its window.
+
+        A piece that goes into its slot one way round (a fork) is gripped one way round, so how it lies decides
+        where wrist 3 stands at its pick, and for about half the ways a fork can lie that is outside the window. The
+        same grip half a turn round is no help: when the one is outside the window the other is inside, and a turn
+        that brings the first inside takes the second out. So the piece is turned by another grip (``turn_grasps``,
+        a quarter turn from its own), lifted ``TURN_LIFT_M``, by the angle that brings its own grip's pick nearest
+        the middle of the window, and looked at again where it was set down. Returns whether it was turned: False
+        when the piece has no such grip, or no angle leaves room, reach and both grips inside the window."""
+        grasp = self.config["turn_grasps"].get(piece)
+        if grasp is None:
+            return False
+        now, back = self.estimate[piece], np.linalg.inv(self.cell.wrist_from_gripper)
+        low, high = self.config["arm"]["wrist_3_deg"]
+        about = (now @ np.array([*grasp["point_m"], 1.0]))[:3] * [1.0, 1.0, 0.0]     # the turn is about the gripper's own axis: it stays where it is
+        ways = []
+        for deg in range(-165, 181, 15):
+            spin = puzzle_scan.yaw_matrix(math.radians(deg))
+            spin = cell.pose(spin, about - spin @ about)
+            try:
+                wrist = math.degrees(self.cell.reconfigure(self._tcp(spin @ hold["pick"], hold["width_m"]) @ back)["wrist_3_joint"])
+            except cell.MoveFailed:
+                continue
+            if deg and low <= wrist <= high:
+                ways.append((abs(wrist - (low + high) / 2), deg, spin @ now))
+        for _, deg, there in sorted(ways, key=lambda way: way[:2]):
+            grown = assembly.footprint(self.pack, piece, there, MARGIN_M)
+            if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()):
+                continue
+            try:
+                after = self._grasp(piece, there, self._seat(piece), others, others, axis, clear_m)
+                by = self._grasp(piece, now, there, others, others, clear_m=self.TURN_LIFT_M, grasp=grasp)
+            except Refused:
+                continue
+            if after["in_window"] and by["in_window"]:
+                break
+        else:
+            return False
+        width, speeds = by["width_m"], self.config["speeds"]
+        pick, down = self._tcp(by["pick"], width), self._tcp(shifted(by["place"], [0, 0, 0.002]), width)
+        path = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, self.TURN_LIFT_M]),
+                "over": shifted(down, [0, 0, self.TURN_LIFT_M]), "down": down, "clear": shifted(down, [0, 0, HOVER_M])}
+        with self.log.step("turn", piece, deg=deg, wrist_3_deg={"as_it_lay": hold["wrist_3_deg"], "turned": after["wrist_3_deg"], "turning": by["wrist_3_deg"]},
+                           grasp={key: grasp[key] for key in ("point_m", "closing_axis", "approach_axis", "width_m", "what")},
+                           waypoints=[waypoint(name, at) for name, at in path.items()]) as row:
+            self.say(f"{piece}: its pick would put wrist 3 at {hold['wrist_3_deg'][0]:.0f} degrees; turning it {deg} degrees on the table first")
+            self.cell.open_to(width + self.config["open_beyond_m"])
+            self.cell.gripper_carry(path["hover"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_line(pick, speeds["approach_m_s"])
+            self.cell.grip(width, self.config["grip_force_n"])
+            self.cell.gripper_line(path["lift"], speeds["approach_m_s"])
+            self.cell.gripper_carry(path["over"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_line(down, speeds["approach_m_s"])
+            self.cell.open_to(width + self.config["open_beyond_m"])
+            self.cell.gripper_line(path["clear"], speeds["approach_m_s"])
+            # Where it lies now is measured, not reckoned: it slides in the fingers as they close. How it is turned is
+            # the other way about: the fingers close on two flat ends and square the piece to themselves, so it lies
+            # turned as the gripper was, nearer than a look reads a turn (1.5 degrees off on the first fork turned, which
+            # then jammed in its slot). The look's turn is taken only when it disagrees by more than a look is ever off.
+            seen, _ = self._look(f"{piece}_turned")
+            if piece not in seen:
+                raise Refused(f"{piece} was turned on the table and the look after it does not find it")
+            metres, degrees = assembly.pose_error(self.pack, piece, seen[piece], there)
+            squared = degrees <= self.TURN_LOOK_DEG
+            self.estimate[piece] = cell.pose(there[:3, :3], seen[piece][:3, 3]) if squared else seen[piece]
+            row["result"] = {"deg": deg, "off_mm": round(metres * 1000, 2), "off_deg": round(degrees, 2), "turn_taken_from": "the gripper" if squared else "the look"}
+        self.metrics[piece]["turned_deg"] = deg
+        return True
 
     @staticmethod
     def _tcp(pads, width_m):
@@ -795,10 +880,9 @@ class Build:
 
     def _grasp_plan(self, piece, hold):
         """A chosen grasp as the run's log keeps it: its definition on the CAD and which way of holding was taken."""
-        low, high = self.config["arm"]["wrist_3_deg"]
         return {**{key: self.config["grasps"][piece][key] for key in ("point_m", "closing_axis", "approach_axis", "width_m", "what")},
                 "way": hold["way"], "gripper_in_piece": np.round(hold["in_piece"], 5).tolist(), "force_n": self.config["grip_force_n"],
-                "wrist_3_deg": hold["wrist_3_deg"], "wrist_3_in_window": all(low <= turned <= high for turned in hold["wrist_3_deg"])}
+                "wrist_3_deg": hold["wrist_3_deg"], "wrist_3_in_window": hold["in_window"]}
 
     def _seat(self, piece):
         return self.estimate[self.base] @ self.slots[piece]
@@ -817,6 +901,8 @@ class Build:
         others = {name: self._twin_pose(name) if name in self.placed else at for name, at in self.estimate.items() if name != piece}
         axis = self.estimate[self.base][:3, :3] @ np.array(step["axis"], dtype=float)
         hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
+        if not hold["in_window"] and self.config["arm"]["turn_on_table"] and not self.ahead and self._turn(piece, hold, others, axis, step["clear_m"] + MARGIN_M):
+            hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
         hold.update(axis=axis, clear_m=step["clear_m"] + MARGIN_M, corrected_by=None, others=others)
         self.trying = hold
         if piece in self.adjust:                            # the lookahead's: how the piece really sat in the simulated hand
@@ -898,6 +984,9 @@ class Build:
             defined = np.linalg.inv(hold["in_piece"])
             sits = [assembly.pose(turn, shift) @ hold["in_hand"] for turn, shift in self.pack.shape(piece).symmetries]
             self.metrics[piece]["in_hand_shift_mm"] = round(1000 * min(float(np.linalg.norm((defined @ sat)[:3, 3])) for sat in sits), 2)
+            sat = min(sits, key=lambda sat: float(np.linalg.norm((defined @ sat)[:3, 3])))
+            self.metrics[piece]["in_hand"] = {"what": "the gripper in the piece's frame, as it holds it over the slot", "xyz_mm": np.round(1000 * sat[:3, 3], 2).tolist(),
+                                              "rotation": np.round(sat[:3, :3], 5).tolist(), "defined": np.round(hold["in_piece"], 5).tolist()}
             assumed = np.linalg.inv(np.linalg.inv(hold["seat"]) @ hold["place"])        # how the place assumes it sits: the grasp, or the grasp corrected
             self.metrics[piece].update(corrected_by=hold["corrected_by"],
                                        place_assumed_off_mm=round(1000 * min(float(np.linalg.norm((assumed @ sat)[:3, 3])) for sat in sits), 2))

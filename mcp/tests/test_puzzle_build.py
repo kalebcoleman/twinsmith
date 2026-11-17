@@ -135,13 +135,14 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
 
         def reconfigure(self, pose):
             way = int(pose[0, 3])                             # every pose of a way has its x between way and way + 1
-            if way in self.far:
+            if way in self.far or way >= len(self.turns):
                 raise session.MoveFailed("out of reach")
-            return {"wrist_3_joint": math.radians(self.turns[way])}
+            turn = self.turns[way]                            # one angle for the pick and the place, or one for each
+            return {"wrist_3_joint": math.radians(turn[int(pose[0, 3] - way >= 0.5)] if isinstance(turn, tuple) else turn)}
 
     def taken(arm, avoid=()):
         cell = object.__new__(build.Build)
-        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": [-60.0, 110.0]}}
+        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": [-60.0, 110.0], "wrist_3_rise_deg": 90.0}}
         cell.pack, cell.cell, cell.avoid = None, arm, {"bar": set(avoid)}
         return cell._grasp("bar", spot(0), spot(0.5), {}, {})
 
@@ -153,16 +154,93 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
     assert taken(Arm([150.0, -90.0, 170.0], out_of_reach=[0]))["way"] == 1
     with pytest.raises(build.Refused, match="within reach"):
         taken(Arm([20.0, 30.0, 40.0], out_of_reach=[0, 1, 2]))
+    # Both ends inside the window is not enough: from the pick to the place wrist 3 turns up a quarter turn at most.
+    rising = taken(Arm([(-40.0, 69.0), (-20.0, 69.0), (90.0, 0.0)]))
+    assert rising["way"] == 1 and rising["wrist_3_deg"] == [-20.0, 69.0, 69.0] and rising["in_window"] is True
+    assert taken(Arm([(-40.0, 69.0), (90.0, 0.0)]))["way"] == 1                    # turning down is as far as the window is wide
+    assert taken(Arm([(-40.0, 69.0)]))["in_window"] is False
+
+
+def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_table_first():
+    step_log = sys.modules["step_log"]
+    pack = scan.Pack(TOY, TOY_SLOTS, "toy/v1")
+    lying = assembly.pose(np.eye(3), [0.2, -0.4, pack.shape("bar").rests[0].drop])
+    yaw_of = lambda at: math.degrees(math.atan2(at[1, 0], at[0, 0]))
+
+    class Arm:                                                 # wrist 3 follows the gripper's turn about the vertical, from -150 as the bar lies
+        wrist_from_gripper = np.eye(4)
+
+        def __init__(self):
+            self.did = []
+
+        def reconfigure(self, pose):
+            return {"wrist_3_joint": math.radians((yaw_of(pose) - 150 + 180) % 360 - 180)}
+
+        def __getattr__(self, name):
+            return lambda *given, **named: self.did.append(name)
+
+    def turned(turn_grasps, room=True, turning_in_window=True):
+        cell = object.__new__(build.Build)
+        cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0]}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
+                       "speeds": {"approach_m_s": 0.05, "joint_deg_s": 45.0}}
+        cell.pack, cell.cell, cell.estimate, cell.metrics, cell.said = pack, Arm(), {"bar": lying}, {"bar": {}}, []
+        cell.say, cell._seat = cell.said.append, lambda piece: lying
+        cell.log = step_log.StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
+
+        def grasp(piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0, grasp=None):
+            wrist = math.degrees(cell.cell.reconfigure(now)["wrist_3_joint"])
+            inside = turning_in_window if grasp else -60 <= wrist <= 110
+            return {"pick": now, "place": target, "width_m": 0.024, "wrist_3_deg": [round(wrist, 1)], "in_window": inside}
+
+        cell._grasp = grasp
+        # Where the look finds it: slid 1.5 mm, and read ``misread`` degrees from the turn the open step asked for.
+        cell.misread = 1.2
+        cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)), [0.2015, -0.4, lying[2, 3]])
+        cell._look = lambda label: ({"bar": cell.lands()} if cell.misread is not None else {}, {})
+        others = {} if room else {"plate": assembly.pose(np.eye(3), [0.2, -0.4, 0.0])}
+        hold = {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}
+        return cell, cell._turn("bar", hold, others, np.array([0.0, 0.0, 1.0]), 0.03)
+
+    cell, done = turned({})
+    assert done is False and cell.cell.did == []               # no grip to turn it by: it is picked as it lies
+    across = dict(TOY_GRASP, closing_axis=[0, 1, 0], what="across")
+    cell, done = turned({"bar": across})
+    step = cell.log.steps[0]
+    # From -150 the middle of the window (25) is 175 degrees on; of the angles tried, 15 degrees apart, 180 and 165 are as near.
+    assert done is True and step["kind"] == "turn" and step["plan"]["deg"] in (165, 180) and cell.metrics["bar"]["turned_deg"] == step["plan"]["deg"]
+    assert cell.cell.did == ["open_to", "gripper_carry", "gripper_line", "grip", "gripper_line", "gripper_carry", "gripper_line", "open_to", "gripper_line"]
+    # Where it lies is the look's (it slid 1.5 mm); how it is turned is the gripper's, which squared it.
+    apart = lambda a, b: abs((a - b + 180) % 360 - 180)
+    assert np.allclose(cell.estimate["bar"][:3, 3], [0.2015, -0.4, lying[2, 3]]) and 1.0 < step["result"]["off_mm"] < 2.6
+    assert apart(yaw_of(cell.estimate["bar"]), step["plan"]["deg"]) < 1e-6 and step["result"] == dict(step["result"], off_deg=1.2, turn_taken_from="the gripper")
+    cell.misread, cell.estimate["bar"] = 8.0, lying            # turned again, and found 8 degrees from the gripper's turn: the look is believed
+    assert cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
+    again = cell.log.steps[-1]
+    assert apart(yaw_of(cell.estimate["bar"]), again["plan"]["deg"] + 8.0) < 1e-6 and again["result"]["turn_taken_from"] == "the look"
+    assert "wrist 3 at -150 degrees" in cell.said[0]
+    assert turned({"bar": across}, room=False)[1] is False                       # another piece where it would lie
+    assert turned({"bar": across}, turning_in_window=False)[1] is False          # the turning grip itself out of the window
+    cell.misread, cell.estimate["bar"] = None, lying           # turned once more, and gone from the look after it
+    with pytest.raises(build.Refused, match="does not find it"):
+        cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
+
+
+def test_the_turn_on_the_table_is_off_as_shipped_and_every_piece_that_needs_one_has_a_grip_for_it():
+    assert CONFIG["arm"]["turn_on_table"] is False and CONFIG["arm"]["wrist_3_rise_deg"] == 90.0
+    assert sorted(set(CONFIG["turn_grasps"]) - {"what"}) == sorted(set(CONFIG["grasps"]) - {CONFIG["base"]})
+    source = (ROOT / "scripts/puzzle_build.py").read_text()
+    assert 'self.config["arm"]["turn_on_table"] and not self.ahead and self._turn(' in source      # the one place a turn starts
 
 
 def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_piece_in_doubt(tmp_path):
     def scanned(doubt_from_above, perception="sam3"):
         cell = object.__new__(build.Build)
         cell.args, cell.said, cell.combined = type("Args", (), {"perception": perception})(), [], []
+        cell.names, cell.base, cell.placed = ["plate", "bar", "cap"], "plate", []
         cell.say, cell.cell = cell.said.append, type("Arm", (), {"camera_to": lambda self, eye: cell.said.append("back above")})()
         cell._views = lambda: [("top", 0), ("left", 1), ("right", 2)]
         cell._sweep = lambda folder, views, taken: taken.extend({"name": name} for name, eye in views)
-        folder = tmp_path / f"{perception}_{len(doubt_from_above)}"
+        folder = tmp_path / f"scan_{len(list(tmp_path.iterdir()))}"
 
         def combine(given):
             (given / "answer").mkdir(parents=True)
@@ -177,6 +255,12 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
     cell, report, views = scanned(["bar"])
     assert views == ["top", "left", "right"] and report == {"doubtful": [], "views": 2}
     assert cell.combined[1] == ["answer", "answer_from_above"] and "bar in doubt from above" in cell.said[0] and cell.said[-1] == "back above"
+    # Doubt the build need not act on takes no more views: another puzzle's piece, a piece in its slot, the base it lies in.
+    assert scanned(["peg"])[2] == ["top"]
+    cell.placed = ["bar"]
+    assert cell._in_doubt({"doubtful": ["plate", "bar", "cap", "peg"]}) == ["cap"] and cell._in_doubt({}) == []
+    cell.placed = []
+    assert cell._in_doubt({"doubtful": ["plate", "bar"]}) == ["bar", "plate"]      # a bare base is still to be slid: its doubt counts
     cell, report, views = scanned(["bar"], perception="oracle")
     assert (report, views, cell.combined) == ({}, ["top"], [])                    # the simulator's own poses: no cycle and no doubt
 

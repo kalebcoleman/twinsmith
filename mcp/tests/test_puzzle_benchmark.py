@@ -62,6 +62,8 @@ def test_the_frozen_cases_are_six_layouts_of_three_seeds_and_four_disturbances_o
     assert all(case["layout"] in CONFIG["layouts"] for case in cases)
     stretch = {case["group"] for case in cases if case["group"].startswith("stretch/")}
     assert {"stretch/reach_far", "stretch/reach_side", "stretch/long_carry"} <= stretch
+    added = [case for case in cases if case["group"] == "stretch/two_puzzles"]         # added after the freeze, and says so
+    assert len(added) == 3 and CONFIG["stretch"]["two_puzzles"]["what"].startswith("ADDED AFTER THE FREEZE")
     far = [case["settings"]["base_target"]["position_m"][1] for case in cases if case["group"] == "stretch/reach_far"]
     assert far == sorted(far, reverse=True) and far[0] == -0.46      # outward from the build's own target, step by step
     # A disturbed case is built on the table of the base case it disturbs; a stretch case, whose target differs, on its own.
@@ -75,10 +77,14 @@ def test_every_case_has_its_table_and_a_table_is_kept_as_numbers():
     pieces = ["base3", "line_brown", "line_red", "fork_orange", "fork_yellow"]
     for case in bench.cases(CONFIG):
         table = CONFIG["tables"][case["table"]]                                # a missing one fails here: the benchmark is not runnable without it
-        assert list(table) == pieces, case["name"]                             # the base first
-        spots = np.array([[x, y] for x, y, yaw in table.values()])
-        assert (spots > low).all() and (spots < high).all(), case["name"]
         spec = CONFIG["layouts"][case["layout"]]
+        assert list(table) == [*pieces, *spec.get("also", [])], case["name"]   # the base first; another puzzle's pieces last
+        spots = np.array([table[name][:2] for name in pieces])
+        assert (spots > low).all() and (spots < high).all(), case["name"]
+        if "on" in spec:                                                       # another case's table, as it was, with the other pieces added
+            assert {name: table[name] for name in pieces} == CONFIG["tables"][spec["on"]], case["name"]
+            others, wide = np.array([table[name][:2] for name in spec["also"]]), np.array(spec["also_region"])
+            assert (others > wide[0]).all() and (others < wide[1]).all(), case["name"]
         loose = np.array([[x, y] for name, (x, y, yaw) in table.items() if name in spec.get("band_for", pieces[1:])])       # the pieces a band holds for
         if "pieces_y" in spec:
             assert (loose[:, 1] >= spec["pieces_y"][0]).all() and (loose[:, 1] <= spec["pieces_y"][1]).all(), case["name"]
@@ -147,16 +153,22 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
         bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(1), {"pieces_y": [-0.31, -0.30]}, REGION, HIDDEN, tries=3)
 
 
-def test_another_puzzles_pieces_lie_on_the_table_too_and_leave_the_puzzles_own_where_they_were():
+def test_another_puzzles_pieces_are_added_to_a_laid_table_and_leave_it_as_it_was():
     both = scan.Pack({**PIECES, "peg": {"boxes": [box([0, 0, 0], [0.02, 0.02, 0.01])], "colour": [0.1, 0.6, 0.1]}}, SLOTS, "toy/v1")
     middle = target(both)
-    laid = lambda spec: bench.lay_out(assembly, scan, both, "plate", middle, np.random.default_rng(5), spec, REGION, HIDDEN)
-    alone, crowded = laid({}), laid({"also": ["peg"]})
-    assert list(crowded) == ["plate", "cap", "bar", "peg"]                 # the base first, then its own pieces, then the others
-    assert all(np.array_equal(alone[name], crowded[name]) for name in alone)      # the same dice for the puzzle's own
-    peg = assembly.footprint(both, "peg", crowded["peg"], 0.035)
-    assert all(assembly._apart(peg, assembly.footprint(both, name, at)) for name, at in alone.items())
-    assert all(assembly._apart(peg, assembly.footprint(both, "plate", at, 0.03)) for at in assembly.slide_path(crowded["plate"], middle))
+    alone = bench.lay_out(assembly, scan, both, "plate", middle, np.random.default_rng(5), {}, REGION, HIDDEN)
+    wide = [[-0.45, -0.64], [0.40, -0.11]]
+    added = lambda seed, spec: bench.with_others(assembly, scan, both, "plate", middle, np.random.default_rng(seed), alone, spec, HIDDEN)
+    crowded = added(1, {"also": ["peg"], "also_region": wide})
+    assert list(crowded) == ["plate", "cap", "bar", "peg"] and all(np.array_equal(alone[name], crowded[name]) for name in alone)
+    assert np.array_equal(crowded["peg"], added(1, {"also": ["peg"], "also_region": wide})["peg"])            # the same dice, the same table
+    corners, grown = assembly.footprint(both, "peg", crowded["peg"]), assembly.footprint(both, "peg", crowded["peg"], 0.035)
+    assert (corners > np.array(wide[0])).all() and (corners < np.array(wide[1])).all()
+    assert all(assembly._apart(grown, assembly.footprint(both, name, at)) for name, at in alone.items())
+    assert all(assembly._apart(grown, assembly.footprint(both, "plate", at, 0.03)) for at in assembly.slide_path(alone["plate"], middle))
+    assert all(assembly._apart(grown, np.array([a, [b[0], a[1]], b, [a[0], b[1]]])) for a, b in HIDDEN)
+    with pytest.raises(ValueError, match="no room on the table for peg"):        # a region the base's way to the middle fills
+        added(1, {"also": ["peg"], "also_region": [[alone["plate"][0, 3] - 0.03, -0.49], [alone["plate"][0, 3] + 0.03, -0.43]]})
 
 
 def a_build(folder, seated, attempts=None, stopped="unset", scans=1, base_checks=None, success=None):

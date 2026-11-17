@@ -12,8 +12,8 @@
   "why_there": "The pose has to be one the real cell allows. Over [0.02, -0.37] at 0.72 m, where this survey used to stand, wrist 3 is at 141.5 degrees and the camera's cord needs 13.2 cm more than at the real scan pose: the real cell's wrist 3 window ends at 135 degrees and its cord's spare loop is taken as 10 cm (the puzzle project's ros2/config; both guesses until measured). From 0.145 m further along -x wrist 3 is at 114 degrees and the cord needs 9.2 cm. From 0.75 m the picture reaches x = 0.40 and y = -0.66 at 0.81 mm a pixel (0.78 before), and the flange stays 14 mm under the 0.80 m top of the bridge's workspace box."
  },
  "arm": {
-  "what": "Where wrist 3 is kept when a pose leaves the choice (which way round a piece is gripped): the range in which the camera's cord stayed inside its limit in the puzzle project's GaP bridge. Not a limit of the simulated arm; a grasp outside it is still taken when no other is in reach, and the bridge then refuses it.",
-  "wrist_3_deg": [-60.0, 110.0]
+  "what": "Where wrist 3 is kept when a pose leaves the choice (which way round a piece is gripped, and whether it is turned on the table first): wrist_3_deg is the range for the pick and the place, and from the pick to the place it may turn up by no more than wrist_3_rise_deg. Both are read off the cord model of the puzzle project's GaP bridge (10 cm of spare loop, not measured) on this build's own moves: a pick above 100 degrees needs more cord than that, and so does a carry that turns wrist 3 up through more than about 100 degrees (a bar picked at -40 and put in at 69 needs 10.6 cm, one picked at -20 needs 3.8). Not a limit of the simulated arm: a grasp outside it is still taken when the piece is not turned, and the bridge then refuses it. turn_on_table: whether a piece no way of holding keeps there is turned where it lies before it is picked (turn_grasps). Off: in the builds measured so far a turned bar and one turned fork were seated, and another fork, turned, jammed in its slot in four builds of four where the same fork picked as it lay was seated in three of three. The fingers hold a fork by the top of its tab and it slides in them by 0 to 7.5 mm from one pick to the next; until they hold it repeatably a turn trades seats for goals the bridge sends.",
+  "wrist_3_deg": [-90.0, 100.0], "wrist_3_rise_deg": 90.0, "turn_on_table": false
  },
  "scan": {
   "what": "The scan step's views after the survey's own (straight down, the view the matcher reads), taken only when the view from above leaves a piece in doubt: where the wrist camera is, the point it looks at, and its turn about the line of sight. The depth of every view is compared with the matched pieces, which is what tells a piece's rival poses apart. Five frames a view, the number the matcher reads. Each view, and each move between them, was chosen inside the real cell's limits as the puzzle project's GaP bridge holds them (joint and cable windows, at most 10 cm of camera cord, the workspace box): the sweep top, left, right, top needs 9.2, 7.7 and 9.2 cm of cord. The left view sees every piece; the right one, rolled a sixth of a turn to stay inside those limits, sees the base and what lies to its right and lines up poorly (cost 0.14 against the left view's 0.002): it adds little, and no better one was found inside the limits.",
@@ -40,6 +40,13 @@
  "open_beyond_m": 0.016,
  "speeds": {"approach_m_s": 0.05, "insert_m_s": 0.01, "slide_m_s": 0.04, "joint_deg_s": 45.0},
  "seated": {"position_m": 0.0015, "rotation_deg": 2.0},
+ "turn_grasps": {
+  "what": "How a piece is gripped to be turned on the table when no way of holding it keeps wrist 3 where arm says. A fork is held one way round, and that grip half a turn round is no help (when the one is outside the range the other is inside, and a turn that brings the first inside takes the second out): it is turned by a grip a quarter turn from its own, along its middle, across the 69.9 mm from the end of the centre tab to the tip of the centre prong. A bar is turned by its own grip.",
+  "fork_orange": {"what": "Along the middle, tab end to centre prong tip.", "point_m": [0.0, 5e-05, 0.006], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
+  "fork_yellow": {"what": "As fork_orange.", "point_m": [0.0, 5e-05, 0.006], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
+  "line_brown": {"what": "Its own grip.", "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259},
+  "line_red": {"what": "As line_brown.", "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259}
+ },
  "grasps": {
   "base3": {
    "what": "The centre island between the two bar slots, across its 23.1 mm width; the fingertips stand in the bar slots. The island is 7 mm high, enough to slide the plate on the table and not to lift it.",

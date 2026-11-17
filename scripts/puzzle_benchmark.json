@@ -112,6 +112,60 @@
     0.16,
     0.2
    ]
+  },
+  "others_on_scatter_21": {
+   "what": "The table of scatter/21, and on it two pieces of the pack's other puzzle (base1's): a bar of the green puzzle's bars' shape in another colour, and a U in one bar's colour. They lie where both surveys see them, which may be nearer the robot than it picks; they are not to be moved.",
+   "on": "scatter/21",
+   "also": [
+    "line_green",
+    "u_brown"
+   ],
+   "also_region": [
+    [
+     -0.45,
+     -0.64
+    ],
+    [
+     0.39,
+     -0.11
+    ]
+   ]
+  },
+  "others_on_tight_51": {
+   "what": "The table of tight/51, and on it two pieces of the pack's other puzzle (base1's): a bar of the green puzzle's bars' shape in another colour, and a U in one bar's colour. They lie where both surveys see them, which may be nearer the robot than it picks; they are not to be moved.",
+   "on": "tight/51",
+   "also": [
+    "line_green",
+    "u_brown"
+   ],
+   "also_region": [
+    [
+     -0.45,
+     -0.64
+    ],
+    [
+     0.39,
+     -0.11
+    ]
+   ]
+  },
+  "others_on_near_72": {
+   "what": "The table of near/72, and on it two pieces of the pack's other puzzle (base1's): a bar of the green puzzle's bars' shape in another colour, and a U in one bar's colour. They lie where both surveys see them, which may be nearer the robot than it picks; they are not to be moved.",
+   "on": "near/72",
+   "also": [
+    "line_green",
+    "u_brown"
+   ],
+   "also_region": [
+    [
+     -0.45,
+     -0.64
+    ],
+    [
+     0.39,
+     -0.11
+    ]
+   ]
   }
  },
  "in_view": "Every layout lies inside region (x and y ranges of the table, metres): what both surveys compared see, main's (over [0.02, -0.37] from 0.72 m) and the integration branch's (over [-0.125, -0.37] from 0.75 m, whose picture ends at x = 0.399). hidden is the patches either survey's own gripper hides: main's two rectangles, then the other survey's two. So every piece is in view at the survey in every base case, whichever checkout builds it; a piece the scan does not find there is the loop's miss, not the layout's. Not so in the stretch cases that move the base's target outward.",
@@ -396,6 +450,26 @@
        ]
       }
      }
+    }
+   ]
+  },
+  "two_puzzles": {
+   "what": "ADDED AFTER THE FREEZE (2026-11-17, no frozen case touched): pieces of a second puzzle lie on the table while the green one is built. The loop has to name them, keep clear of them and not ask for them. Only two fit: with one puzzle laid, the region has no room for a second (of 600 spots drawn for one more bar none was free), and the other puzzle's base and all four pieces fit nowhere the surveys see. Building both puzzles is not supported: the build has grasps for the green puzzle's pieces only.",
+   "cases": [
+    {
+     "name": "scatter_21",
+     "layout": "others_on_scatter_21",
+     "seed": 101
+    },
+    {
+     "name": "tight_51",
+     "layout": "others_on_tight_51",
+     "seed": 102
+    },
+    {
+     "name": "near_72",
+     "layout": "others_on_near_72",
+     "seed": 103
     }
    ]
   }
@@ -1209,6 +1283,117 @@
     -0.310354,
     -0.391527,
     87.9503
+   ]
+  },
+  "stretch/two_puzzles/scatter_21": {
+   "base3": [
+    -0.262919,
+    -0.489631,
+    171.4322
+   ],
+   "line_brown": [
+    0.322459,
+    -0.533733,
+    56.0981
+   ],
+   "line_red": [
+    0.351003,
+    -0.377665,
+    -6.7018
+   ],
+   "fork_orange": [
+    0.255754,
+    -0.381965,
+    81.1397
+   ],
+   "fork_yellow": [
+    0.216332,
+    -0.573305,
+    148.7437
+   ],
+   "line_green": [
+    -0.420689,
+    -0.298358,
+    -7.0908
+   ],
+   "u_brown": [
+    0.327357,
+    -0.188243,
+    -2.9211
+   ]
+  },
+  "stretch/two_puzzles/tight_51": {
+   "base3": [
+    -0.24277,
+    -0.506046,
+    50.2951
+   ],
+   "line_brown": [
+    0.273884,
+    -0.448048,
+    -85.345
+   ],
+   "line_red": [
+    0.289239,
+    -0.519615,
+    86.2115
+   ],
+   "fork_orange": [
+    0.27348,
+    -0.595999,
+    -2.6587
+   ],
+   "fork_yellow": [
+    0.254664,
+    -0.365736,
+    -174.079
+   ],
+   "line_green": [
+    0.331287,
+    -0.249557,
+    43.5241
+   ],
+   "u_brown": [
+    -0.388695,
+    -0.246601,
+    108.5783
+   ]
+  },
+  "stretch/two_puzzles/near_72": {
+   "base3": [
+    -0.245723,
+    -0.504261,
+    -3.3553
+   ],
+   "line_brown": [
+    0.33151,
+    -0.567353,
+    -23.8084
+   ],
+   "line_red": [
+    0.18985,
+    -0.550578,
+    159.0451
+   ],
+   "fork_orange": [
+    0.217,
+    -0.376142,
+    -93.2252
+   ],
+   "fork_yellow": [
+    0.335561,
+    -0.390881,
+    85.3982
+   ],
+   "line_green": [
+    -0.428035,
+    -0.238714,
+    -3.273
+   ],
+   "u_brown": [
+    0.318916,
+    -0.217037,
+    -21.4837
    ]
   }
  },
