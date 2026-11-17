@@ -536,7 +536,8 @@ class Build:
         self.estimate[self.base] = self.base_goal = at
         for name in self.placed:
             self.estimate[name] = self._seat(name)
-        hold.update(seat=moved @ hold["seat"], place=moved @ hold["place"], axis=moved[:3, :3] @ hold["axis"])
+        hold.update(seat=moved @ hold["seat"], place=moved @ hold["place"], axis=moved[:3, :3] @ hold["axis"],
+                    others={name: self._twin_pose(name) if name in self.placed else at for name, at in self.estimate.items() if name != piece})
         over = self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), hold["width_m"])
         hold["path"].update(carry=shifted(over, [0, 0, CARRY_M]), over=over, place=self._tcp(shifted(hold["place"], hold["axis"] * 0.001), hold["width_m"]))
 
@@ -612,6 +613,12 @@ class Build:
             with self.log.step("correct", piece, moved_mm=found["moved_mm"], turned_deg=found["turned_deg"]) as row:
                 began = time.perf_counter()
                 self._moved_base(piece, found)
+                try:                                        # the gripper has to fit at the slot's new place, as it had to at the old one
+                    self._corrected_fits(piece, self.held)
+                except Misfit as misfit:
+                    row["result"] = {"piece": piece, "where": where, "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"], "misfit": str(misfit)}
+                    self._set_down(piece, f"the base moved and the gripper does not fit at the slot's new place ({misfit})")
+                    return False
                 laid_out = time.perf_counter() - began
                 self.log.note(waypoints=[waypoint("over", self.held["path"]["over"]), waypoint("place", self.held["path"]["place"])])
                 with self.log.step("lookahead", piece, of="what is left of the placement, after the base moved") as ahead:
