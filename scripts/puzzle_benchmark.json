@@ -55,7 +55,7 @@
    "what": "Both forks in the far part of the table, away from the robot; the bars anywhere. (All four pieces do not fit there beside the base's way to the middle.)",
    "pieces_y": [
     -0.64,
-    -0.5
+    -0.48
    ],
    "band_for": [
     "fork_orange",
@@ -65,7 +65,7 @@
   "near": {
    "what": "Both forks in the near part of the table, toward the robot, where the survey looks past its own gripper; the bars anywhere.",
    "pieces_y": [
-    -0.42,
+    -0.46,
     -0.3
    ],
    "band_for": [
@@ -74,11 +74,23 @@
    ]
   },
   "pieces_left": {
-   "what": "For the long carries: the base starts on the left of its target and every loose piece lies in the left third of the table.",
+   "what": "For the long carries: the base starts 0.16 to 0.20 m to the left of its target and every loose piece lies in the left part of the table.",
    "side": -1,
+   "base_side_m": [
+    0.16,
+    0.2
+   ],
    "pieces_x": [
     -0.36,
-    -0.14
+    -0.06
+   ]
+  },
+  "short_slide": {
+   "what": "For a target moved along the rail: the base starts 0.16 to 0.20 m to the left of its target, so that there is room for the pieces left of it; the pieces anywhere.",
+   "side": -1,
+   "base_side_m": [
+    0.16,
+    0.2
    ]
   }
  },
@@ -212,7 +224,7 @@
   "what": "Reported, and outside the bar's rates: where the loop stops working.",
   "reach_far": {
    "what": "The base's target moved away from the robot in 40 mm steps until the build fails; the first is the build's own target.",
-   "layout": "near",
+   "layout": "scatter",
    "seed": 81,
    "cases": [
     {
@@ -274,7 +286,7 @@
   },
   "reach_side": {
    "what": "The base's target moved along the rail in 80 mm steps until the build fails.",
-   "layout": "base_left",
+   "layout": "short_slide",
    "seed": 82,
    "cases": [
     {
@@ -324,7 +336,7 @@
    ]
   },
   "long_carry": {
-   "what": "The base's target 0.24 m to the right of the middle and every loose piece in the left third of the table: each piece is carried 0.38 m or more.",
+   "what": "The base's target 0.30 m to the right of the middle and every loose piece in the left part of the table: each piece is carried 0.36 m or more.",
    "layout": "pieces_left",
    "cases": [
     {
@@ -333,7 +345,7 @@
      "settings": {
       "base_target": {
        "position_m": [
-        0.24,
+        0.3,
         -0.46
        ]
       }
@@ -345,7 +357,7 @@
      "settings": {
       "base_target": {
        "position_m": [
-        0.24,
+        0.3,
         -0.46
        ]
       }
@@ -357,7 +369,7 @@
      "settings": {
       "base_target": {
        "position_m": [
-        0.24,
+        0.3,
         -0.46
        ]
       }

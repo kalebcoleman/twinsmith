@@ -54,11 +54,11 @@ BASE_SIDE_M, PIECE_TRIES = (0.24, 0.32), 300      # how far to a side of its tar
 
 # ---- the layouts ----------------------------------------------------------------------------------------------
 
-def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden=(), tries=4000):
+def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden=(), tries=20000):
     """One puzzle's pieces lying flat on the table in the way a kind of layout says, the base off to one side of
     ``target`` and both the target and the way there left free, as ``puzzle_assembly.scatter`` leaves them. ``spec``
     is the kind's entry of the benchmark: ``side`` (-1 the base starts on the left, +1 on the right; either without
-    it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in; ``band_for`` names the pieces it
+    it), ``base_side_m`` (how far to that side of its target it starts; 0.24 to 0.32 m without it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in; ``band_for`` names the pieces it
     holds for when not all of them), ``cluster_m`` (every loose piece's middle within this of one random point),
     ``gap_m`` (the least room between pieces, 35 mm without it). ``region``
     is ((x low, y low), (x high, y high)) of the table that every piece lies inside, and ``hidden`` the rectangles of
@@ -80,12 +80,13 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
 
     for _ in range(tries):
         side = spec.get("side") or rng.choice([-1, 1])
-        start = lying(base, [target[0, 3] + side * rng.uniform(*BASE_SIDE_M), rng.uniform(low[1] + 0.13, high[1] - 0.13)])
+        start = lying(base, [target[0, 3] + side * rng.uniform(*spec.get("base_side_m", BASE_SIDE_M)), rng.uniform(low[1] + 0.13, high[1] - 0.13)])
         if not inside(base, start):
             continue
         poses, keep_free = {base: start}, [assembly.footprint(pack, base, at, 0.03) for at in assembly.slide_path(start, target)]
         middle = rng.uniform(*band)
-        for name in assembly.slot_poses(pack, base):
+        names = list(assembly.slot_poses(pack, base))
+        for name in sorted(names, key=lambda name: name not in spec.get("band_for", names)):       # the pieces a band holds for first: they have least room
             band_low, band_high = band if name in spec.get("band_for", [name]) else (low, high)
             for _ in range(PIECE_TRIES):
                 reach = spec.get("cluster_m")
@@ -100,8 +101,8 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
                     break
             else:
                 break
-        if len(poses) == len(pack.assemblies[base]) + 1:
-            return poses
+        if len(poses) == len(names) + 1:
+            return {name: poses[name] for name in (base, *names)}
     raise ValueError(f"no layout of this kind was found: {spec}")
 
 

@@ -92,7 +92,7 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
     laid = lambda spec, seed: bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(seed), spec, REGION, HIDDEN)
     low, high = np.array(REGION[0]), np.array(REGION[1])
     hidden = [np.array([a, [b[0], a[1]], b, [a[0], b[1]]]) for a, b in HIDDEN]
-    for kind in ("scatter", "base_left", "base_right", "tight", "far", "near", "pieces_left"):
+    for kind in ("scatter", "base_left", "base_right", "tight", "far", "near", "pieces_left", "short_slide"):
         spec = CONFIG["layouts"][kind]
         poses = laid(spec, 5)
         again = laid(spec, 5)
@@ -104,7 +104,8 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
             assert (corners > low).all() and (corners < high).all(), (kind, name)
             assert all(assembly._apart(corners, patch) for patch in hidden), (kind, name)
         assert assembly.path_clear(pack, "plate", poses["plate"], middle, loose, margin_m=0.02), kind      # the way to the middle is free
-        assert 0.24 <= abs(poses["plate"][0, 3] - middle[0, 3]) <= 0.32
+        nearest, furthest = spec.get("base_side_m", [0.24, 0.32])
+        assert nearest <= abs(poses["plate"][0, 3] - middle[0, 3]) <= furthest, kind
         if "side" in spec:
             assert np.sign(poses["plate"][0, 3] - middle[0, 3]) == spec["side"], kind
         banded = [at for name, at in loose.items() if name in spec.get("band_for", loose)]     # the pieces a band holds for: all, unless it names some
