@@ -144,6 +144,7 @@ class Rest:
             b = np.clip(np.round((centre[:2] + half[:2] - low[:2]) / CELL).astype(int), 0, cells)
             patch = self.heights[a[0]:b[0], a[1]:b[1]]
             self.heights[a[0]:b[0], a[1]:b[1]] = np.fmax(patch, centre[2] + half[2] - low[2])
+        self.padded, self.last = np.pad(self.heights, 1, constant_values=np.nan), np.array(cells, dtype=float) + 1   # nothing, all round
         filled = np.argwhere(~np.isnan(self.heights))
         self.area = len(filled) * CELL * CELL
         self.top_area = int((self.heights >= np.nanmax(self.heights) - TOLERANCE_M).sum()) * CELL * CELL      # of its highest level
@@ -162,6 +163,7 @@ class Shape:
 
     def __init__(self, boxes):
         self.boxes = [(np.asarray(c, dtype=float), np.asarray(h, dtype=float)) for c, h in boxes]
+        self.centres, self.halves = (np.array([box[part] for box in self.boxes]) for part in (0, 1))      # (boxes, 3) each
         volumes = np.array([8 * h.prod() for _, h in self.boxes])
         self.volume = union_volume(self.boxes)
         self.centroid = (np.array([c for c, _ in self.boxes]) * volumes[:, None]).sum(0) / volumes.sum()
@@ -196,27 +198,34 @@ class Shape:
         high = np.max([m[:2] + span for m, span in zip(middles, spans)], axis=0)
         xs, ys = (np.arange(low[a] + cell / 2, high[a], cell) for a in (0, 1))
         grid = np.stack(np.meshgrid(xs, ys, indexing="ij"), -1).reshape(-1, 2)
-        best = np.full(len(grid), -np.inf)
-        for middle, (_, half) in zip(middles, self.boxes):
-            best = np.maximum(best, _box_top(grid, turn, middle, half))
+        best = _box_tops(grid, turn, np.array(middles), self.halves).max(0)
         keep = np.isfinite(best)
         return np.column_stack([grid[keep], best[keep]])
 
 
-def _box_top(grid, axes, middle, half):
-    """Highest point of a box over each grid point (-inf where the box is not above it): the vertical line through the
-    point is clipped against the box's three slabs. ``axes`` holds the box's axes as columns."""
-    origin = np.column_stack([grid, np.zeros(len(grid))]) - middle
-    low, high = np.full(len(grid), -np.inf), np.full(len(grid), np.inf)
+def _box_tops(xy, turn, middles, halves):
+    """Highest point of every box of a posed solid over each point of ``xy`` (-inf where the box is not above it), as
+    (boxes, points): the vertical line through a point is clipped against each box's three slabs. ``turn`` holds the
+    boxes' axes as columns; ``middles`` and ``halves`` are (boxes, 3). Every box in one array operation, and box by
+    box the same arithmetic as one box at a time: a base plate is 22 boxes, and a call per box was most of the
+    matcher's time."""
+    origin = np.concatenate([xy, np.zeros((len(xy), 1))], axis=1)[None, :, :] - middles[:, None, :]
+    spans, low, high, within = np.abs(halves), -np.inf, np.inf, np.True_
     for axis in range(3):
-        along, start = axes[2, axis], origin @ axes[:, axis]
-        if abs(along) < 1e-9:
-            outside = np.abs(start) > half[axis]
-            low, high = np.where(outside, np.inf, low), np.where(outside, -np.inf, high)
-        else:
-            a, b = (-half[axis] - start) / along, (half[axis] - start) / along
-            low, high = np.maximum(low, np.minimum(a, b)), np.minimum(high, np.maximum(a, b))
-    return np.where(high >= low, high, -np.inf)
+        along, start = turn[2, axis], origin @ turn[:, axis]
+        if abs(along) < 1e-9:                                      # the line runs along this slab: in it or not
+            within = within & ~(np.abs(start) > halves[:, axis, None])
+        else:                                                      # it goes in at one face and out at the other
+            first, last = (-spans[:, axis, None] - start) / along, (spans[:, axis, None] - start) / along
+            if along < 0:
+                first, last = last, first
+            low, high = np.maximum(low, first, out=first), np.minimum(high, last, out=last)
+    return np.where((high >= low) & within, high, -np.inf)
+
+
+def _middles(shape, turn, at):
+    """Where the middle of each of a posed shape's boxes is: (boxes, 3)."""
+    return (turn @ shape.centres[:, :, None])[:, :, 0] + at
 
 
 class Pack:
@@ -338,13 +347,15 @@ class Scan:
         picked = sorted(set(np.linspace(0, len(colour) - 1, min(MAX_FRAMES, len(colour))).round().astype(int).tolist()))
         scale = camera.get("depth_scale", 0.001)
         self.frame, self.cameras, gathered, levels = "world", [], {}, {}
-        fixed = None
+        fixed, pixel_rays = None, {}
         for index in picked:
             image = np.asarray(Image.open(colour[index]).convert("RGB"))
             metres = (np.load(depth[index]) if depth[index].suffix == ".npy" else np.asarray(Image.open(depth[index]), dtype=np.float32) * scale)
             height, width = metres.shape
-            v, u = np.mgrid[0:height, 0:width]
-            rays = np.stack([(u - camera["cx"]) / camera["fx"], (v - camera["cy"]) / camera["fy"], np.ones_like(metres)], -1)
+            if (metres.shape, metres.dtype) not in pixel_rays:          # the same for every frame of one size
+                v, u = np.mgrid[0:height, 0:width]
+                pixel_rays[metres.shape, metres.dtype] = np.stack([(u - camera["cx"]) / camera["fx"], (v - camera["cy"]) / camera["fy"], np.ones_like(metres)], -1)
+            rays = pixel_rays[metres.shape, metres.dtype]
             points, valid = rays * metres[..., None], metres > 0
             pose = camera["frames"][index].get("world_from_camera") if "frames" in camera else camera.get("world_from_camera")
             if pose is None:
@@ -356,15 +367,20 @@ class Scan:
             valid = valid & ~blind
             self.cameras.append({"pose": pose, "fx": camera["fx"], "fy": camera["fy"], "cx": camera["cx"], "cy": camera["cy"],
                                  "width": width, "height": height, "blind": ndimage.binary_dilation(blind, iterations=3)})
-            masks = []
+            masks = []                                                   # (name, the rows and columns it spans, the mask there)
             for tag in tags:
                 files = sorted((run / tag).glob("labels_*.png"))
                 labels = np.asarray(Image.open(files[min(index, len(files) - 1)]))
-                masks += [(f"{tag}:{i}", labels == i) for i in np.unique(labels) if i]
+                for i in np.unique(labels):
+                    if i:                                                # a mask is worked on within its own rows and columns
+                        mask = labels == i                               # only: it is nowhere else, and the picture is large
+                        rows, columns = np.flatnonzero(mask.any(1)), np.flatnonzero(mask.any(0))
+                        box = (slice(rows[0], rows[-1] + 1), slice(columns[0], columns[-1] + 1))
+                        masks.append((f"{tag}:{i}", box, mask[box]))
             if self.frame == "world":                                    # heights from the table the camera sees
                 covered = np.zeros(metres.shape, dtype=bool)
-                for _, mask in masks:
-                    covered |= mask
+                for _, box, mask in masks:
+                    covered[box] |= mask
                 found, reference = _table_plane(world[valid & ~covered]), {"applied": False}
                 if found is None:
                     reference["why"] = f"fewer than {TABLE_POINTS} points of bare table within {2 * TABLE_BIAS_M * 1000:g} mm of the frame's z = 0"
@@ -378,7 +394,7 @@ class Scan:
                                             "frame's z = 0: the camera pose or the depth is off by more than a bias")
                     else:
                         reference["applied"] = True
-                        world = world - np.stack([np.zeros_like(metres), np.zeros_like(metres), a * world[..., 0] + b * world[..., 1] + c], -1)
+                        world[..., 2] -= a * world[..., 0] + b * world[..., 1] + c
                 if index == picked[0]:
                     self.reference = reference
             step, level = np.zeros(metres.shape), ndimage.median_filter(world[..., 2], size=3)
@@ -390,20 +406,20 @@ class Scan:
             # A wall seen at an angle is a ramp a few pixels wide: steeper than about 60 degrees is a step, not a surface.
             surface = step < np.maximum(0.0015, 1.7 * metres / camera["fx"])
             taken = np.zeros(metres.shape, dtype=bool)
-            raised = (metres > 0) & (world[..., 2] > CEILING_M)
-            for name, mask in sorted(masks, key=lambda item: item[1].sum()):     # a pixel goes to the smallest mask over it
-                if (mask & raised).sum() > 0.5 * mask.sum():                    # the gripper the camera rides on, or a hand: the
-                    taken |= mask                                               # mixed depth round its edge is no object on the
+            raised, above = (metres > 0) & (world[..., 2] > CEILING_M), valid & (world[..., 2] > TABLE_M)
+            for name, box, mask in sorted(masks, key=lambda item: item[2].sum()):   # a pixel goes to the smallest mask over it
+                if (mask & raised[box]).sum() > 0.5 * mask.sum():               # the gripper the camera rides on, or a hand: the
+                    taken[box] |= mask                                          # mixed depth round its edge is no object on the
                     continue                                                    # table, masked or not
-                own = mask & ~taken & valid & (world[..., 2] > TABLE_M)
-                if own.sum() < 0.25 * (mask & valid & (world[..., 2] > TABLE_M)).sum() or own.sum() < 30:
+                own = mask & ~taken[box] & above[box]
+                if own.sum() < 0.25 * (mask & above[box]).sum() or own.sum() < 30:
                     continue                                                    # another mask of the same thing, or the table
-                taken |= own
-                gathered.setdefault(name, []).append((world[own], image[own]))
+                taken[box] |= own
+                gathered.setdefault(name, []).append((world[box][own], image[box][own]))
                 if name not in levels:                                           # its level surfaces, should the whole fit nothing
-                    parts, count = ndimage.label(ndimage.binary_opening(own & surface, iterations=1))
+                    parts, count = ndimage.label(ndimage.binary_opening(own & surface[box], iterations=1))
                     sizes = np.bincount(parts.ravel())[1:]
-                    levels[name] = [(world[parts == part], image[parts == part]) for part in np.flatnonzero(sizes >= 30) + 1]
+                    levels[name] = [(world[box][parts == part], image[box][parts == part]) for part in np.flatnonzero(sizes >= 30) + 1]
             rest = valid & ~taken & (world[..., 2] > 1.5 * TABLE_M)                # raised and in no mask: what SAM 3 left out
             if index == picked[0] and rest.any():
                 blobs, count = ndimage.label(ndimage.binary_opening(rest & surface, iterations=1))
@@ -478,6 +494,9 @@ class Scan:
         lower = ~(seen >= top[:, 2] - TOLERANCE_M)                        # nothing there, or something lower
         visible = np.zeros(len(top), dtype=bool)
         ceiling = float(np.nanmax(self.height)) if np.isfinite(self.height).any() else 0.0
+        padded = np.full(np.add(self.height.shape, 2), np.nan)          # the grid with nothing all round it, so that a
+        padded[1:-1, 1:-1] = self.height                                # look-up off the grid finds nothing in the way
+        steps, last = np.linspace(0.08, 1.0, 12)[:, None], np.array(self.height.shape, dtype=float) + 1
         for camera in self.cameras:
             eye = camera["pose"][:3, 3]
             local = (top - eye) @ camera["pose"][:3, :3]
@@ -486,10 +505,9 @@ class Scan:
             clear = (local[:, 2] > 0) & (u > 2) & (u < camera["width"] - 2) & (v > 2) & (v < camera["height"] - 2)
             clear &= ~camera["blind"][np.clip(v, 0, camera["height"] - 1).astype(int), np.clip(u, 0, camera["width"] - 1).astype(int)]
             reach = np.clip((ceiling + 0.002 - top[:, 2]) / np.maximum(eye[2] - top[:, 2], 1e-6), 0, 1)
-            for step in np.linspace(0.08, 1.0, 12):                       # along the line of sight, up to the tallest thing
-                at = top + (eye - top) * (reach * step)[:, None]
-                spot, on_grid = self.cell(at[:, :2])
-                clear &= ~(on_grid & (self.height[spot[:, 0], spot[:, 1]] > at[:, 2] + 0.003))
+            at = top + (eye - top) * (reach * steps)[:, :, None]          # along the line of sight, up to the tallest thing:
+            spot = np.clip(np.floor((at[:, :, :2] - self.origin) / CELL) + 1.0, 0.0, last).astype(int)     # (steps, points, 3)
+            clear &= ~(padded[spot[:, :, 0], spot[:, :, 1]] > at[:, :, 2] + 0.003).any(0)
             visible |= clear
         verdict[lower & visible & (verdict == 0)] = -1
         return verdict, owner, np.where(inside[:, None], self.colour[index[:, 0], index[:, 1]], 0.0)
@@ -497,20 +515,31 @@ class Scan:
 
 # ---- matching ---------------------------------------------------------------------------------------------
 
+def _median(values):
+    """``float(np.median(values))`` of a 1-D array that is not empty, without that function's overheads: the middle
+    value, or the mean of the middle two; not a number when any value is not one."""
+    half = len(values) // 2
+    part = np.partition(values, (half, -1) if len(values) % 2 else (half - 1, half, -1))
+    if np.isnan(part[-1]):
+        return math.nan
+    return float(part[half]) if len(values) % 2 else float((part[half - 1] + part[half]) / 2)
+
+
 def _fit_cost(xy, z, rest, yaw, at):
     c, s = math.cos(yaw), math.sin(yaw)
-    index = np.floor(((xy - at) @ np.array([[c, -s], [s, c]]) - rest.origin) / CELL).astype(int)
-    inside = ((index >= 0) & (index < rest.heights.shape)).all(1)
-    h = np.where(inside, rest.heights[np.where(inside, index[:, 0], 0), np.where(inside, index[:, 1], 0)], np.nan)
-    inside = ~np.isnan(h)
-    if inside.sum() < 10:
+    cells = np.floor(((xy - at) @ np.array([[c, -s], [s, c]]) - rest.origin) / CELL)
+    index = np.clip(cells + 1.0, 0.0, rest.last).astype(int)          # off the template: its border, which holds nothing
+    over = z - rest.padded[index[:, 0], index[:, 1]]                  # not a number where the template has nothing
+    inside = ~np.isnan(over)
+    if np.count_nonzero(inside) < 10:
         return 1.0, 0.0
-    lift = float(np.median((z - h)[inside]))
-    counted = ~(inside & (z - h - lift > 2 * TOLERANCE_M))         # what stands higher is something lying on it
-    if counted.sum() < 0.3 * len(z):
+    lift = _median(over[inside])
+    over = over - lift
+    counted = ~(over > 2 * TOLERANCE_M)                             # what stands higher is something lying on it
+    if np.count_nonzero(counted) < 0.3 * len(z):
         return 1.0, lift
-    error = np.where(inside, np.minimum(np.abs(z - h - lift), CAP_M), CAP_M)[counted]
-    return float(error.mean() / CAP_M) + (1.0 if lift < -TABLE_M else 0.0), lift
+    error = np.fmin(np.abs(over), CAP_M)[counted]                   # nothing under the point counts in full
+    return float(np.add.reduce(error) / len(error) / CAP_M) + (1.0 if lift < -TABLE_M else 0.0), lift
 
 
 def fit(scan, item, shape):
@@ -568,15 +597,12 @@ CLEAR_M = 0.008                         # two poses up to this far inside each o
 
 def _top_at(shape, turn, at, xy):
     """Height of the shape's upper surface over each point of ``xy`` at a pose (-inf where the shape is not above it)."""
-    best = np.full(len(xy), -np.inf)
-    for centre, half in shape.boxes:
-        best = np.maximum(best, _box_top(xy, turn, turn @ centre + at, half))
-    return best
+    return _box_tops(xy, turn, _middles(shape, turn, at), shape.halves).max(0)
 
 
 def _lowest(shape, turn):
     """How far below its origin the shape's lowest point is at an orientation (a positive number)."""
-    return -min(float((turn @ centre)[2] - np.abs(turn[2] * half).sum()) for centre, half in shape.boxes)
+    return -float((_middles(shape, turn, 0.0)[:, 2] - np.abs(turn[2] * shape.halves).sum(1)).min())
 
 
 def _free_cost(xy, z, shape, turn, at_xy):
@@ -584,14 +610,16 @@ def _free_cost(xy, z, shape, turn, at_xy):
     pose that would put any of the shape under the table costs as much there as it does here."""
     h = _top_at(shape, turn, np.array([at_xy[0], at_xy[1], 0.0]), xy)
     inside = np.isfinite(h)
-    if inside.sum() < 10:
+    if np.count_nonzero(inside) < 10:
         return 1.0, 0.0
-    lift = float(np.median((z - h)[inside]))
-    counted = ~(inside & (z - h - lift > 2 * TOLERANCE_M))
-    if counted.sum() < 0.3 * len(z):
+    over = z - h                                                    # infinite where the shape is not under the point
+    lift = _median(over[inside])
+    over = over - lift
+    counted = ~(inside & (over > 2 * TOLERANCE_M))
+    if np.count_nonzero(counted) < 0.3 * len(z):
         return 1.0, lift
-    error = np.where(inside, np.minimum(np.abs(z - h - lift), CAP_M), CAP_M)[counted]
-    return float(error.mean() / CAP_M) + (1.0 if lift - _lowest(shape, turn) < -TABLE_M else 0.0), lift
+    error = np.minimum(np.abs(over), CAP_M)[counted]
+    return float(np.add.reduce(error) / len(error) / CAP_M) + (1.0 if lift - _lowest(shape, turn) < -TABLE_M else 0.0), lift
 
 
 def _axis_turn(axis, angle):

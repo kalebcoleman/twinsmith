@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import math
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -350,3 +351,53 @@ def test_a_piece_is_lifted_off_another_only_when_lifting_takes_it_out_of_it(pack
     beside = {"name": "bar_yellow", "pose": pose((0.015, 0.0), 0, rest.turn, rest.drop + 0.005)}       # beside it, 5 mm into its side
     assert scan._overlap(pack, under, beside) == pytest.approx(0.005)
     assert scan._lifted_clear(pack, beside, under, 0.005) is None                                      # no lift parts them
+
+
+def one_box_at_a_time(shape, turn, at, xy):
+    """The heights ``_top_at`` gives, worked out the plain way: one box after another, each line clipped by each slab."""
+    best = np.full(len(xy), -np.inf)
+    for centre, half in shape.boxes:
+        origin = np.column_stack([xy, np.zeros(len(xy))]) - (turn @ centre + at)
+        low, high = np.full(len(xy), -np.inf), np.full(len(xy), np.inf)
+        for axis in range(3):
+            along, start = turn[2, axis], origin @ turn[:, axis]
+            if abs(along) < 1e-9:
+                outside = np.abs(start) > half[axis]
+                low, high = np.where(outside, np.inf, low), np.where(outside, -np.inf, high)
+            else:
+                a, b = (-half[axis] - start) / along, (half[axis] - start) / along
+                low, high = np.maximum(low, np.minimum(a, b)), np.minimum(high, np.maximum(a, b))
+        best = np.maximum(best, np.where(high >= low, high, -np.inf))
+    return best
+
+
+def test_every_box_in_one_operation_gives_the_numbers_of_one_box_at_a_time(pack):
+    rng = np.random.default_rng(5)
+    for trial in range(90):
+        shape = pack.shapes[trial % len(pack.shapes)]
+        turn = scan.yaw_matrix(rng.uniform(0, 6.3)) @ scan.ROTATIONS[int(rng.integers(24))]      # level: slabs along the vertical
+        if trial % 3:
+            turn = scan._axis_turn(np.array([1.0, 0, 0]), (0.4, 1e-7)[trial % 3 - 1]) @ turn      # tipped, and all but level
+        at = np.array([*rng.uniform(-0.3, 0.3, 2), 0.0])
+        xy = at[:2] + rng.uniform(-0.08, 0.08, (400, 2))
+        heights = scan._top_at(shape, turn, at, xy)
+        assert np.isfinite(heights).any() and not np.isfinite(heights).all()
+        assert np.array_equal(heights, one_box_at_a_time(shape, turn, at, xy))                # not close: the same numbers
+        assert scan._lowest(shape, turn) == -min(float((turn @ centre)[2] - np.abs(turn[2] * half).sum()) for centre, half in shape.boxes)
+        top = shape.top(turn, at + [0, 0, 0.03])
+        assert np.array_equal(top[:, 2], one_box_at_a_time(shape, turn, at + [0, 0, 0.03], top[:, :2]))
+
+
+def test_the_median_is_numpys_whatever_it_is_given():
+    rng = np.random.default_rng(6)
+    for trial in range(400):
+        values = rng.normal(size=int(rng.integers(1, 40)))
+        if trial % 4 == 0:
+            values = np.round(values, 1)                                    # ties
+        if trial % 9 == 0:
+            values[int(rng.integers(len(values)))] = np.nan
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")                                 # numpy may say that it met something that is no number
+            wanted = float(np.median(values))
+        got = scan._median(values)
+        assert got == wanted or (math.isnan(got) and math.isnan(wanted))
