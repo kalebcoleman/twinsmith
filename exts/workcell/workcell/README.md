@@ -268,7 +268,7 @@ table and the base off to one side; the robot finds them, slides the base to the
 piece. It talks to one simulator bridge on this machine and cannot reach a real robot.
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
-        --allow-concurrent-gpu --table-camera --colours <colours.json>
+        --allow-concurrent-gpu --table-camera --colours <colours.json> --scan-cycle <mv_cycle.sh>
 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
@@ -285,18 +285,21 @@ piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a 
 |---|---|
 | Layout | `puzzle_assembly.scatter`: the pieces flat at random inside what the wrist camera sees from the survey pose, apart from each other, the base 0.24 to 0.32 m to one side, the middle and the way there free. Built as a task by `quick_start`, once per layout |
 | Rail, then arm | The rail is parked with its own blocking move. After that only the six arm joints move, solved from the UR base where the rail has put it (read from `sim__arm(action="fk")`) with the UR5e's closed-form solution (`workcell_session.ur_ik`; its forward kinematics agree with the simulator's to 5 micrometres). A straight line is solved waypoint by waypoint, each near the one before; a large move goes to the solution nearest the posture the cell was built in, with elbow and wrist clear of the table. `sim__arm(action="ik")` solves nearest the arm's pose now and takes no seed: along a turning line its answers jumped (the arm ended 90 degrees from its targets), and after a level insertion it led the elbow onto the table |
+| Scan | The graph's first step, and the step it returns to. The wrist camera stops at each view of `scan` in `puzzle_build.json`, the survey's own first (below) and then two from the sides; the views leave as the folder a scan mover writes on the robot's side (`scan_mover.multiview/1`) and the multi-view cycle named by `--scan-cycle` (the puzzle project's `cycle/multiview/mv_cycle.sh`: SAM 3.1 and the matcher on the first view, every view's depth checked against the result) returns one estimate. From it the twin is rebuilt (the poses the lookahead simulates from, and `scans/<n>/task/`), what is already done is worked out (the base in the middle, pieces seated), and the scan says what is next. A piece the cycle leaves in doubt, or does not find, stops the build. `--perception oracle` makes the same moves and reads the simulator's poses |
 | Survey | Wrist D415 straight down from 0.72 m, gripper closed. At the calibrated camera pose the gripper fills the top middle of the picture and its fingertips end at the picture's centre, so the point looked at is 90 mm to the robot's side of the middle of the table: the base in the middle is then wholly in view, and a layout puts no piece where the gripper hides the table (`puzzle_assembly.hidden_on_table`). The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
 | Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
 | Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers. Slid, it slips in the fingers and stops short, by 3 to 20 mm: the look that follows measures where it stopped, and a base more than 10 mm (and less than 50 mm) from the middle is slid once more from there |
 | Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
 | Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
 | Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
+| Scan again | When the jaws close on nothing or the hand stops short of the grasp, or when a look finds a loose piece more than 5 mm or 5 degrees from where the estimate had it or the base out of its place: back to the scan, which takes the table as it now stands and sends the build to the next thing it needs. At most three more scans than there are pieces. `--disturb PIECE` moves that piece 50 mm aside just before its first pick, to see this happen |
 
 The run is a Graph-as-Policy workflow. `exts/workcell/gap` is a skill registry (made with `gap registry init` and
-`gap skills new`): the tool bundle `workcell` (eleven tools, each a call to the running `puzzle_build.py`) and the
-skills `surveying-puzzle-pieces`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
+`gap skills new`): the tool bundle `workcell` (twelve tools, each a call to the running `puzzle_build.py`) and the
+skills `scanning-the-table`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
 authors the workflow with `gap.builder`, one subgraph per skill and per piece, and runs it with `gap.execute` through a
-small connector. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
+small connector. The scan's subgraph is followed by a router that sends the build to the base, to a piece or to the end, by what the scan
+found; a piece's subgraph that leaves by `empty`, `missed` or `changed` goes back to the scan. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
 (`verify_reach`, `verify_grip`), and after each placement a checkpoint compares the piece with its slot in the
 simulator's truth. Two more subgraphs ask the owner's vision-language model (`[planning] vlm_url`, through
 open-robot-skills' `vlm` bundle) for a second opinion: how many parts it counts after the survey, and whether the

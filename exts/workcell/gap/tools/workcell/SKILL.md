@@ -1,13 +1,14 @@
 ---
 name: workcell
-description: The simulated UR5e work cell's own skills as tools - survey the table with the wrist camera, SAM 3.1
-  and scan to scene, slide a puzzle base, simulate a pick and insertion ahead on Newton, approach, close, lift,
+description: The simulated UR5e work cell's own skills as tools - scan the table from several views with the wrist
+  camera, SAM 3.1 and scan to scene, slide a puzzle base, simulate a pick and insertion ahead on Newton, approach, close, lift,
   insert and look again. Use when a graph assembles a lab puzzle on twinsmith's ur5e-workcell in Isaac Sim.
 compatibility: requires gap>=0.1
 metadata: {category: manipulation, tags: [manipulation, perception, simulation, twinsmith]}
 gap:
   requires: {env: [WORKCELL_SKILLS_PORT]}
   tools:
+    - workcell.scan: Sweep the wrist camera over the scan's views, combine them into one estimate, rebuild the twin, say what is next.
     - workcell.survey: Find every piece of the puzzle on the table (wrist camera, SAM 3.1, scan to scene).
     - workcell.picture: One colour picture from the wrist camera, where it is now.
     - workcell.place_base: Grip the puzzle base by its centre island and slide it to the middle of the table.

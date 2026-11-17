@@ -10,6 +10,14 @@
   "look_at_m": [0.02, -0.37, 0.0],
   "height_m": 0.72
  },
+ "scan": {
+  "what": "The scan step's views after the survey's own (straight down, the view the matcher reads): where the wrist camera is and the point it looks at. The depth of every view is compared with the matched pieces, which is what tells a piece's rival poses apart. Five frames a view, the number the matcher reads. The picture stays upright in every view (its right as near the world's x as the view allows); for that the arm unwinds wrist 3 from 106 degrees at the left view to -154 at the right one. With the right view a quarter turn round, wrist 3 stayed between 101 and 141 degrees, but only 36 to 200 pixels of each piece were then compared there (over 1000 upright) and the view lined up twenty times worse.",
+  "frames": 5,
+  "views": [
+   {"name": "left", "eye_m": [-0.28, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]},
+   {"name": "right", "eye_m": [0.32, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]}
+  ]
+ },
  "base_target": {
   "what": "The middle of the table. The yaw puts the forks' slots across the rail, so each fork is brought in from its own side with the gripper level; the base may also arrive half a turn round.",
   "position_m": [0.0, -0.46],

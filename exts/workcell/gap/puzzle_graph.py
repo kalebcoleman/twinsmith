@@ -7,6 +7,8 @@ Run with Graph-as-Policy's own interpreter, by ``scripts/puzzle_build.py``:
 
 The graph has one subgraph per skill it needs (this registry's three, and two of no registered skill that ask a
 vision-language model for a second opinion), and a checkpoint after every placement against the simulator's truth.
+It begins with the scan and comes back to it whenever a pick closed on nothing or a look found the table changed;
+a router after the scan sends the build to whatever is next on the table as it now stands.
 """
 
 import argparse
@@ -69,7 +71,7 @@ def assemble(piece):
                         "object_name": piece})
     sg.add_node("grip", type="script", script="scripts/verify_grip.py",
                 inputs={"target_obb": Ref("approach.target_obb"), "object_name": piece})
-    for outcome in ("placed", "retry", "aborted", "missed", "empty"):
+    for outcome in ("placed", "retry", "changed", "aborted", "missed", "empty"):
         sg.add_exit(outcome)
         sg.add_edge(outcome, "END")
     sg.set_on_error("failed")
@@ -78,7 +80,7 @@ def assemble(piece):
     sg.add_conditional_edges("lookahead", {"go": "approach", "abort": "aborted"}, router_field="verdict")
     sg.add_conditional_edges("reach", {"reached": "close", "missed": "missed"}, router_field="route")
     sg.add_conditional_edges("grip", {"held": "lift", "unknown": "lift", "empty": "empty"}, router_field="route")
-    sg.add_conditional_edges("look", {"placed": "placed", "retry": "retry"}, router_field="result")
+    sg.add_conditional_edges("look", {"placed": "placed", "retry": "retry", "changed": "changed"}, router_field="result")
     return sg
 
 
@@ -105,16 +107,17 @@ def second_opinion(name, prompt_tool, prompt, script=None):
 def author(plan, folder):
     """Write the workflow, its scripts and its checkpoints to ``folder``."""
     base, pieces = plan["base"], [step["piece"] for step in plan["order"]]
-    wf = Workflow(name="puzzle_build", description=f"Assemble the {base} puzzle on the simulated UR5e work cell: survey, slide the "
-                  "base to the middle, then pick and insert each piece in the order its CAD disassembly gives, reversed.")
+    wf = Workflow(name="puzzle_build", description=f"Assemble the {base} puzzle on the simulated UR5e work cell: scan the table, slide the "
+                  "base to the middle, then pick and insert each piece in the order its CAD disassembly gives, reversed; scan again "
+                  "whenever a pick fails or the table has changed.")
 
-    locate = Subgraph(name="locate", skill="surveying-puzzle-pieces")
-    locate.add_node("survey", type="tool", tool="workcell.survey")
-    locate.add_exit("located")
-    locate.set_on_error("failed")
-    for a, b in (("START", "survey"), ("survey", "located"), ("located", "END")):
-        locate.add_edge(a, b)
-    locate.set_outputs(found=Ref("survey.found"))
+    scan = Subgraph(name="scan", skill="scanning-the-table")
+    scan.add_node("sweep", type="tool", tool="workcell.scan")
+    scan.add_exit("scanned")
+    scan.set_on_error("failed")
+    for a, b in (("START", "sweep"), ("sweep", "scanned"), ("scanned", "END")):
+        scan.add_edge(a, b)
+    scan.set_outputs(found=Ref("sweep.found"), next=Ref("sweep.next"))
 
     place = Subgraph(name="place_base", skill="placing-puzzle-base")
     place.add_node("slide", type="tool", tool="workcell.place_base", inputs={"piece": base})
@@ -130,19 +133,22 @@ def author(plan, folder):
     count = second_opinion("count_parts", "vlm.query", COUNT_PROMPT, "cross_check.py")
     judge = second_opinion("judge_assembly", "vlm.query_yes_no", JUDGE_PROMPT.format(count=len(pieces)))
     steps = [assemble(piece) for piece in pieces]
-    for sg in (locate, count, place, *steps, judge):
+    for sg in (scan, count, place, *steps, judge):
         wf.add_subgraph(sg)
         wf.add_node(sg.name, type="subgraph", ref=sg.name)
+    wf.add_node("next_step", type="router", script="scripts/next_step.py", inputs={"next": Ref("scan.next")})
     wf.add_node("done", type="end", status="success")
     wf.add_node("abort", type="end", status="failure", recovery=[{"tool": "workcell.release", "inputs": {}}])
-    wf.add_edge("START", "locate")
-    wf.add_conditional_edges("locate", {"located": "count_parts", "failed": "abort"}, router_field="exit")
+    wf.add_edge("START", "scan")
+    wf.add_conditional_edges("scan", {"scanned": "next_step", "failed": "abort"}, router_field="exit")
+    wf.add_conditional_edges("next_step", {base: "count_parts", **{piece: f"assemble_{piece}" for piece in pieces}, "done": "judge_assembly"},
+                             router_field=None)
     wf.add_conditional_edges("count_parts", {"answered": "place_base", "unanswered": "place_base"}, router_field="exit")
     following = [sg.name for sg in steps] + ["judge_assembly"]
     wf.add_conditional_edges("place_base", {"placed": following[0], "retry": "place_base", "failed": "abort"}, router_field="exit")
     for sg, after in zip(steps, following[1:]):
-        wf.add_conditional_edges(sg.name, {"placed": after, "retry": sg.name, **{outcome: "abort" for outcome in ("aborted", "missed", "empty", "failed")}},
-                                 router_field="exit")
+        wf.add_conditional_edges(sg.name, {"placed": after, "retry": sg.name, **{outcome: "scan" for outcome in ("changed", "missed", "empty")},
+                                           "aborted": "abort", "failed": "abort"}, router_field="exit")
     wf.add_conditional_edges("judge_assembly", {"answered": "done", "unanswered": "done"}, router_field="exit")
 
     folder = Path(folder)
@@ -151,7 +157,7 @@ def author(plan, folder):
     (folder / "scripts").mkdir(parents=True)
     (folder / "checkpoints").mkdir()
     stock = stock_scripts()
-    for script in (stock / "verify_reach.py", stock / "verify_grip.py", REGISTRY / "scripts/cross_check.py"):
+    for script in (stock / "verify_reach.py", stock / "verify_grip.py", REGISTRY / "scripts/cross_check.py", REGISTRY / "scripts/next_step.py"):
         shutil.copy(script, folder / "scripts" / script.name)
     made = [("place_base", "base_in_the_middle", base, "middle", 0.010, "The base must stop within 10 mm of the middle of the table.")]
     made += [(f"assemble_{piece}", f"{piece}_seated", piece, f"slot_{piece}", 0.0015,

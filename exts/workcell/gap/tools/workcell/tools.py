@@ -36,6 +36,16 @@ class Survey(TypedDict):
     position_error_mm: float | None
 
 
+class Scan(TypedDict):
+    scan: int
+    found: int
+    pieces: list[str]
+    views: list[str]
+    moved: list[str]
+    placed: list[str]
+    next: str
+
+
 class Picture(TypedDict):
     image: np.ndarray
     path: str
@@ -84,6 +94,13 @@ class State(TypedDict):
     gripper: dict
     bodies: dict
     goals: dict
+
+
+@tool(name="workcell.scan", summary="Sweep the wrist camera over the scan's views, combine them into one estimate of the table, rebuild "
+      "the twin from it and say what the build has to do next.", tags=("perception", "sim_step"))
+def scan() -> Scan:
+    found = ask("scan")
+    return {key: found[key] for key in Scan.__annotations__}
 
 
 @tool(name="workcell.survey", summary="Find every piece of the puzzle on the table (wrist camera, SAM 3.1, scan to scene).",
