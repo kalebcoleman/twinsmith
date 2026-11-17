@@ -62,6 +62,8 @@ def test_the_frozen_cases_are_six_layouts_of_three_seeds_and_four_disturbances_o
     assert all(case["layout"] in CONFIG["layouts"] for case in cases)
     stretch = {case["group"] for case in cases if case["group"].startswith("stretch/")}
     assert {"stretch/reach_far", "stretch/reach_side", "stretch/long_carry"} <= stretch
+    added = [case for case in cases if case["group"] == "stretch/two_puzzles"]         # added after the freeze, and says so
+    assert len(added) == 3 and CONFIG["stretch"]["two_puzzles"]["what"].startswith("ADDED AFTER THE FREEZE")
     far = [case["settings"]["base_target"]["position_m"][1] for case in cases if case["group"] == "stretch/reach_far"]
     assert far == sorted(far, reverse=True) and far[0] == -0.46      # outward from the build's own target, step by step
     # A disturbed case is built on the table of the base case it disturbs; a stretch case, whose target differs, on its own.
@@ -75,10 +77,14 @@ def test_every_case_has_its_table_and_a_table_is_kept_as_numbers():
     pieces = ["base3", "line_brown", "line_red", "fork_orange", "fork_yellow"]
     for case in bench.cases(CONFIG):
         table = CONFIG["tables"][case["table"]]                                # a missing one fails here: the benchmark is not runnable without it
-        assert list(table) == pieces, case["name"]                             # the base first
-        spots = np.array([[x, y] for x, y, yaw in table.values()])
-        assert (spots > low).all() and (spots < high).all(), case["name"]
         spec = CONFIG["layouts"][case["layout"]]
+        assert list(table) == [*pieces, *spec.get("also", [])], case["name"]   # the base first; another puzzle's pieces last
+        spots = np.array([table[name][:2] for name in pieces])
+        assert (spots > low).all() and (spots < high).all(), case["name"]
+        if "on" in spec:                                                       # another case's table, as it was, with the other pieces added
+            assert {name: table[name] for name in pieces} == CONFIG["tables"][spec["on"]], case["name"]
+            others, wide = np.array([table[name][:2] for name in spec["also"]]), np.array(spec["also_region"])
+            assert (others > wide[0]).all() and (others < wide[1]).all(), case["name"]
         loose = np.array([[x, y] for name, (x, y, yaw) in table.items() if name in spec.get("band_for", pieces[1:])])       # the pieces a band holds for
         if "pieces_y" in spec:
             assert (loose[:, 1] >= spec["pieces_y"][0]).all() and (loose[:, 1] <= spec["pieces_y"][1]).all(), case["name"]
