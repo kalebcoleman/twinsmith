@@ -185,6 +185,7 @@ class Shape:
                 rests.append(Rest(self, turn))
         self.rests = [rest for rest in rests if rest.stable]
         self.all_rests = rests                               # every face up: what a piece leaning on another can also show
+        self.least_area = min(rest.area for rest in rests)   # the least it shows from above: tipped off a face it shows more
 
     def same_as(self, other):
         return abs(self.volume - other.volume) < 1e-4 * self.volume and \
@@ -593,6 +594,15 @@ def fit(scan, item, shape):
 
 FREE_STARTS, FREE_BETTER = 6, 0.05      # starts refined per shape; how much better a free pose must be to replace a flat one
 CLEAR_M = 0.008                         # two poses up to this far inside each other are one piece resting on the other
+# A base plate is the largest piece of its puzzle and the costliest to pose (22 boxes): trying one in all six freedoms
+# on every small object left over was most of the matcher's time. The least a plate shows from above is its smallest
+# face, the side it stands on when on edge (``Shape.least_area``, from the pack's own boxes: 58 cm2 for puzzles/v1,
+# whose largest other piece shows 39 cm2 lying flat). An object that shows less than this share of that face is not
+# tried as a base plate by the fit that assumes nothing; the margin of two is for a plate half hidden, half out of the
+# picture or half lost by its mask. It can change an answer only where that fit would have named so small an object a
+# base plate: a plate that does not lie flat and of which less than that is seen as one object, or something that is
+# no plate. 0 turns the test off.
+BASE_SEEN_MIN = 0.5
 
 
 def _top_at(shape, turn, at, xy):
@@ -661,6 +671,11 @@ def _stance(shape, turn, zmin):
     height = float((high - low)[up])
     rest = "tilted" if tilt > 3.0 else "flat" if height < shape.sizes[0] + 1e-4 else "on end" if height > shape.sizes[2] - 1e-4 else "on its side"
     return rest, tilt, "table" if zmin <= TABLE_M else "raised"
+
+
+def too_small_for_base(item, shape):
+    """Whether an object shows too little to be tried as a base plate of this shape (see ``BASE_SEEN_MIN``)."""
+    return item["area"] < BASE_SEEN_MIN * shape.least_area
 
 
 def fit_free(scan, item, shape):
@@ -970,13 +985,14 @@ def match(scan, pack):
                  "colour": np.median([part["colour"] for part in parts], axis=0)}
         whole["centroid"] = whole["xy"].mean(0)
         tried.append((group, whole))
-    options = []
+    options, plates = [], {pack.shape_of[base] for base in pack.assemblies if base in pack.shape_of}
     for group, item in tried:
         poses = {}
         for piece in sorted(free):
             shape = pack.shape_of[piece]
             if shape not in poses:
-                poses[shape] = fit_free(scan, item, pack.shapes[shape])
+                small = shape in plates and too_small_for_base(item, pack.shapes[shape])
+                poses[shape] = [] if small else fit_free(scan, item, pack.shapes[shape])
             if poses[shape] and poses[shape][0]["cost"] <= SHAPE_MAX:
                 best = poses[shape][0]
                 cost = _colour_cost(best["colour"], pack.colour[piece], gain)

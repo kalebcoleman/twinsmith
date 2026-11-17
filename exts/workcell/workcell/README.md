@@ -131,6 +131,13 @@ How a piece is recognised:
   well it is given whole (`other_pose`), not chosen between. Two poses up to 8 mm inside each other are one piece
   resting on the other when lifting the upper straight up by that much takes it out of the lower: it is moved and says
   so (`moved_up_mm`). Inside each other sideways, no lift parts them and one piece per place, below, applies.
+- **Too small to be a base plate.** That fit does not try a base plate on an object that shows less than half of the
+  least a plate can show from above, which is its smallest face (58 cm2 for `puzzles/v1`, so 29 cm2; the pack's largest
+  other piece shows 39 cm2 lying flat). The limit is the pack's own: `BASE_SEEN_MIN` times the smallest footprint of
+  the plate's boxes, with the factor of two for a plate half hidden, half out of the picture or half lost by its mask.
+  It can change an answer only where that fit would have named so small an object a base plate: a plate that does not
+  lie flat and of which less than that is seen as one object, or something that is no plate. A plate lying flat is
+  found by the flat fit, which this does not touch. `BASE_SEEN_MIN = 0` turns it off.
 - **The gripper in the picture.** A mask that is mostly more than 0.25 m above the table is the gripper the camera
   rides on, and neither it nor the mixed depth round its edge is an object.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside

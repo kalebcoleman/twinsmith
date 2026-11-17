@@ -401,3 +401,41 @@ def test_the_median_is_numpys_whatever_it_is_given():
             wanted = float(np.median(values))
         got = scan._median(values)
         assert got == wanted or (math.isnan(got) and math.isnan(wanted))
+
+
+def test_a_base_plate_is_not_tried_on_an_object_far_too_small_to_be_one(tmp_path, monkeypatch):
+    # The least a plate shows from above is its smallest face, from the pack's own boxes: standing on edge, the 100 x 20 mm
+    # side that the slot's 24 x 10 mm notch is cut out of.
+    plates = scan.Pack({"plate": PIECES["plate"]}, {"plate": []}, "toy/plate")
+    plate = plates.shape("plate")
+    assert plate.least_area == pytest.approx(0.100 * 0.020 - 0.024 * 0.010)
+    limit = scan.BASE_SEEN_MIN * plate.least_area
+    assert scan.BASE_SEEN_MIN == 0.5 and limit == pytest.approx(0.00088)                   # half of that face: 8.8 cm2
+    assert scan.too_small_for_base({"area": limit - 4e-6}, plate) and not scan.too_small_for_base({"area": limit + 4e-6}, plate)   # a cell either side
+    # Two blocks that are no piece of the pack, 20 mm wide and 39 and 41 mm long: with the bit of their walls the camera
+    # sees, one shows a few percent under 8.8 cm2 and the other a few percent over.
+    blocks = {"under": {"boxes": [box([0, 0, 0], [0.0195, 0.01, 0.01])], "colour": [0.7, 0.03, 0.03]},
+              "over": {"boxes": [box([0, 0, 0], [0.0205, 0.01, 0.01])], "colour": [0.1, 0.5, 0.1]}}
+    drawn = scan.Pack(blocks, {}, "toy/blocks")
+    scan.synthetic(drawn, {"under": flat(drawn, "under", (-0.08, 0.0), 20), "over": flat(drawn, "over", (0.08, 0.0), 20)}, CAMERA, tmp_path / "clip", tmp_path / "run")
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    area = {item["name"]: item["area"] for item in looked.objects}
+    assert 0.93 * limit < area["pieces:1"] < limit < area["pieces:2"] < 1.07 * limit
+    tried, fit_free = [], scan.fit_free
+    monkeypatch.setattr(scan, "fit_free", lambda scanned, item, shape: tried.append(item["name"]) or fit_free(scanned, item, shape))
+    estimate = scan.match(looked, plates)
+    assert tried == ["pieces:2"]                                               # the one just over is tried as the plate, the one just under is not
+    assert not estimate["pieces"] and sorted(one["object"] for one in estimate["unexplained"]) == ["pieces:1", "pieces:2"]
+    tried.clear()
+    monkeypatch.setattr(scan, "BASE_SEEN_MIN", 0.0)                            # the test turned off: both, as before it was there
+    assert scan.match(looked, plates)["unexplained"] == estimate["unexplained"] and tried == ["pieces:1", "pieces:2"]
+
+
+def test_no_pose_of_a_plate_shows_less_than_its_smallest_face(pack):
+    plate, rng, least = pack.shape("plate"), np.random.default_rng(7), np.inf
+    for trial in range(300):
+        w, x, y, z = (lambda q: q / np.linalg.norm(q))(rng.normal(size=4))
+        turn = np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)], [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                         [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+        least = min(least, len(plate.top(turn, np.zeros(3), cell=0.001)) * 1e-6)
+    assert least > 0.97 * plate.least_area                                     # tipped off a face it shows more, not less
