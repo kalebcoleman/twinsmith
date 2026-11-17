@@ -52,17 +52,25 @@
    "gap_m": 0.022
   },
   "far": {
-   "what": "Every loose piece in the far half of the table: beyond the middle line, away from the robot.",
+   "what": "Both forks in the far part of the table, away from the robot; the bars anywhere. (All four pieces do not fit there beside the base's way to the middle.)",
    "pieces_y": [
     -0.64,
-    -0.46
+    -0.5
+   ],
+   "band_for": [
+    "fork_orange",
+    "fork_yellow"
    ]
   },
   "near": {
-   "what": "Every loose piece in the near half of the table: this side of the middle line, toward the robot, where the survey looks past its own gripper.",
+   "what": "Both forks in the near part of the table, toward the robot, where the survey looks past its own gripper; the bars anywhere.",
    "pieces_y": [
-    -0.46,
+    -0.42,
     -0.3
+   ],
+   "band_for": [
+    "fork_orange",
+    "fork_yellow"
    ]
   },
   "pieces_left": {

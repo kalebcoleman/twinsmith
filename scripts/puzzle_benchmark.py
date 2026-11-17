@@ -58,15 +58,16 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
     """One puzzle's pieces lying flat on the table in the way a kind of layout says, the base off to one side of
     ``target`` and both the target and the way there left free, as ``puzzle_assembly.scatter`` leaves them. ``spec``
     is the kind's entry of the benchmark: ``side`` (-1 the base starts on the left, +1 on the right; either without
-    it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in), ``cluster_m`` (every loose piece's
-    middle within this of one random point), ``gap_m`` (the least room between pieces, 35 mm without it). ``region``
+    it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in; ``band_for`` names the pieces it
+    holds for when not all of them), ``cluster_m`` (every loose piece's middle within this of one random point),
+    ``gap_m`` (the least room between pieces, 35 mm without it). ``region``
     is ((x low, y low), (x high, y high)) of the table that every piece lies inside, and ``hidden`` the rectangles of
     it, given the same way, that no piece may touch. Returns {piece: world pose} with the base first. ``assembly`` and
     ``puzzle_scan`` are the build's own modules, so the footprints are the build's."""
     low, high = np.array(region[0]), np.array(region[1])
     gap = spec.get("gap_m", 0.035)
-    band_low = np.array([spec.get("pieces_x", (low[0], high[0]))[0], spec.get("pieces_y", (low[1], high[1]))[0]])
-    band_high = np.array([spec.get("pieces_x", (low[0], high[0]))[1], spec.get("pieces_y", (low[1], high[1]))[1]])
+    band = (np.array([spec.get("pieces_x", (low[0], high[0]))[0], spec.get("pieces_y", (low[1], high[1]))[0]]),
+            np.array([spec.get("pieces_x", (low[0], high[0]))[1], spec.get("pieces_y", (low[1], high[1]))[1]]))
     hidden = [np.array([a, [b[0], a[1]], b, [a[0], b[1]]]) for a, b in hidden]
 
     def lying(name, xy):
@@ -83,8 +84,9 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
         if not inside(base, start):
             continue
         poses, keep_free = {base: start}, [assembly.footprint(pack, base, at, 0.03) for at in assembly.slide_path(start, target)]
-        middle = rng.uniform(band_low, band_high)
+        middle = rng.uniform(*band)
         for name in assembly.slot_poses(pack, base):
+            band_low, band_high = band if name in spec.get("band_for", [name]) else (low, high)
             for _ in range(PIECE_TRIES):
                 reach = spec.get("cluster_m")
                 xy = middle + rng.uniform(-reach, reach, 2) if reach else rng.uniform(band_low, band_high)
