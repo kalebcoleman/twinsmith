@@ -44,7 +44,8 @@
   "line_brown": {
    "shift_mm": 1.705,
    "shift_deg": 0.037,
-   "apply": true,
+   "apply": false,
+   "why_not_applied": "Measured, and not applied. Over the six layouts compared on 2026-11-17 the build seated 23 of 24 pieces with both bars placed by their grasp as defined, and 18 of 24 with the bars' entries applied. An entry for a bar lowers the gripper (+1.4 mm here): the arm hangs about 1 mm below its targets at the pick, so the pads hold a bar lower than the grasp defines, and the grasp leaves the pads only 0.5 mm above the slot's walls. Placed by the entry, the pads come down on the walls and push the base when the gripper opens. The shift along the bar is also not the same from pick to pick (-0.9 mm here; -0.9 and +2.2 mm for the two bars).",
    "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
    "in_hand": [
     [
@@ -105,7 +106,8 @@
   "line_red": {
    "shift_mm": 4.006,
    "shift_deg": 0.082,
-   "apply": true,
+   "apply": false,
+   "why_not_applied": "Measured, and not applied. Over the six layouts compared on 2026-11-17 the build seated 23 of 24 pieces with both bars placed by their grasp as defined, and 18 of 24 with the bars' entries applied. An entry for a bar lowers the gripper (+3.3 mm here): the arm hangs about 1 mm below its targets at the pick, so the pads hold a bar lower than the grasp defines, and the grasp leaves the pads only 0.5 mm above the slot's walls. Placed by the entry, the pads come down on the walls and push the base when the gripper opens. The shift along the bar is also not the same from pick to pick (+2.2 mm here; -0.9 and +2.2 mm for the two bars).",
    "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
    "in_hand": [
     [

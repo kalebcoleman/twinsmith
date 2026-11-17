@@ -55,7 +55,7 @@ from twinsmith.sam3 import Sam3  # noqa: E402
 
 CONFIG = Path(__file__).with_name("puzzle_build.json")
 CORRECTIONS = Path(__file__).with_name("puzzle_build_corrections.json")
-CORRECTION = "lookahead"                         # --correction when none is given
+CORRECTION = "table"                             # --correction when none is given
 HALF_TURN = np.diag([-1.0, -1.0, 1.0, 1.0])     # the gripper turned half round about the way it points
 REGISTRY = ROOT / "exts/workcell/gap"
 PUZZLE = "/World/Puzzle"
