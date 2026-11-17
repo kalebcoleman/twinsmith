@@ -268,7 +268,7 @@ table and the base off to one side; the robot finds them, slides the base to the
 piece. It talks to one simulator bridge on this machine and cannot reach a real robot.
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
-        --allow-concurrent-gpu --table-camera --colours <colours.json>
+        --allow-concurrent-gpu --table-camera --colours <colours.json> --scan-cycle <mv_cycle.sh>
 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
@@ -285,18 +285,23 @@ piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a 
 |---|---|
 | Layout | `puzzle_assembly.scatter`: the pieces flat at random inside what the wrist camera sees from the survey pose, apart from each other, the base 0.24 to 0.32 m to one side, the middle and the way there free. Built as a task by `quick_start`, once per layout |
 | Rail, then arm | The rail is parked with its own blocking move. After that only the six arm joints move, solved from the UR base where the rail has put it (read from `sim__arm(action="fk")`) with the UR5e's closed-form solution (`workcell_session.ur_ik`; its forward kinematics agree with the simulator's to 5 micrometres). A straight line is solved waypoint by waypoint, each near the one before; a large move goes to the solution nearest the posture the cell was built in, with elbow and wrist clear of the table. `sim__arm(action="ik")` solves nearest the arm's pose now and takes no seed: along a turning line its answers jumped (the arm ended 90 degrees from its targets), and after a level insertion it led the elbow onto the table |
+| Scan | The graph's first step, and the step it returns to. The wrist camera stops at each view of `scan` in `puzzle_build.json`, the survey's own first (below) and then two from the sides; the views leave as the folder a scan mover writes on the robot's side (`scan_mover.multiview/1`) and the multi-view cycle named by `--scan-cycle` (the puzzle project's `cycle/multiview/mv_cycle.sh`: SAM 3.1 and the matcher on the first view, every view's depth checked against the result) returns one estimate. From it the twin is rebuilt (the poses the lookahead simulates from, and `scans/<n>/task/`), what is already done is worked out (the base in the middle, pieces seated), and the scan says what is next. A piece the cycle leaves in doubt, or does not find, stops the build. `--perception oracle` makes the same moves and reads the simulator's poses |
+| The scan's cycle | `--scan-cycle` names a command, not a file of this repository. It is called as `<command> <scan folder> --out <folder> --name answer --no-latest [--colours <file>]`, with `TWINSMITH_REPO` and `TWINSMITH_SCAN_REPO` set to this checkout, and must leave `<folder>/answer/estimate.json` in the matcher's shape (`pieces` with `name`, `position_m`, `rotation`; `doubtful` as it stands after its own check; `unexplained`; optionally `next_view`) and `<folder>/answer/real_rgb.png`. The one implementation is the puzzle project's `cycle/multiview/mv_cycle.sh` (repository `sim2real-puzzle`, private; committed there as `63f6ae3` on its branch `feat/gap-ros-bridge`, 45 unit tests of its own). On the machine it needs `<workspace>/env.sh`, the host environment, the `sam3` tool with SAM 3.1, and its `sam3_client.py` under `<workspace>/runs/demo-kit`; `TWINSMITH_SAM3_SPOOL` set to a folder of one's own keeps a build off a shared SAM worker. Without a cycle the build runs with `--perception oracle` only |
 | Survey | Wrist D415 straight down from 0.72 m, gripper closed. At the calibrated camera pose the gripper fills the top middle of the picture and its fingertips end at the picture's centre, so the point looked at is 90 mm to the robot's side of the middle of the table: the base in the middle is then wholly in view, and a layout puts no piece where the gripper hides the table (`puzzle_assembly.hidden_on_table`). The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
 | Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
 | Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers. Slid, it slips in the fingers and stops short, by 3 to 20 mm: the look that follows measures where it stopped, and a base more than 10 mm (and less than 50 mm) from the middle is slid once more from there |
 | Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
 | Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
+| Base check | While a piece is brought to the base, the base is checked from one depth picture of the wrist camera with no SAM pass (`scripts/puzzle_base_check.py`): the base's CAD, with the pieces seated in it, is fitted in x, y and yaw from its last pose to the heights seen, the table's own points included. A piece that goes in with the gripper pointing down (the bars) is checked at its pre-place hover and after every 10 mm of lowering while it is still above the slot; one that goes in with the gripper level (the forks), where the camera cannot see the base, is checked once from 0.45 m above the base before it is carried in. A base found more than 3 mm or 1.5 degrees away by a fit that is trusted takes its slots and seated pieces with it; what is left of the placement is laid out again and simulated ahead on Newton, and the hand comes over the slot's new place. Found moved during the lowering, the arm first goes back up to the hover. A fit that is not trusted (too little of the base in view, heights that do not agree, a way it could slide for free, a move as far as it looks) or other pieces not where they were: the piece is put back where it was picked and the table is scanned. `--shift-base PIECE:MM:DEG[:before|descent]` slides the base at that moment, to see it |
 | Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
+| Scan again | When the jaws close on nothing or the hand stops short of the grasp, or when a look finds a loose piece more than 5 mm or 5 degrees from where the estimate had it or the base out of its place: back to the scan, which takes the table as it now stands and sends the build to the next thing it needs. At most three more scans than there are pieces. `--disturb PIECE` moves that piece 50 mm aside just before its first pick, to see this happen |
 
 The run is a Graph-as-Policy workflow. `exts/workcell/gap` is a skill registry (made with `gap registry init` and
-`gap skills new`): the tool bundle `workcell` (eleven tools, each a call to the running `puzzle_build.py`) and the
-skills `surveying-puzzle-pieces`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
+`gap skills new`): the tool bundle `workcell` (twelve tools, each a call to the running `puzzle_build.py`) and the
+skills `scanning-the-table`, `placing-puzzle-base` and `assembling-puzzle-pieces`. `puzzle_graph.py` there
 authors the workflow with `gap.builder`, one subgraph per skill and per piece, and runs it with `gap.execute` through a
-small connector. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
+small connector. The scan's subgraph is followed by a router that sends the build to the base, to a piece or to the end, by what the scan
+found; a piece's subgraph that leaves by `empty`, `missed` or `changed` goes back to the scan. Between the motions of each pick it runs two stock scripts of open-robot-skills' `verifying-grasps`
 (`verify_reach`, `verify_grip`), and after each placement a checkpoint compares the piece with its slot in the
 simulator's truth. Two more subgraphs ask the owner's vision-language model (`[planning] vlm_url`, through
 open-robot-skills' `vlm` bundle) for a second opinion: how many parts it counts after the survey, and whether the
@@ -358,6 +363,34 @@ the pad centre. The survey looks from 0.72 m in place of 0.6 m, for the reason i
 other layouts than before, with the base 0.28 and 0.29 m from the middle: over that distance it stopped 13 and 19 mm
 short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
 was added. On v3 the same move had stopped 3 to 8 mm short and passed.
+
+The base moved under the hand (2026-11-17, the same cell and puzzle, `--perception oracle` so that only the base check
+reads a picture, the lookahead as on this branch; six builds on seeds 1, 3 and 5, each with a scripted slide of the base
+before or during every placement it reached: `--shift-base`, 22 slides in all). The slide is a teleport along one
+direction, with what is seated in the base, not a hand pushing it.
+
+| | |
+|---|---|
+| Slides of 10 mm, and of 25 mm with 5 degrees, noticed at the first check after them | 17 of 17 (6 at a bar's hover, 3 during a bar's lowering, 8 from the look above the base before a fork) |
+| Slides of 2 mm, under the 3 mm threshold, left alone | 5 of 5; the piece then went in up to 1.1 mm from the CAD |
+| Piece seated after its slide | 22 of 22, on the first attempt, 0.11 to 1.10 mm from the CAD (median 0.72) |
+| The fit, per check (57 checks) | 84 ms median, 122 ms at most, on one core beside three other simulators; 0.24 mm from the simulator's truth at the median, 0.94 mm at most at a hover and 0.65 mm from the look |
+| The fit while lowering, closer to the base and seeing less of it | up to 2.0 mm and 2.7 degrees off. It is only what sends the arm back up; the correction is measured again at the hover |
+| The picture, in the simulator | 0.54 to 1.8 s, two renders each time (below). Not a camera's time: a D415 frame is 33 ms |
+| From noticing to lowering again | 0.7 to 0.83 simulated seconds of motion at a hover, none after a look; 15 to 56 s of wall time, nearly all of it the Newton lookahead of what is left of the placement |
+| A slide during the lowering | noticed at the next check, at most one 10 mm stage (1.2 simulated seconds) after it; in these runs the slide was made just before a check |
+| Builds completed | 4 of 6. Both builds of seed 5 stopped where that layout stops without any slide: the lookahead refuses its last fork, before it is picked |
+
+Three things these runs showed. The simulator's renderer is one picture behind whatever was last put somewhere without
+moving there (the scripted slide, a rehearsal put back): the first picture after a slide showed the base where it had
+been, and the check said steady. Every check now draws twice and reads the second; a real camera has no such lag. With
+the gripper level the wrist camera does not see enough of the base (the fit could slide along the approach for free),
+so a fork is checked from above before it is carried in, and **a base moved after that look, while a fork is carried in
+and lowered, is not noticed until the look after the placement**. And the matcher's 2 mm height-map cells put the base
+up to 1.2 mm and 1.5 degrees off under the hand; the check's own map has 0.5 mm cells. Not tried: a real depth picture
+(at a bar's hover the camera is nearer the base than a D415 measures), a base that is still moving when the picture is
+taken, a slide of more than 40 mm (the fit says unsure, the piece is put back and the table scanned; that path ran in
+the first trials, and its numbers are not in this table), and SAM 3.1 perception together with the slides.
 
 Why the base slipped, and the fingertips (the same day, after those runs). In the pictures the fingertips could be
 seen inside the pieces. Measured on a grasp alone (40 N, between the colliders, after closing and after a 120 mm

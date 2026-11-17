@@ -10,6 +10,21 @@
   "look_at_m": [0.02, -0.37, 0.0],
   "height_m": 0.72
  },
+ "scan": {
+  "what": "The scan step's views after the survey's own (straight down, the view the matcher reads): where the wrist camera is and the point it looks at. The depth of every view is compared with the matched pieces, which is what tells a piece's rival poses apart. Five frames a view, the number the matcher reads. The picture stays upright in every view (its right as near the world's x as the view allows); for that the arm unwinds wrist 3 from 106 degrees at the left view to -154 at the right one. With the right view a quarter turn round, wrist 3 stayed between 101 and 141 degrees, but only 36 to 200 pixels of each piece were then compared there (over 1000 upright) and the view lined up twenty times worse.",
+  "frames": 5,
+  "views": [
+   {"name": "left", "eye_m": [-0.28, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]},
+   {"name": "right", "eye_m": [0.32, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]}
+  ]
+ },
+ "base_check": {
+  "what": "The fast check of the base while a piece is brought to it (scripts/puzzle_base_check.py): one depth picture of the wrist camera at the pre-place hover and after every descent_step_m of lowering, fitted with the base's CAD from its last pose. The camera rides on the gripper and looks along it: a piece that goes in with the gripper level (the forks) is checked once instead, from look_height_m above the base, before it is carried in, and not again. A base found more than moved_mm or moved_deg away, by a fit that is trusted, takes its slots and seated pieces with it and the rest of the placement is laid out again and simulated ahead; at most corrections times per placement. A fit that is not trusted, or other pieces not where they were, puts the piece back and scans the table.",
+  "moved_mm": 3.0, "moved_deg": 1.5,
+  "descent_step_m": 0.010,
+  "look_height_m": 0.45,
+  "corrections": 3
+ },
  "base_target": {
   "what": "The middle of the table. The yaw puts the forks' slots across the rail, so each fork is brought in from its own side with the gripper level; the base may also arrive half a turn round.",
   "position_m": [0.0, -0.46],
