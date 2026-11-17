@@ -70,6 +70,25 @@ def test_the_frozen_cases_are_six_layouts_of_three_seeds_and_four_disturbances_o
     assert tables["stretch/reach_far/y-540"] == "stretch/reach_far/y-540"
 
 
+def test_every_case_has_its_table_and_a_table_is_kept_as_numbers():
+    low, high = np.array(CONFIG["region"][0]), np.array(CONFIG["region"][1])
+    pieces = ["base3", "line_brown", "line_red", "fork_orange", "fork_yellow"]
+    for case in bench.cases(CONFIG):
+        table = CONFIG["tables"][case["table"]]                                # a missing one fails here: the benchmark is not runnable without it
+        assert list(table) == pieces, case["name"]                             # the base first
+        spots = np.array([[x, y] for x, y, yaw in table.values()])
+        assert (spots > low).all() and (spots < high).all(), case["name"]
+        spec = CONFIG["layouts"][case["layout"]]
+        loose = np.array([[x, y] for name, (x, y, yaw) in table.items() if name in spec.get("band_for", pieces[1:])])       # the pieces a band holds for
+        if "pieces_y" in spec:
+            assert (loose[:, 1] >= spec["pieces_y"][0]).all() and (loose[:, 1] <= spec["pieces_y"][1]).all(), case["name"]
+        if "pieces_x" in spec:
+            assert (loose[:, 0] >= spec["pieces_x"][0]).all() and (loose[:, 0] <= spec["pieces_x"][1]).all(), case["name"]
+        if "side" in spec:
+            middle = (case["settings"] or {}).get("base_target", {}).get("position_m", [0.0, -0.46])[0]
+            assert np.sign(spots[0, 0] - middle) == spec["side"], case["name"]
+
+
 def test_a_table_comes_back_as_the_poses_it_was_made_from(pack):
     middle = target(pack)
     poses = bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(4), {}, REGION, HIDDEN)
