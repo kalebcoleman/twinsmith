@@ -138,6 +138,25 @@ def pad_setback(gap_m):
 
 
 class Session:
+    cable_windows = None
+
+    def set_cable_limits(self, path):
+        cable = json.loads(Path(path).read_text())
+        window = cable.get('joint_windows_deg', {})
+        margin = cable.get('inset_margin_deg')
+        if (cable.get('schema') != 'gap_bridge.cable_limits/1' or type(cable.get('measured')) is not bool
+                or type(margin) not in (int, float) or not math.isfinite(margin) or margin < 0
+                or cable.get('units') != {'angles': 'deg', 'boxes': 'm'} or cable.get('joint_names') != list(ARM)
+                or not isinstance(window, dict) or not all(isinstance(window.get(side), list) and len(window[side]) == 6
+                and all(type(value) in (float, int) and math.isfinite(value) for value in window[side]) for side in ('min', 'max'))
+                or not all(-extent <= low < high <= extent for low, high, extent in
+                           zip(window['min'], window['max'], (360, 360, 180, 360, 360, 360)))):
+            raise ValueError('invalid cable limits: expected six ordered degree windows')
+        self.cable_windows = {joint: (math.radians(low), math.radians(high)) for joint, low, high in zip(ARM, window['min'], window['max'])}
+
+    def allowed_targets(self, row):
+        return self.cable_windows is None or all(low <= row[joint] <= high for joint, (low, high) in self.cable_windows.items() if joint in row)
+
     def __init__(self, port, out, host="127.0.0.1"):
         self.out = Path(out).resolve()
         self.out.mkdir(parents=True, exist_ok=True)
@@ -184,6 +203,8 @@ class Session:
     def drive(self, rows, steps):
         """Give the robot joint targets row by row ([{joint: radians}]) and advance physics ``steps`` after each, in
         one call to Kit per 100 rows. The joints are sampled every SAMPLE_STEPS on the way."""
+        if self.cable_windows and not all(self.allowed_targets(row) for row in rows):
+            raise MoveFailed('trajectory outside cable joint windows; nothing sent')
         watched = [self.dofs[joint] for joint in ("rail_joint", *ARM, "finger_joint")]
         for start in range(0, len(rows), 100):
             part = [{self.dofs[joint]: value for joint, value in row.items()} for row in rows[start:start + 100]]
@@ -208,6 +229,9 @@ class Session:
     def build(self, task, start_deg, open_gap_m, discard_changes=False, settle_steps=1500):
         """Build the cell with a task (a name or an absolute task file) on Newton, start physics with the arm at
         ``start_deg`` and the gripper open, and let the scene settle. Returns quick_start's answer."""
+        home = dict(zip(ARM, map(math.radians, start_deg), strict=True))
+        if not self.allowed_targets(home):
+            raise MoveFailed('initial pose outside cable joint windows; scene unchanged')
         before = self.bridge.call("sim.stage.info", {})
         if not before.get("stopped"):
             self.bridge.call("sim.timeline", {"session_id": before["session_id"], "stage_id": before["stage_id"], "action": "stop"})
@@ -218,7 +242,6 @@ class Session:
         for action in ("play", "pause"):
             self.call("sim.timeline", {"action": action})
         self.dofs = {name: index for index, name in enumerate(self.call("sim.joints.state", {"path": self.root})["names"])}
-        home = {joint: math.radians(value) for joint, value in zip(ARM, start_deg)}
         self.posture = [home[joint] for joint in ARM]
         self.call("sim.joints.teleport", {"path": self.root, "positions": home})
         self.commanded = dict(home)
@@ -304,6 +327,8 @@ class Session:
             joints = [q + 2 * math.pi * round((near[joint] - q) / (2 * math.pi)) for joint, q in zip(ARM, joints)]
             joints = [q - math.copysign(2 * math.pi, q) if abs(q) > 2 * math.pi else q for q in joints]
             far = max(abs(q - near[joint]) for joint, q in zip(ARM, joints))
+            if not self.allowed_targets(dict(zip(ARM, joints))):
+                continue
             if best is None or far < best[0]:
                 best = (far, joints)
         if best is None:
@@ -356,6 +381,8 @@ class Session:
         found = []
         for joints in ur_ik(np.linalg.inv(self.world_from_base) @ world_from_wrist):
             heights = [(self.world_from_base @ link)[2, 3] for link in ur_fk(joints)[1:5]]
+            if not self.allowed_targets({joint: home + turn(q - home) for joint, q, home in zip(ARM, joints, self.posture)}):
+                continue
             if all(height >= floor for height, floor in zip(heights, CLEAR_OF_TABLE_M)):
                 found.append(joints)
         if not found:
