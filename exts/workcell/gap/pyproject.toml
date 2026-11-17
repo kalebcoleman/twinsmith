@@ -10,7 +10,7 @@ dependencies = ["graph-as-policy"]
 # bundle has no deps of its own). `gap check` derives install hints from
 # this table.
 workcell = []
-surveying-puzzle-pieces = []
+scanning-the-table = []
 placing-puzzle-base = []
 assembling-puzzle-pieces = []
 
