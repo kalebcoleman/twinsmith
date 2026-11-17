@@ -96,6 +96,8 @@ class Build:
         self.args, self.config, self.pack = args, config, pack
         self.base, self.out = config["base"], Path(args.out).resolve()
         self.cell = cell.Session(args.port, self.out)
+        if args.cable_limits:
+            self.cell.set_cable_limits(args.cable_limits)
         self.order = assembly.build_order(pack, self.base)
         self.slots = assembly.slot_poses(pack, self.base)
         self.names = [self.base, *self.slots]
@@ -810,6 +812,7 @@ def graph_report(trace, pieces):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, required=True, help="the simulator bridge to use; its stage is replaced")
+    parser.add_argument('--cable-limits', type=Path, help='apply the ROS bridge cable_limits.json joint windows to initial pose, IK and drive targets (not a collision check)')
     parser.add_argument("--out", type=Path, required=True, help="folder for metrics.json, the video and the pictures")
     parser.add_argument("--seed", type=int, default=1, help="the random layout")
     parser.add_argument("--config", type=Path, default=CONFIG)

@@ -270,6 +270,10 @@ piece. It talks to one simulator bridge on this machine and cannot reach a real 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
         --allow-concurrent-gpu --table-camera --colours <colours.json> --scan-cycle <mv_cycle.sh>
 
+For joint-constrained rehearsal add `--cable-limits <absolute-path-to-cable_limits.json>`, using the same file as
+the ROS bridge. The six controller-order degree windows already include the operator's inset. They filter IK and
+drive targets, not collisions or measured tracking drift. Omitting the option preserves the unconstrained benchmark.
+
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
 seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
