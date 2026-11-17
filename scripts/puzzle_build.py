@@ -229,11 +229,14 @@ class Build:
 
     def _grasp(self, piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0):
         """The first way of holding a piece that fits the CAD, that the arm reaches at both ends, and that a
-        lookahead has not found blocked."""
+        lookahead has not found blocked. The gripper is checked as it comes down, open, and as it holds the piece."""
         grasp = self.config["grasps"][piece]
-        back = np.linalg.inv(self.cell.wrist_from_gripper)
+        back, why = np.linalg.inv(self.cell.wrist_from_gripper), []
         with self.cell.timed("plan_s"):
-            options = assembly.choose_grasps(self.pack, piece, grasp, now, target, around_now, around_then, cell.pad_setback, axis, clear_m)
+            options = assembly.choose_grasps(self.pack, piece, grasp, now, target, around_now, around_then, cell.pad_setback, axis, clear_m,
+                                             open_m=self.config["open_beyond_m"], hover_m=HOVER_M, refused=why)
+        if not options:
+            raise Refused(f"no grasp of {piece} fits: {'; '.join(why[:3]) or 'it does not lie the way its grasp takes it, from above'}")
         for way, option in enumerate(options):
             if way in self.avoid.get(piece, ()):
                 continue
@@ -243,7 +246,7 @@ class Build:
             except cell.MoveFailed:
                 continue
             return {**option, "width_m": grasp["width_m"], "piece": piece, "way": way}
-        raise Refused(f"no grasp of {piece} fits and is within reach")
+        raise Refused(f"no grasp of {piece} that fits is within reach")
 
     @staticmethod
     def _tcp(pads, width_m):
@@ -297,10 +300,12 @@ class Build:
             raise Refused(f"{piece} needs {step['needs']} in first")
         if piece not in self.estimate:
             raise Refused(f"{piece} was not seen")
-        loose = {name: at for name, at in self.estimate.items() if name != piece}
-        built = {name: self.estimate[name] for name in [self.base, *self.placed]}
+        # Everything else the robot believes is on the table, at the pick and at the slot alike: the base, the pieces
+        # it has placed (in their slots) and the loose ones where the last look saw them. A loose piece lying in
+        # this piece's slot, or where the open gripper comes down, is in the way.
+        others = {name: self._twin_pose(name) if name in self.placed else at for name, at in self.estimate.items() if name != piece}
         axis = self.estimate[self.base][:3, :3] @ np.array(step["axis"], dtype=float)
-        hold = self._grasp(piece, self.estimate[piece], self._seat(piece), loose, built, axis, step["clear_m"] + MARGIN_M)
+        hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
         hold.update(axis=axis, clear_m=step["clear_m"] + MARGIN_M)
         self.trying = hold
         if piece in self.adjust:                            # the lookahead's grasp: how the piece really sat in the hand

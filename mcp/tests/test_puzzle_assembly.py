@@ -185,3 +185,79 @@ def test_the_demo_grips_within_the_rg2_specification():
         assert 0.0 < grasp["width_m"] + config["open_beyond_m"] <= session.RG2_STROKE_M, name
         closing, approach = np.array(grasp["closing_axis"]), np.array(grasp["approach_axis"])
         assert closing @ approach == 0 and np.linalg.norm(closing) == np.linalg.norm(approach) == 1, name
+
+
+@pytest.fixture(scope="module")
+def two_bars():
+    """The toy pack with a second bar, ``rod``: a piece of the same shape that may lie where it should not."""
+    return scan.Pack({**PIECES, "rod": {**PIECES["bar"], "colour": [0.4, 0.2, 0.1]}}, ASSEMBLIES, "toy/v1")
+
+
+def test_the_gripper_comes_down_wider_than_it_grips_and_a_neighbour_may_be_in_its_way(two_bars):
+    pack, plate = two_bars, lying(two_bars, "plate", [0.0, 0.0])
+    now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
+    beside = lambda gap_m: {"plate": plate, "rod": assembly.pose(now[:3, :3], now[:3, 3] + now[:3, :3] @ [0.024 + gap_m, 0, 0])}   # parallel, side by side
+    fits = lambda around, **more: assembly.choose_grasps(pack, "bar", GRASP, now, seat, around, {"plate": plate}, no_setback, clear_m=0.03, **more)
+    comes_down = dict(open_m=0.016, hover_m=0.10)             # the pads 16 mm wider than the bar until they close: 8 mm more a side
+    # A fingertip is 11.4 mm thick. With the pads at the gripped width a neighbour 14 mm away is clear of it ...
+    assert fits(beside(0.014))
+    # ... but the open pad's outer face comes down 19.4 mm from the bar, into that neighbour.
+    why = []
+    assert fits(beside(0.014), **comes_down, refused=why) == []
+    assert why == ["rod is in the open gripper's way down to bar"]
+    assert fits(beside(0.020), **comes_down)                  # 20 mm away the open gripper passes
+    assert len(fits(beside(0.3), **comes_down)) == len(fits(beside(0.3)))       # and with nothing near, opening wider refuses nothing
+    # The gripper is checked all the way down from the hover, not only where it ends: here something hangs 0.32 m
+    # above the bar, over the gripper's body once it is down and in it while it hovers.
+    hung = {"plate": plate, "rod": assembly.pose(now[:3, :3], now[:3, 3] + [0.0, 0.0, 0.32])}
+    assert fits(hung) and fits(hung, open_m=0.016)
+    why = []
+    assert fits(hung, **comes_down, refused=why) == [] and why == ["rod is in the open gripper's way down to bar"]
+
+
+def test_the_open_pads_ride_higher_than_the_closed_ones():
+    # The arm is commanded for the gripped width. The pads swing on arcs, so 16 mm wider they are nearer the body:
+    # the open gripper's lowest point is above the closed one's, and never deeper in the table.
+    width, gap = 0.0259, 0.0259 + 0.016
+    rise = session.pad_setback(width) - session.pad_setback(gap)
+    assert rise < 0 and abs(rise) < 0.005                    # the pad centre moves a little toward the body (-z of the gripper)
+    lowest = lambda boxes: min(centre[2] - np.abs(half[:, 2]).sum() for centre, half in boxes)
+    down = assembly.pose(np.diag([1.0, -1.0, -1.0]), [0.0, 0.0, 0.03])          # pointing straight down, pad centre 30 mm up
+    closed = assembly.gripper_boxes(down, width, session.pad_setback(width))
+    opened = assembly.gripper_boxes(assembly.pose(down[:3, :3], down[:3, 3] + down[:3, 2] * rise), gap, session.pad_setback(gap))
+    assert lowest(opened) > lowest(closed)
+
+
+def test_a_loose_piece_the_scan_saw_in_the_slot_is_in_the_way(two_bars):
+    pack, plate = two_bars, lying(two_bars, "plate", [0.0, 0.0])
+    now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
+    in_the_slot = seat @ assembly.pose(scan.yaw_matrix(math.radians(0.5)), [0.0003, 0, 0])      # the other bar lies where this one goes
+    elsewhere = lying(pack, "rod", [-0.2, 0.15], 70.0)
+    fits = lambda at_the_pick, at_the_slot, **more: assembly.choose_grasps(pack, "bar", GRASP, now, seat, at_the_pick, at_the_slot, no_setback,
+                                                                             clear_m=0.03, open_m=0.016, hover_m=0.10, **more)
+    seen = {"plate": plate, "rod": in_the_slot}
+    why = []
+    assert fits(seen, seen, refused=why) == []
+    assert why == ["rod is where bar goes"]
+    # The gripper alone does not show it: its pads close on the held bar exactly where the other bar's sides are, and
+    # a check at the slot that looks only at the base and the pieces placed lets it through.
+    assert fits(seen, {"plate": plate})
+    free = {"plate": plate, "rod": elsewhere}
+    assert fits(free, free)                                   # a loose piece that lies clear of the slot is in nobody's way
+    # A piece already in the base is not in the way of the one that goes on top of it.
+    cap_seat = plate @ assembly.slot_poses(pack, "plate")["cap"]
+    built = {"plate": plate, "bar": seat, "rod": elsewhere}
+    cap_grasp = {"point_m": [0.0, 0.0, 0.012], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.02}
+    assert assembly.choose_grasps(pack, "cap", cap_grasp, lying(pack, "cap", [0.2, -0.1]), cap_seat, built, built, no_setback, clear_m=0.03,
+                                  open_m=0.016, hover_m=0.10)
+
+
+def test_a_way_of_holding_says_whether_the_gripper_is_half_round(pack):
+    plate = lying(pack, "plate", [0.0, 0.0])
+    now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
+    found = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03)
+    assert {option["flipped"] for option in found} == {False, True}
+    plain = assembly.grasp_frame(GRASP)
+    for option in found:                                       # the closing axis is the grasp's, or the grasp's reversed
+        closes = np.linalg.inv(now[:3, :3] @ plain[:3, :3]) @ option["pick"][:3, 0]
+        assert abs(abs(closes[0]) - 1.0) < 1e-9
