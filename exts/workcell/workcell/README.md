@@ -312,6 +312,11 @@ open-robot-skills' `vlm` bundle) for a second opinion: how many parts it counts 
 puzzle looks complete at the end. Those answers are recorded and decide nothing: SAM 3.1 and the CAD match do.
 The graph's trace (`<out>/trace/dag_trace.json`, `node_data/`) has every node's inputs and outputs.
 
+The script exits 0 only for a build that finished: every piece seated and the graph ended in success. One that stopped
+exits 1, and `stopped` in `metrics.json` says what stopped it in the build's own words (the lookahead that said abort
+and why, or the last step that was refused); the graph's own error names its first failed node, which may be the
+question to a vision-language model that was not up and decides nothing.
+
 Outputs in `<out>`: `metrics.json` (per piece: named correctly, gripped, seated, final pose error against the CAD,
 which correction its place had and how far what the place assumed was from how the piece really sat, what a lookahead
 said; the friction coefficients Newton's own model holds for the pieces and the pads; the graph's result and
