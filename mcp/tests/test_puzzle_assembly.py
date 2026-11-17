@@ -37,6 +37,8 @@ ASSEMBLIES = {"plate": [{"piece": "cap", "position_m": [0.0, 0.0, 0.029], "rpy_d
                         {"piece": "bar", "position_m": [0.0, 0.0, 0.012], "rpy_deg": [0.0, 0.0, 0.0]}]}
 GRASP = {"point_m": [0.0, 0.0, 0.0125], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.024}
 no_setback = lambda gap_m: 0.0
+AS_IT_GRIPS = dict(open_m=0.0, hover_m=0.0)      # the gripper tested only where it ends and at the gripped width: what a check must not stop at
+COMES_DOWN = dict(open_m=0.016, hover_m=0.10)    # as the build asks: the pads 16 mm wider until they close, from 0.1 m above
 
 
 @pytest.fixture(scope="module")
@@ -70,16 +72,18 @@ def test_overlap_is_the_depth_two_boxes_are_in_each_other():
 def test_a_grasp_must_fit_where_the_piece_lies_and_where_it_goes(pack):
     plate = lying(pack, "plate", [0.0, 0.0])
     now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
-    found = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03)
+    found = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03, **COMES_DOWN)
     assert found
+    with pytest.raises(TypeError):                             # how the gripper comes down is not left to a default
+        assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03)
     for option in found:
         assert option["pick"][2, 2] < -0.99                                    # from above
         assert np.allclose(option["pick"], now @ option["in_piece"]) and np.allclose(option["place"], option["seat"] @ option["in_piece"])
         assert assembly.pose_error(pack, "bar", option["seat"], seat) == pytest.approx((0.0, 0.0), abs=1e-9)
     low = dict(GRASP, point_m=[0.0, 0.0, 0.0])                                 # the pads would be in the slot's walls
-    assert assembly.choose_grasps(pack, "bar", low, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03) == []
+    assert assembly.choose_grasps(pack, "bar", low, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03, **COMES_DOWN) == []
     beside = {"plate": plate, "cap": assembly.pose(np.eye(3), now[:3, 3] + now[:3, :3] @ [0.03, 0, 0])}      # where a finger must go
-    assert assembly.choose_grasps(pack, "bar", GRASP, now, seat, beside, {"plate": plate}, no_setback, clear_m=0.03) == []
+    assert assembly.choose_grasps(pack, "bar", GRASP, now, seat, beside, {"plate": plate}, no_setback, clear_m=0.03, **COMES_DOWN) == []
 
 
 def test_pose_error_allows_for_a_piece_symmetries(pack):
@@ -197,8 +201,9 @@ def test_the_gripper_comes_down_wider_than_it_grips_and_a_neighbour_may_be_in_it
     pack, plate = two_bars, lying(two_bars, "plate", [0.0, 0.0])
     now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
     beside = lambda gap_m: {"plate": plate, "rod": assembly.pose(now[:3, :3], now[:3, 3] + now[:3, :3] @ [0.024 + gap_m, 0, 0])}   # parallel, side by side
-    fits = lambda around, **more: assembly.choose_grasps(pack, "bar", GRASP, now, seat, around, {"plate": plate}, no_setback, clear_m=0.03, **more)
-    comes_down = dict(open_m=0.016, hover_m=0.10)             # the pads 16 mm wider than the bar until they close: 8 mm more a side
+    fits = lambda around, **more: assembly.choose_grasps(pack, "bar", GRASP, now, seat, around, {"plate": plate}, no_setback, clear_m=0.03,
+                                                         **{**AS_IT_GRIPS, **more})
+    comes_down = COMES_DOWN                                   # the pads 16 mm wider than the bar until they close: 8 mm more a side
     # A fingertip is 11.4 mm thick. With the pads at the gripped width a neighbour 14 mm away is clear of it ...
     assert fits(beside(0.014))
     # ... but the open pad's outer face comes down 19.4 mm from the bar, into that neighbour.
@@ -255,9 +260,41 @@ def test_a_loose_piece_the_scan_saw_in_the_slot_is_in_the_way(two_bars):
 def test_a_way_of_holding_says_whether_the_gripper_is_half_round(pack):
     plate = lying(pack, "plate", [0.0, 0.0])
     now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
-    found = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03)
+    found = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03, **COMES_DOWN)
     assert {option["flipped"] for option in found} == {False, True}
     plain = assembly.grasp_frame(GRASP)
     for option in found:                                       # the closing axis is the grasp's, or the grasp's reversed
         closes = np.linalg.inv(now[:3, :3] @ plain[:3, :3]) @ option["pick"][:3, 0]
         assert abs(abs(closes[0]) - 1.0) < 1e-9
+
+
+def test_a_corrected_place_is_checked_at_the_slot_like_the_place_as_defined(pack):
+    plate = lying(pack, "plate", [0.0, 0.0])
+    now, seat = lying(pack, "bar", [0.2, 0.1], 30.0), plate @ assembly.slot_poses(pack, "plate")["bar"]
+    hold = assembly.choose_grasps(pack, "bar", GRASP, now, seat, {"plate": plate}, {"plate": plate}, no_setback, clear_m=0.03, **COMES_DOWN)[0]
+    around = assembly.solids(pack, {"plate": plate})
+    blocked = lambda lowered_m: assembly.place_blocked(pack, "bar", GRASP["width_m"], hold["place"] @ assembly.pose(np.eye(3), [0, 0, lowered_m]),
+                                                       hold["seat"], around, no_setback, clear_m=0.03)
+    # As defined the pads end 1.5 mm above the slot's 8 mm walls. A correction that lowers the gripper 1 mm still
+    # fits; one that lowers it 3 mm has the pads 1.5 mm into the walls, which the 1 mm of slack does not cover.
+    assert blocked(0.0) is None and blocked(0.001) is None
+    assert blocked(0.003) == "the gripper would be in plate at the slot"
+    assert blocked(-0.004) is None                             # held higher on the bar, the gripper is further from the walls
+
+
+def test_values_that_are_not_finite_numbers_end_a_run_with_a_named_error():
+    assert session.finite([0.0, 1, -2.5], "x") == [0.0, 1, -2.5] and session.finite([[1.0, 2.0], [3.0, 4.0]], "x")
+    for bad in ("nan", "NaN", float("nan"), float("inf"), None):
+        with pytest.raises(session.PhysicsStateInvalid, match="the pose of /World/Puzzle/bar"):
+            session.finite([[1.0, 0.0], [bad, 1.0]], "the pose of /World/Puzzle/bar")
+    # The bridge sends a joint position that is not finite as text. The loop that drives the arm names the step it
+    # came back at; it does not go on to round a string.
+    arm = object.__new__(session.Session)
+    names = ("rail_joint", *session.ARM, "finger_joint")
+    arm.dofs, arm.root, arm.film, arm.steps = {name: index for index, name in enumerate(names)}, "/World/Robot", None, 1000
+    arm.samples, arm.spent = [], __import__("collections").Counter()
+    arm.kit = lambda code, timeout=600: {"physics_s": 0.1, "render_s": 0.0, "shot": 0,
+                                         "samples": [[1025, *[0.1] * 8], [1050, 0.1, "nan", *[0.1] * 6]]}
+    with pytest.raises(session.PhysicsStateInvalid, match="physics step 1050"):
+        arm.drive([{}], 50)
+    assert len(arm.samples) == 1                               # the sample before it was a number and is kept

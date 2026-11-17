@@ -1,12 +1,18 @@
 {
- "schema": 1,
- "description": "The puzzle build's table of in-hand corrections (--correction table): one entry per piece type. A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD; in_hand is how it sat when measured, and the place is shifted by it. flipped says whether it was measured with the gripper half round from the grasp as defined; held the other way round, the shift is turned with the gripper. An entry with apply false is kept as a measurement and not used: that piece is placed by its grasp as defined. Simulation only: nothing here was measured on a real gripper or a real piece.",
+ "description": "The puzzle build's table of in-hand corrections (--correction table): one entry per piece type, for the pieces the build's settings name (corrected_from_table); every other piece is placed by its grasp as defined. A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD. in_hand is the gripper as a piece of the type sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips): the mean of the readings in each (xyz_mm is a reading's position part). shift_mm and shift_deg are its distance from the grasp as defined; spread_mm the readings' standard deviation along x, y and z. check: the median distance of a reading from the grasp as defined (uncorrected) and from the mean of the other layouts' readings (corrected); an entry earns its place when the second is the smaller. flipped: measured with the gripper half round from the grasp as defined; held the other way round, the shift is turned with the gripper. Simulation only: nothing here was measured on a real gripper or a real piece.",
  "measured": {
-  "how": "One lookahead per piece on Newton, in one measuring run of scripts/puzzle_build.py on one layout: after the survey and the base's slide, each piece's pick and insertion is rehearsed from the poses the run believes, with the pieces before it in the build order put in the base where the CAD has them. Over the slot the piece's pose and the gripper's are read from the simulator; that reading is the entry. No piece is placed for real in a measuring run.",
+  "how": "One lookahead per corrected piece on each of several layouts, on Newton, in one measuring run of scripts/puzzle_build.py: after the survey and the base's slide, the piece's pick and insertion is rehearsed from the poses the run believes, with the pieces before it in the build order put in the base where the CAD has them. Over the slot the piece's pose and the gripper's are read from the simulator. A reading is kept when the rehearsal seated the piece. No piece is placed for real.",
   "command": "python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes --perception oracle --write-corrections <this file>",
   "date": "2026-11-17",
-  "seed": 11,
-  "perception": "oracle",
+  "seeds": [
+   11,
+   12,
+   13,
+   14,
+   15,
+   16
+  ],
+  "layouts_without_a_reading": [],
   "pack": "puzzles/v1",
   "base": "base3",
   "cell_pack": "ur5e-workcell/v4",
@@ -15,24 +21,19 @@
   "friction_in_the_solver": {
    "pieces": {
     "base3": [
-     0.4,
-     1.0
+     0.4
     ],
     "line_brown": [
-     0.4,
-     1.0
+     0.4
     ],
     "line_red": [
-     0.4,
-     1.0
+     0.4
     ],
     "fork_orange": [
-     0.4,
-     1.0
+     0.4
     ],
     "fork_yellow": [
-     0.4,
-     1.0
+     0.4
     ]
    },
    "pads": [
@@ -40,165 +41,12 @@
    ]
   }
  },
- "pieces": {
-  "line_brown": {
-   "shift_mm": 1.705,
-   "shift_deg": 0.037,
-   "apply": false,
-   "why_not_applied": "Measured, and not applied. Over the six layouts compared on 2026-11-17 the build seated 23 of 24 pieces with both bars placed by their grasp as defined, and 18 of 24 with the bars' entries applied. An entry for a bar lowers the gripper (+1.4 mm here): the arm hangs about 1 mm below its targets at the pick, so the pads hold a bar lower than the grasp defines, and the grasp leaves the pads only 0.5 mm above the slot's walls. Placed by the entry, the pads come down on the walls and push the base when the gripper opens. The shift along the bar is also not the same from pick to pick (-0.9 mm here; -0.9 and +2.2 mm for the two bars).",
-   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
-   "in_hand": [
-    [
-     0.999999798,
-     2.4408e-05,
-     -0.000634555,
-     -9.9494e-05
-    ],
-    [
-     -2.4453e-05,
-     0.999999997,
-     -7.0015e-05,
-     -0.000936971
-    ],
-    [
-     0.000634554,
-     7.003e-05,
-     0.999999796,
-     0.001421559
-    ],
-    [
-     0.0,
-     0.0,
-     0.0,
-     1.0
-    ]
+ "entries": [
+  {
+   "pieces": [
+    "fork_orange",
+    "fork_yellow"
    ],
-   "flipped": false,
-   "grasp": {
-    "point_m": [
-     0.0,
-     0.0,
-     0.0095
-    ],
-    "closing_axis": [
-     1,
-     0,
-     0
-    ],
-    "approach_axis": [
-     0,
-     0,
-     -1
-    ],
-    "width_m": 0.0259
-   },
-   "measured": {
-    "lookahead_verdict": "go",
-    "lookahead_tries": 1,
-    "way_of_holding": 0,
-    "rehearsal_final_error_mm": 0.49,
-    "rehearsal_final_error_deg": 0.0,
-    "rehearsal_moved_another_piece_mm": 1.34,
-    "rehearsal_moved_most": "base3",
-    "pieces_in_the_base": []
-   }
-  },
-  "line_red": {
-   "shift_mm": 4.006,
-   "shift_deg": 0.082,
-   "apply": false,
-   "why_not_applied": "Measured, and not applied. Over the six layouts compared on 2026-11-17 the build seated 23 of 24 pieces with both bars placed by their grasp as defined, and 18 of 24 with the bars' entries applied. An entry for a bar lowers the gripper (+3.3 mm here): the arm hangs about 1 mm below its targets at the pick, so the pads hold a bar lower than the grasp defines, and the grasp leaves the pads only 0.5 mm above the slot's walls. Placed by the entry, the pads come down on the walls and push the base when the gripper opens. The shift along the bar is also not the same from pick to pick (+2.2 mm here; -0.9 and +2.2 mm for the two bars).",
-   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
-   "in_hand": [
-    [
-     0.999999804,
-     4.127e-06,
-     -0.000625929,
-     -9.8112e-05
-    ],
-    [
-     -4.933e-06,
-     0.999999171,
-     -0.001287697,
-     0.002239273
-    ],
-    [
-     0.000625923,
-     0.0012877,
-     0.999998975,
-     0.003320558
-    ],
-    [
-     0.0,
-     0.0,
-     0.0,
-     1.0
-    ]
-   ],
-   "flipped": false,
-   "grasp": {
-    "point_m": [
-     0.0,
-     0.0,
-     0.0095
-    ],
-    "closing_axis": [
-     1,
-     0,
-     0
-    ],
-    "approach_axis": [
-     0,
-     0,
-     -1
-    ],
-    "width_m": 0.0259
-   },
-   "measured": {
-    "lookahead_verdict": "abort",
-    "lookahead_tries": 1,
-    "way_of_holding": 0,
-    "rehearsal_final_error_mm": 1.1,
-    "rehearsal_final_error_deg": 0.0,
-    "rehearsal_moved_another_piece_mm": 8.42,
-    "rehearsal_moved_most": "base3",
-    "pieces_in_the_base": [
-     "line_brown"
-    ]
-   }
-  },
-  "fork_orange": {
-   "shift_mm": 2.378,
-   "shift_deg": 0.48,
-   "apply": true,
-   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
-   "in_hand": [
-    [
-     0.999999687,
-     1.0554e-05,
-     -0.000791367,
-     -0.000101005
-    ],
-    [
-     -1.716e-05,
-     0.999965158,
-     -0.00834759,
-     -0.001058632
-    ],
-    [
-     0.000791252,
-     0.008347601,
-     0.999964845,
-     -0.002126471
-    ],
-    [
-     0.0,
-     0.0,
-     0.0,
-     1.0
-    ]
-   ],
-   "flipped": true,
    "grasp": {
     "point_m": [
      0.0,
@@ -217,43 +65,25 @@
     ],
     "width_m": 0.021
    },
-   "measured": {
-    "lookahead_verdict": "go",
-    "lookahead_tries": 1,
-    "way_of_holding": 0,
-    "rehearsal_final_error_mm": 0.26,
-    "rehearsal_final_error_deg": 0.07,
-    "rehearsal_moved_another_piece_mm": 0.05,
-    "rehearsal_moved_most": "line_brown",
-    "pieces_in_the_base": [
-     "line_brown",
-     "line_red"
-    ]
-   }
-  },
-  "fork_yellow": {
-   "shift_mm": 5.336,
-   "shift_deg": 0.57,
-   "apply": true,
-   "what": "in_hand: the gripper as the piece sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips). shift_mm and shift_deg are its distance from the grasp as defined",
+   "flipped": true,
    "in_hand": [
     [
-     0.999999702,
-     -1.9556e-05,
-     -0.000771692,
-     -0.000102704
+     0.999999695,
+     -4.801e-06,
+     -0.000780608,
+     -0.000101685
     ],
     [
-     1.1896e-05,
-     0.999950742,
-     -0.009925378,
-     0.002049444
+     1.905e-06,
+     0.99999312,
+     -0.003709322,
+     -0.000492297
     ],
     [
-     0.000771848,
-     0.009925366,
-     0.999950444,
-     -0.004925239
+     0.00078062,
+     0.003709319,
+     0.999992816,
+     -0.003164386
     ],
     [
      0.0,
@@ -262,39 +92,164 @@
      1.0
     ]
    ],
-   "flipped": true,
-   "grasp": {
-    "point_m": [
-     0.0,
-     -0.0255,
-     0.006
-    ],
-    "closing_axis": [
-     1,
-     0,
-     0
-    ],
-    "approach_axis": [
-     0,
-     0,
-     -1
-    ],
-    "width_m": 0.021
+   "shift_mm": 3.204,
+   "shift_deg": 0.217,
+   "readings": 12,
+   "spread_mm": [
+    0.0,
+    1.26,
+    1.19
+   ],
+   "check": {
+    "uncorrected_median_mm": 3.34,
+    "corrected_median_mm": 1.38,
+    "by_piece": {
+     "fork_orange": {
+      "readings": 6,
+      "uncorrected_median_mm": 3.36,
+      "corrected_median_mm": 1.38
+     },
+     "fork_yellow": {
+      "readings": 6,
+      "uncorrected_median_mm": 3.34,
+      "corrected_median_mm": 1.36
+     }
+    }
    },
-   "measured": {
-    "lookahead_verdict": "go",
-    "lookahead_tries": 1,
-    "way_of_holding": 0,
-    "rehearsal_final_error_mm": 0.35,
-    "rehearsal_final_error_deg": 0.07,
-    "rehearsal_moved_another_piece_mm": 0.04,
-    "rehearsal_moved_most": "line_brown",
-    "pieces_in_the_base": [
-     "line_brown",
-     "line_red",
-     "fork_orange"
-    ]
-   }
+   "each": [
+    {
+     "seed": 11,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -1.11,
+      -2.1
+     ],
+     "shift_deg": 0.374
+    },
+    {
+     "seed": 11,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      2.07,
+      -5.0
+     ],
+     "shift_deg": 0.606
+    },
+    {
+     "seed": 12,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      1.31,
+      -4.28
+     ],
+     "shift_deg": 0.55
+    },
+    {
+     "seed": 12,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.93,
+      -1.91
+     ],
+     "shift_deg": 0.604
+    },
+    {
+     "seed": 13,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -2.5,
+      -4.36
+     ],
+     "shift_deg": 0.058
+    },
+    {
+     "seed": 13,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.39,
+      -1.78
+     ],
+     "shift_deg": 0.637
+    },
+    {
+     "seed": 14,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.47,
+      -2.26
+     ],
+     "shift_deg": 0.261
+    },
+    {
+     "seed": 14,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -1.13,
+      -2.76
+     ],
+     "shift_deg": 0.548
+    },
+    {
+     "seed": 15,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.04,
+      -4.35
+     ],
+     "shift_deg": 0.502
+    },
+    {
+     "seed": 15,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -1.9,
+      -3.17
+     ],
+     "shift_deg": 0.267
+    },
+    {
+     "seed": 16,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.91,
+      -1.89
+     ],
+     "shift_deg": 0.72
+    },
+    {
+     "seed": 16,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.01,
+      -4.1
+     ],
+     "shift_deg": 0.436
+    }
+   ]
   }
- }
+ ]
 }

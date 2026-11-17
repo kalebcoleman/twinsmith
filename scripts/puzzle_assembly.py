@@ -199,8 +199,29 @@ def in_the_way(boxes, others, slack_m):
     return next((name for name, solid in others.items() if deepest(boxes, solid) > slack_m), None)
 
 
+def place_blocked(pack, piece, width_m, place, seat, around_then, setback, axis=(0, 0, 1), clear_m=0.0, slack_m=0.001):
+    """Why the gripper, holding ``piece`` ``width_m`` wide with its pad centre at ``place`` (world) while the piece is
+    at ``seat``, does not fit along the insertion: a line in words, or None when it fits. ``around_then`` is {name:
+    boxes} of everything else (``placed`` of each solid). The same test whether ``place`` is the grasp as defined or a
+    place corrected for how the piece sits in the hand."""
+    for out in np.linspace(0.0, clear_m, max(2, round(clear_m / 0.01) + 1)):
+        lift = pose(np.eye(3), np.array(axis) * out)
+        hand = gripper_boxes(lift @ place, width_m, setback(width_m))
+        blocker = in_the_way(hand, around_then, slack_m)
+        if blocker:
+            return f"the gripper would be in {blocker} at the slot"
+        if below_table(hand) or deepest(hand, placed(lift @ seat, pack.shape(piece).boxes)) > slack_m:
+            return "the gripper does not fit at the slot"
+    return None
+
+
+def solids(pack, poses):
+    """{name: boxes in the world} of pieces at poses ({name: 4 x 4})."""
+    return {name: placed(at, pack.shape(name).boxes) for name, at in poses.items()}
+
+
 def choose_grasps(pack, piece, grasp, now, target, obstacles_now, obstacles_then, setback, axis=(0, 0, 1), clear_m=0.0, slack_m=0.001,
-                  open_m=0.0, hover_m=0.0, refused=None):
+                  *, open_m, hover_m, refused=None):
     """The ways to hold ``piece`` that fit both where it lies (``now``, world) and where it goes (``target``, world).
 
     ``grasp`` is its definition on the CAD; ``obstacles_now`` are {name: world pose} of the other pieces at the pick
@@ -209,7 +230,8 @@ def choose_grasps(pack, piece, grasp, now, target, obstacles_now, obstacles_then
     in the world and ``clear_m`` how far out along it the piece is clear, so the gripper and the piece it holds are
     checked along the whole insertion. ``open_m`` is how much wider than the gripped width the pads are when the
     gripper comes down on the piece, and ``hover_m`` the height it comes straight down from: the open gripper is
-    checked along that descent (with ``open_m`` 0 it is not, and a neighbour may then lie where an open finger goes).
+    checked along that descent. Both must be given: a gripper tested only at the gripped width passes a neighbour
+    that an open finger then lands on.
 
     Returns ``[{"in_piece", "pick", "place", "seat", "camera_up", "flipped"}]``, best first: gripper poses for the pad
     centre in the piece's frame and in the world, and whether the gripper is half a turn round from the grasp as
@@ -219,8 +241,7 @@ def choose_grasps(pack, piece, grasp, now, target, obstacles_now, obstacles_then
     shape, width = pack.shape(piece), grasp["width_m"]
     half_turn = pose(np.diag([-1.0, -1.0, 1.0]), [0, 0, 0])
     own = lambda at: placed(at, shape.boxes)
-    solids = lambda poses: {name: placed(at, pack.shape(name).boxes) for name, at in poses.items()}
-    around_now, around_then = solids(obstacles_now), solids(obstacles_then)
+    around_now, around_then = solids(pack, obstacles_now), solids(pack, obstacles_then)
     why = [] if refused is None else refused
 
     def no(reason):
@@ -275,21 +296,15 @@ def choose_grasps(pack, piece, grasp, now, target, obstacles_now, obstacles_then
             if blocker:
                 no(f"{blocker} is where a finger goes beside {piece}")
                 continue
-            if open_m > 0.0 and not comes_down(pick):
+            if not comes_down(pick):
                 continue
             for index, (again, back) in enumerate(shape.symmetries):    # which of its equal poses it takes in the slot
                 seat = target @ pose(again, back)
                 place = seat @ held
                 if not goes_in(index, seat):
                     continue
-                fits = True
-                for out in np.linspace(0.0, clear_m, max(2, round(clear_m / 0.01) + 1)):
-                    lift = pose(np.eye(3), np.array(axis) * out)
-                    hand = gripper_boxes(lift @ place, width, setback(width))
-                    blocker = in_the_way(hand, around_then, slack_m)
-                    if below_table(hand) or blocker or deepest(hand, own(lift @ seat)) > slack_m:
-                        fits = no(f"the gripper would be in {blocker} at the slot" if blocker else "the gripper does not fit at the slot")
-                        break
+                why_not = place_blocked(pack, piece, width, place, seat, around_then, setback, axis, clear_m, slack_m)
+                fits = why_not is None or no(why_not)
                 if fits:
                     camera = (place @ [0.0, -1.0, 0.0, 0.0])[2]          # the camera rides on the gripper's -y side
                     found.append({"in_piece": held, "pick": pick, "place": place, "seat": seat, "camera_up": float(camera), "flipped": flipped})

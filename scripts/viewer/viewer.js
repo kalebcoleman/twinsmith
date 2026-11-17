@@ -32,7 +32,7 @@ function outcome(step) {
   if (step.kind === "lookahead") return `${result.verdict} after ${result.tries.length} ${result.tries.length === 1 ? "try" : "tries"}`;
   if (step.kind === "try") {
     if (result.go) return `go: seated ${fix(result.position_error_mm, 2)} mm from the slot`;
-    return "no: " + (result.error ? `${result.error} (${result.during})` : `${fix(result.position_error_mm, 1)} mm off, others moved ${fix(result.others_moved_mm, 1)} mm`);
+    return "no: " + (result.error || result.misfit ? `${result.error || result.misfit} (${result.during})` : `${fix(result.position_error_mm, 1)} mm off, others moved ${fix(result.others_moved_mm, 1)} mm`);
   }
   if (step.kind === "survey") return `found ${result.found}, missing ${result.missing.length}`;
   if (step.kind === "close" || step.kind === "grip") return `pads ${fix(result.gap_m * 1000, 1)} mm apart`;
@@ -325,7 +325,7 @@ Viewer.panel("plan", {
     if (plan.grasp) {
       const grasp = plan.grasp;
       parts.push(el("div", {}, el("b", {}, "Grasp on the CAD: "), `${grasp.what} Point ${grasp.point_m.map((v) => fix(v * 1000, 1)).join(", ")} mm in the piece's frame, closing along [${grasp.closing_axis}], approaching along [${grasp.approach_axis}], ${fix(grasp.width_m * 1000, 1)} mm wide at ${grasp.force_n} N; way ${grasp.way} of holding it` +
-        (plan.corrected_by === "table" ? ", corrected by the table's shift for this piece type." : plan.adjusted ? ", corrected by how the piece sat in the hand in the lookahead." : ".")));
+        (plan.corrected_by === "table" ? ", corrected by the table's shift for this piece type." : plan.corrected_by === "lookahead" ? ", corrected by how the piece sat in the hand in the lookahead." : ".")));
     }
     if (plan.waypoints) {
       parts.push(el("table", {}, el("thead", {}, el("tr", {}, ["Waypoint", "x, mm", "y, mm", "z, mm", "gripper points along"].map((name, index) => el("th", {class: index && index < 4 ? "n" : ""}, name)))),
