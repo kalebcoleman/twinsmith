@@ -439,3 +439,62 @@ def test_no_pose_of_a_plate_shows_less_than_its_smallest_face(pack):
                          [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
         least = min(least, len(plate.top(turn, np.zeros(3), cell=0.001)) * 1e-6)
     assert least > 0.97 * plate.least_area                                     # tipped off a face it shows more, not less
+
+
+def test_helper_processes_give_the_estimate_of_one_process_alone(pack, tmp_path, monkeypatch):
+    truth = {"plate": flat(pack, "plate", (-0.08, 0.02), 25), "ell": tipped(pack, "ell", (0.07, -0.03), 130, (1, 0, 0), 24),
+             "bar_yellow": tipped(pack, "bar_yellow", (0.06, 0.07), -40, (0, 1, 0), -31), "bar_red": flat(pack, "bar_red", (-0.02, -0.11), 70)}
+    scan.synthetic(pack, truth, CAMERA, tmp_path / "clip", tmp_path / "run", noise_m=0.0006)
+    looked = scan.Scan(tmp_path / "clip", tmp_path / "run")
+    alone = scan.match(looked, pack)                                           # no helpers unless they are asked for
+    assert {piece["name"]: piece["rest"] for piece in alone["pieces"]} == {"plate": "flat", "ell": "tilted", "bar_yellow": "tilted", "bar_red": "flat"}
+
+    def same(a, b):                                                            # every number of every pose, not nearly: exactly
+        assert len(a) == len(b)
+        for one, two in zip(a, b):
+            assert [set(pose) for pose in one] == [set(pose) for pose in two]
+            for pose, other in zip(one, two):
+                assert pose["rest"] is other["rest"] or pose["rest"] == other["rest"]      # a flat fit's rest: the shape's own, not a copy
+                assert all(np.array_equal(pose[key], other[key]) for key in ("cost", "turn", "at", "lift", "agree", "colour"))
+        return True
+
+    jobs = [(kind, item, number) for kind in ("fit", "fit_free") for item in looked.objects for number in range(len(pack.shapes))]
+    whole = {"name": "two as one", **{key: np.concatenate([item[key] for item in looked.objects[:2]]) for key in ("cells", "xy", "z")},
+             "area": sum(item["area"] for item in looked.objects[:2]), "colour": looked.objects[0]["colour"]}
+    whole["centroid"] = whole["xy"].mean(0)
+    jobs.append(("fit", whole, 0))                                             # objects put together are no object of the scan: sent whole
+    here = [(scan.fit_free if kind == "fit_free" else scan.fit)(looked, item, pack.shapes[number]) for kind, item, number in jobs]
+    assert any(isinstance(pose["rest"], scan.Rest) for found in here for pose in found)
+    helpers = scan.Helpers(looked, pack, 3)
+    try:
+        assert len(helpers.others) == 2 and Path(helpers.setup).exists()
+        assert same(helpers.run(jobs), here) and len(helpers.others) == 2
+        helpers.others[0].kill()                                               # one dies: its share is done here, and it is not asked again
+        helpers.others[0].wait()
+        assert same(helpers.run(jobs), here) and len(helpers.others) == 1
+        monkeypatch.setattr(scan, "FREE_STARTS", 2)                            # a setting changed after the helpers started is not theirs:
+        assert not all(len(found) <= 2 for found in helpers.run(jobs[len(looked.objects) * len(pack.shapes):-1]))
+        monkeypatch.undo()
+        setup = helpers.setup
+    finally:
+        helpers.close()
+    assert not helpers.others and not Path(setup).exists()
+    assert json.dumps(scan.match(looked, pack, workers=3), sort_keys=True) == json.dumps(alone, sort_keys=True)
+    monkeypatch.setattr(scan, "FREE_STARTS", 2)                                # one changed before they start is sent with the scan
+    fewer = scan.match(looked, pack)
+    assert json.dumps(scan.match(looked, pack, workers=3), sort_keys=True) == json.dumps(fewer, sort_keys=True) != json.dumps(alone, sort_keys=True)
+
+
+def test_helpers_are_off_unless_asked_for_and_never_more_than_the_idle_processors(monkeypatch):
+    monkeypatch.setattr(scan.os, "cpu_count", lambda: 16)
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (2.0, 2.0, 2.0))
+    monkeypatch.delenv("TWINSMITH_SCAN_WORKERS", raising=False)
+    assert scan.workers() == 1
+    monkeypatch.setenv("TWINSMITH_SCAN_WORKERS", "4")
+    assert scan.workers() == 4
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (13.4, 9.0, 5.0))       # simulators at work: two and a half processors idle
+    assert scan.workers() == 2
+    monkeypatch.setattr(scan.os, "getloadavg", lambda: (40.0, 30.0, 20.0))
+    assert scan.workers() == 1
+    monkeypatch.setenv("TWINSMITH_SCAN_WORKERS", "many")
+    assert scan.workers() == 1

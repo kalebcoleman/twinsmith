@@ -176,6 +176,16 @@ matcher takes the same thing masked twice as one object. On four recorded pile a
 of 30 pieces (one fork lying against another piece was joined to it). Shadows help: without them the same prompts cut
 each fork in two at its centre tab. No real picture has been tried.
 
+**More than one process.** `match --workers N` (or `TWINSMITH_SCAN_WORKERS=N`, or `match(scan, pack, workers=N)`)
+shares the fits that do not depend on each other among N processes, the calling one included. The default is 1: no
+other process is started. The estimate is the same with any number, since a fit is the same arithmetic wherever it
+runs. The others are the script started again (`puzzle_scan.py _helper`), not forks, and they import nothing of the
+caller's, so a caller with threads, a simulator connection or no `__main__` guard is not disturbed; one that fails to
+start or dies only leaves its share to the caller. The variable is capped at the processors the last minute's load
+leaves idle. A function replaced in the module at run time is not replaced in the helpers; its numeric settings are
+sent to them. On the 29 real wrist-camera clips of 2026-11-16 (3 to 9 objects each), reading a clip and matching it
+took 5.6 s in one process and 3.2 s in four, on a 32-processor PC that simulators were also using.
+
 The estimate lists, besides the poses: `not_seen` (pieces of the pack it did not find), `unexplained` (segments no
 piece accounts for, with the reason), and per piece its `rest` (flat, on its side, on end, assembled), what it
 is `touching`, and `flags` such as "could be line_red", "raised 35 mm: on top of something", "upside down", "poor fit",

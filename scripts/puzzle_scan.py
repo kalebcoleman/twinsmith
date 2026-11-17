@@ -5,7 +5,8 @@ File in, file out, on the CPU; no simulator, no camera, no model. The steps a ca
 
 * ``match --clip C --run R --out estimate.json``: ``C`` is an RGB-D clip folder (``rgb/``, ``depth/``,
   ``camera.json``, the folder the ``sam3`` tool reads) and ``R`` that tool's run folder for it (one label image per
-  prompt and frame). Every segment is matched to a piece of the puzzles pack and given a pose.
+  prompt and frame). Every segment is matched to a piece of the puzzles pack and given a pose. ``--workers N`` shares
+  the work among N processes; the estimate is the same with any number.
 * ``task --estimate estimate.json --out DIR``: the estimate as a puzzle task file and its BOM, which
   ``workcell__cell(action="quick_start", task=<file>)`` builds.
 * ``diff --estimate new.json --previous old.json``: which pieces were added, removed or moved.
@@ -34,6 +35,7 @@ import argparse
 import csv
 import json
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -740,6 +742,170 @@ def fit_free(scan, item, shape):
     return found
 
 
+# ---- fits that do not depend on each other, shared among processes ---------------------------------------------
+
+def workers():
+    """How many processes a match works in when it is not told: the ``TWINSMITH_SCAN_WORKERS`` variable, or 1, which
+    is this process alone and no others started. Never more than the processors the last minute's load leaves idle:
+    the machine may be running simulators."""
+    try:
+        asked = int(os.environ.get("TWINSMITH_SCAN_WORKERS", "1"))
+    except ValueError:
+        return 1
+    try:
+        idle = (os.cpu_count() or 1) - os.getloadavg()[0]
+    except (AttributeError, OSError):                          # a system that keeps no load average
+        idle = asked
+    return max(1, min(asked, int(idle)))
+
+
+class Helpers:
+    """The fits of one scan that do not depend on each other (``fit`` and ``fit_free`` of an object against a shape),
+    shared among ``count`` processes, this one included. With 1 there are no others and ``run`` does every fit here,
+    one after the other, as a match always did.
+
+    The others are this file run again (``puzzle_scan.py _helper``), each given the scan and the shapes once through
+    a file and then lists of fits through a pipe. They are started fresh, not forked, and import nothing of the
+    caller's, so a caller with threads, a simulator client or a script with no ``__main__`` guard is not disturbed.
+    A fit is the same arithmetic on the same numbers wherever it runs, so the results are the same; and a helper that
+    does not start, dies or reports an error only means its share is done here instead. This module's numeric
+    settings are sent along. A function replaced in this module at run time is not replaced in a helper."""
+
+    def __init__(self, scan, pack, count=None):
+        self.scan, self.shapes, self.others, self.setup = scan, pack.shapes, [], None
+        count = workers() if count is None else int(count)
+        if count < 2 or not Path(sys.executable or "").name.lower().startswith("python"):     # an embedded interpreter is not one to start
+            return
+        import pickle
+        import subprocess
+        import tempfile
+
+        # As plain data, so that it reads back whatever name the caller imported this file under.
+        settings = {name: value for name, value in globals().items() if name.isupper() and type(value) in (int, float)}
+        shapes = [{**vars(shape), "rests": [shape.all_rests.index(rest) for rest in shape.rests], "all_rests": [vars(rest) for rest in shape.all_rests]}
+                  for shape in pack.shapes]
+        try:
+            with tempfile.NamedTemporaryFile(prefix="puzzle_scan_", suffix=".pickle", delete=False) as stream:
+                self.setup = stream.name
+                pickle.dump((settings, vars(scan), shapes), stream, protocol=pickle.HIGHEST_PROTOCOL)
+            for _ in range(count - 1):
+                self.others.append(subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "_helper", self.setup],
+                                                    stdin=subprocess.PIPE, stdout=subprocess.PIPE))
+        except Exception:                                      # a scan that cannot be written out, or no process to be had:
+            pass                                               # as many helpers as did start, or none
+
+    def _here(self, job):
+        kind, item, shape = job
+        return (fit_free if kind == "fit_free" else fit)(self.scan, item, self.shapes[shape])
+
+    def run(self, jobs):
+        """The results of ``jobs``, [(``"fit"`` or ``"fit_free"``, object, the shape's number)], in their order."""
+        results = [None] * len(jobs)
+        if not self.others or len(jobs) < 2:
+            return [self._here(job) for job in jobs]
+        import pickle
+
+        # The costliest first, each to whoever has the least to do so far; this process takes a share.
+        cost = lambda job: 4 + 3 * len(self.shapes[job[2]].boxes) if job[0] == "fit_free" else len(self.shapes[job[2]].rests)
+        shares, load = [[] for _ in range(1 + len(self.others))], [0.0] * (1 + len(self.others))
+        for index in sorted(range(len(jobs)), key=lambda index: -cost(jobs[index])):
+            least = load.index(min(load))
+            shares[least].append(index)
+            load[least] += cost(jobs[index])
+        number = {id(item): o for o, item in enumerate(self.scan.objects)}     # an object of the scan goes as its number
+        sent = []
+        for other, share in zip(self.others, shares[1:]):
+            try:
+                pickle.dump([(jobs[i][0], number.get(id(jobs[i][1]), jobs[i][1]), jobs[i][2]) for i in share], other.stdin, protocol=pickle.HIGHEST_PROTOCOL)
+                other.stdin.flush()
+                sent.append(True)
+            except (OSError, ValueError):
+                sent.append(False)
+        for index in shares[0]:
+            results[index] = self._here(jobs[index])
+        for other, share, went in zip(list(self.others), shares[1:], sent):
+            answer = None
+            if went:
+                try:
+                    state, answer = pickle.load(other.stdout)
+                    answer = answer if state == "done" and len(answer) == len(share) else None
+                except Exception:                              # it died, or sent something that is no answer
+                    answer = None
+            if answer is None:                                 # its share is done here, and it is not asked again
+                self.others.remove(other)
+                self._stop(other)
+                answer = [self._here(jobs[index]) for index in share]
+            else:
+                for index, found in zip(share, answer):       # a flat fit's rest came back as its number
+                    if jobs[index][0] == "fit":
+                        for one in found:
+                            one["rest"] = self.shapes[jobs[index][2]].rests[one["rest"]]
+            for index, found in zip(share, answer):
+                results[index] = found
+        return results
+
+    @staticmethod
+    def _stop(other):
+        for pipe in (other.stdin, other.stdout):
+            try:
+                pipe.close()
+            except OSError:
+                pass
+        try:
+            other.wait(timeout=5)                              # it ends when its input does
+        except Exception:
+            other.kill()
+            other.wait()
+
+    def close(self):
+        for other in self.others:
+            self._stop(other)
+        self.others = []
+        if self.setup:
+            try:
+                os.unlink(self.setup)
+            except OSError:
+                pass
+            self.setup = None
+
+
+def _helper(setup):
+    """The other end of ``Helpers``: lists of fits come in on standard input and their results go out on standard
+    output, until the input ends."""
+    import pickle
+    import traceback
+
+    jobs, answers = sys.stdin.buffer, sys.stdout.buffer
+    sys.stdout = sys.stderr                                    # nothing but answers goes down the pipe
+    with open(setup, "rb") as stream:
+        settings, seen, plain = pickle.load(stream)
+    globals().update(settings)
+    scan, shapes = Scan.__new__(Scan), []
+    vars(scan).update(seen)
+    for data in plain:                                         # the caller's shapes themselves, not worked out again
+        rests = [Rest.__new__(Rest) for _ in data["all_rests"]]
+        for rest, values in zip(rests, data["all_rests"]):
+            vars(rest).update(values)
+        shapes.append(Shape.__new__(Shape))
+        vars(shapes[-1]).update({**data, "all_rests": rests, "rests": [rests[index] for index in data["rests"]]})
+    while True:
+        try:
+            share = pickle.load(jobs)
+        except EOFError:
+            return 0
+        try:
+            answer = []
+            for kind, item, shape in share:
+                item = scan.objects[item] if isinstance(item, int) else item
+                found = (fit_free if kind == "fit_free" else fit)(scan, item, shapes[shape])
+                answer.append([{**one, "rest": shapes[shape].rests.index(one["rest"])} for one in found] if kind == "fit" else found)
+            answer = ("done", answer)
+        except Exception:
+            answer = ("failed", traceback.format_exc())
+        pickle.dump(answer, answers, protocol=pickle.HIGHEST_PROTOCOL)
+        answers.flush()
+
+
 def _overlap(pack, a, b):
     """How deep two posed pieces are inside each other, in metres (0 when apart): over their boxes, the smallest
     overlap along the separating axes of each pair."""
@@ -832,14 +998,25 @@ def _slots(scan, pack, base, pose, gain, free):
     return found
 
 
-def match(scan, pack):
-    """Every object of the scan against the pack. Returns the estimate (plain data)."""
+def match(scan, pack, workers=None):
+    """Every object of the scan against the pack. Returns the estimate (plain data). ``workers`` is how many processes
+    share the fits that do not depend on each other (see ``Helpers``): the estimate is the same with any number, and
+    with none given it is the ``TWINSMITH_SCAN_WORKERS`` variable, or this process alone."""
+    helpers = Helpers(scan, pack, workers)
+    try:
+        return _match(scan, pack, helpers.run)
+    finally:
+        helpers.close()
+
+
+def _match(scan, pack, fits_of):
     from scipy import ndimage
     from scipy.optimize import linear_sum_assignment
     from scipy.spatial import cKDTree
 
     gain = _gain(scan, pack)
-    every = {(o, s): fit(scan, item, shape) for o, item in enumerate(scan.objects) for s, shape in enumerate(pack.shapes)}
+    every = [(o, s) for o in range(len(scan.objects)) for s in range(len(pack.shapes))]
+    every = dict(zip(every, fits_of([("fit", scan.objects[o], s) for o, s in every])))
     fits = {key: found[0] if found else None for key, found in every.items()}
     colours = {(o, piece): _colour_cost((fits[o, pack.shape_of[piece]] or item)["colour"], pack.colour[piece], gain)
                for o, item in enumerate(scan.objects) for piece in pack.pieces}
@@ -952,7 +1129,7 @@ def match(scan, pack):
     # A piece matched flat but poorly, or raised, is tried in any pose and takes that pose when it fits clearly better.
     # So is a piece found standing on end or on its side, which one view seldom tells from leaning, and a piece taken
     # from one level of a mask, tried on the whole mask when no other piece came out of it.
-    by_name = {item["name"]: item for item in scan.objects}
+    by_name, again = {item["name"]: item for item in scan.objects}, []
     for piece in pieces:
         split = piece.get("split_from")
         alone = split is None or sum(other.get("split_from") == split for other in pieces) == 1
@@ -961,12 +1138,7 @@ def match(scan, pack):
             continue
         if piece["shape_cost"] <= 0.6 * SHAPE_MAX and piece["support"] == "table" and piece["rest"] == "flat":
             continue
-        found = fit_free(scan, item, pack.shape(piece["name"]))
-        if found and found[0]["cost"] < piece["shape_cost"] - FREE_BETTER:
-            best = found[0]
-            piece.update(pose=_pose(best["turn"], best["at"]), rest=best["rest"], support=best["support"], shape_cost=best["cost"],
-                         seen=best["agree"], lift=best["lift"], tilt_deg=best["tilt_deg"], other_pose=best["other"],
-                         colour_cost=_colour_cost(best["colour"], pack.colour[piece["name"]], gain), flat_cost=piece["shape_cost"])
+        again.append((piece, item))
     # What is still unmatched, each object alone and objects of one colour within 3 cm of each other together.
     left = [o for o in range(len(scan.objects)) if o not in used]
     groups = []
@@ -985,14 +1157,26 @@ def match(scan, pack):
                  "colour": np.median([part["colour"] for part in parts], axis=0)}
         whole["centroid"] = whole["xy"].mean(0)
         tried.append((group, whole))
-    options, plates = [], {pack.shape_of[base] for base in pack.assemblies if base in pack.shape_of}
-    for group, item in tried:
-        poses = {}
+    # None of these fits depends on another, so they are asked for together: each matched piece above on its own
+    # object, and each thing still unmatched against every shape a piece is left of.
+    plates, asked = {pack.shape_of[base] for base in pack.assemblies if base in pack.shape_of}, []
+    for number, (group, item) in enumerate(tried):
+        for shape in dict.fromkeys(pack.shape_of[piece] for piece in sorted(free)):
+            if not (shape in plates and too_small_for_base(item, pack.shapes[shape])):
+                asked.append((number, shape))
+    found = fits_of([("fit_free", item, pack.shape_of[piece["name"]]) for piece, item in again] +
+                    [("fit_free", tried[number][1], shape) for number, shape in asked])
+    for (piece, item), poses in zip(again, found):
+        if poses and poses[0]["cost"] < piece["shape_cost"] - FREE_BETTER:
+            best = poses[0]
+            piece.update(pose=_pose(best["turn"], best["at"]), rest=best["rest"], support=best["support"], shape_cost=best["cost"],
+                         seen=best["agree"], lift=best["lift"], tilt_deg=best["tilt_deg"], other_pose=best["other"],
+                         colour_cost=_colour_cost(best["colour"], pack.colour[piece["name"]], gain), flat_cost=piece["shape_cost"])
+    found, options = dict(zip(asked, found[len(again):])), []
+    for number, (group, item) in enumerate(tried):
+        poses = {shape: found.get((number, shape), []) for shape in set(pack.shape_of.values())}
         for piece in sorted(free):
             shape = pack.shape_of[piece]
-            if shape not in poses:
-                small = shape in plates and too_small_for_base(item, pack.shapes[shape])
-                poses[shape] = [] if small else fit_free(scan, item, pack.shapes[shape])
             if poses[shape] and poses[shape][0]["cost"] <= SHAPE_MAX:
                 best = poses[shape][0]
                 cost = _colour_cost(best["colour"], pack.colour[piece], gain)
@@ -1280,6 +1464,9 @@ def task_poses(path):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["_helper"]:                                # a match's own helper process (see ``Helpers``)
+        return _helper(argv[1])
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
     add = lambda name, **kw: commands.add_parser(name, **kw)
@@ -1307,6 +1494,8 @@ def main(argv=None):
     for command in ("match", "score", "synthetic", "colours"):
         commands.choices[command].add_argument("--pack", default="puzzles/v1")
     commands.choices["match"].add_argument("--colours", type=Path, help="measured colours, from the colours command")
+    commands.choices["match"].add_argument("--workers", type=int, help="processes that share the fits (the estimate is the same with any "
+                                           "number); default: the TWINSMITH_SCAN_WORKERS variable, or 1")
     args = parser.parse_args(argv)
     read = lambda path: json.loads(path.read_text())
     if args.command == "task":
@@ -1324,7 +1513,7 @@ def main(argv=None):
         args.out.write_text(json.dumps({"clip": str(args.clip), "colours": found, "pack_colours": {name: pack.colour[name].tolist() for name in found}}, indent=1) + "\n")
         print(json.dumps(found))
     elif args.command == "match":
-        estimate = match(Scan(args.clip, args.run), pack)
+        estimate = match(Scan(args.clip, args.run), pack, args.workers)
         estimate.update(clip=str(args.clip), run=str(args.run))
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(estimate, indent=1) + "\n")
