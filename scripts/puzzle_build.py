@@ -174,6 +174,7 @@ class Build:
         self.base_slides = 0                                # how many times the base has been slid to the middle
         self.ahead = False                                  # true while simulating ahead: no metric is recorded
         self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
+        self.refusals = []                                  # what the graph was refused, in order: [{"tool", "piece", "why"}]
         self.started = time.time()
 
     # ---- the world --------------------------------------------------------------------------------
@@ -676,6 +677,7 @@ class Build:
                         reply = {"ok": True, "result": getattr(self, request["tool"])(**request.get("inputs", {}))}
                     except (Refused, cell.MoveFailed) as error:
                         self.say(f"refused: {error}")
+                        self.refusals.append({"tool": request["tool"], "piece": request.get("inputs", {}).get("piece"), "why": str(error)})
                         reply = {"ok": False, "error": str(error)}
                     stream.write(json.dumps(reply) + "\n")
                     stream.flush()
@@ -690,9 +692,42 @@ class Build:
         result = next((json.loads(line[8:]) for line in output.splitlines() if line.startswith("RESULT: ")), {"success": False, "error": output[-600:]})
         return result
 
+    def _write_log(self, film, started):
+        """``run_log.json``: the run as the viewer reads it."""
+        (self.out / "run_log.json").write_text(json.dumps({
+            "what": "The run as the viewer reads it (scripts/puzzle_viewer.py). Times are simulated seconds unless named wall.",
+            "steps": self.log.steps, "looks": self.look_log, "tries": self.tries, "samples": self.cell.samples, "grips": self.cell.grips,
+            "film": {key: film[key] for key in ("fps", "zero_s", "cameras", "captions")}, "sample_columns": ["seconds", "rail_m", *cell.ARM, "pad_gap_m"],
+            "wall_start": started, "wall_s": round(time.time() - started, 1)}, default=lambda value: value.item()) + "\n")
+
+    def why_stopped(self, graph):
+        """Why a build did not finish, in the build's own words; None when every piece is seated and the graph ended in
+        success. The graph's own error names the first node that failed, which may be one that decides nothing (the
+        question to a vision-language model that is not up); this names what stopped the build: the lookahead that
+        said abort, or the last thing the graph was refused."""
+        if all(row.get("final_seated") for row in self.metrics.values()) and graph.get("success"):
+            return None
+        for piece, row in self.metrics.items():
+            looks = row.get("lookahead") or []
+            if looks and looks[-1]["verdict"] == "abort" and not row["attempts"]:
+                last = looks[-1]["tries"][-1]
+                return f"the lookahead said abort before {piece}: " + (last.get("error") or last.get("misfit") or (
+                    f"its rehearsal seated the piece and moved {last.get('moved_most', 'another piece')} {last['others_moved_mm']} mm"
+                    if last.get("seated") else f"its rehearsal left the piece {last['position_error_mm']} mm from its slot"))
+        if self.refusals:
+            last = self.refusals[-1]
+            return f"{last['tool']}" + (f" of {last['piece']}" if last["piece"] else "") + f" was refused: {last['why']}"
+        loose = [piece for piece, row in self.metrics.items() if not row.get("final_seated")]
+        return f"the graph ended in {graph.get('exit_status')}" + (f" with {loose} not seated" if loose else "")
+
     def stopped(self, error, started):
-        """What is known of a run that an invalid physics state ended, without asking the simulator for anything more:
-        nothing it would answer means anything now."""
+        """What is known of a run that an invalid physics state ended. The physics is asked for nothing more (nothing
+        it would answer means anything now); the film's recorders are closed, which is drawing and not physics, so
+        that ``run_log.json`` is written and the run can still be looked at."""
+        try:
+            self._write_log(self.cell.stop_film(), started)
+        except Exception:  # noqa: BLE001 - a simulator that cannot even close its film leaves no log; the record below is still written
+            pass
         return {"completed": False, "stopped": f"PHYSICS_STATE_INVALID: {error}", "pieces": self.metrics,
                 "simulated_seconds": round(self.cell.steps / cell.PHYSICS_HZ, 1), "wall_seconds": round(time.time() - started, 1),
                 "survey": getattr(self, "survey_report", None), "order": self.order, "perception": self.args.perception, "correction": self.correction}
@@ -717,11 +752,7 @@ class Build:
             self.metrics[piece].update(final_position_error_mm=final["position_error_mm"], final_rotation_error_deg=final["rotation_error_deg"],
                                        final_seated=final["seated"])
         film = self.cell.stop_film()
-        (self.out / "run_log.json").write_text(json.dumps({
-            "what": "The run as the viewer reads it (scripts/puzzle_viewer.py). Times are simulated seconds unless named wall.",
-            "steps": self.log.steps, "looks": self.look_log, "tries": self.tries, "samples": self.cell.samples, "grips": self.cell.grips,
-            "film": {key: film[key] for key in ("fps", "zero_s", "cameras", "captions")}, "sample_columns": ["seconds", "rail_m", *cell.ARM, "pad_gap_m"],
-            "wall_start": started, "wall_s": round(time.time() - started, 1)}, default=lambda value: value.item()) + "\n")
+        self._write_log(film, started)
         summary = {"completed": all(row["final_seated"] for row in self.metrics.values()),
                    "final_poses": {name: np.round(at, 6).tolist() for name, at in truth.items()},
                    "simulated_seconds": round(self.cell.steps / cell.PHYSICS_HZ, 1), "wall_seconds": round(time.time() - started, 1),
@@ -826,7 +857,8 @@ def graph_report(trace, pieces):
 
 
 def arguments(argv=None):
-    """The command line, checked."""
+    """The command line, checked. The script exits 0 for a build that finished, 1 for one that stopped (``stopped`` in
+    ``metrics.json`` says where and why) and 2 for a command line that is refused."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, required=True, help="the simulator bridge to use; its stage is replaced")
     parser.add_argument("--out", type=Path, required=True, help="folder for metrics.json, the video and the pictures")
@@ -881,13 +913,17 @@ def main():
     except BaseException:
         build.abandon()
         raise
-    print(json.dumps({key: record[key] for key in ("completed", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
+    print(json.dumps({key: record[key] for key in ("completed", "stopped", "simulated_seconds", "wall_seconds", "video", "viewer")}, indent=1))
+    if record["stopped"]:                                   # 0 only for a build that finished; metrics.json says where this one stopped
+        raise SystemExit(1)
 
 
 def run(build, args, config, layout, started):
-    """Build the cell, author the graph, serve it and write the run's records; returns ``metrics.json``'s content. A
-    run that the simulator ends with values that are not finite numbers stops there: ``metrics.json`` is written with
-    what was known and ``stopped`` saying why, and the script exits with an error."""
+    """Build the cell, author the graph, serve it and write the run's records; returns ``metrics.json``'s content.
+    ``stopped`` in it is None for a build that finished (every piece seated, the graph ended in success) and
+    otherwise says in words what stopped it. A run that the simulator ends with values that are not finite numbers
+    stops there: ``metrics.json`` and ``run_log.json`` are written with what was known, and the script exits with an
+    error."""
     record = {"seed": args.seed, "layout": {name: at.tolist() for name, at in layout.items()}, "cell": build.start(layout)}
     graph = build.out / "graph"
     plan = build.out / "plan.json"
@@ -900,6 +936,7 @@ def run(build, args, config, layout, started):
         record["graph"] = {"folder": str(graph), "run": build.serve(graph, build.out / "trace")}
         record["graph"]["checks"] = graph_report(build.out / "trace", build.slots)
         record.update(build.finish(started))
+        record["stopped"] = build.why_stopped(record["graph"]["run"])
     except cell.PhysicsStateInvalid as error:
         record.update(build.stopped(error, started))
         (build.out / "metrics.json").write_text(json.dumps(record, indent=1) + "\n")

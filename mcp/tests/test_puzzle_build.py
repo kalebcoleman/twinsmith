@@ -190,3 +190,83 @@ def test_a_run_ended_by_an_invalid_physics_state_records_what_was_known_without_
     record = cell.stopped(session.PhysicsStateInvalid("values that are not finite numbers for the joint positions at physics step 5000"), 0.0)
     assert record["completed"] is False and record["stopped"].startswith("PHYSICS_STATE_INVALID: ") and "physics step 5000" in record["stopped"]
     assert record["pieces"] == cell.metrics and record["simulated_seconds"] == 10.0 and json.dumps(record)
+
+
+def test_on_the_real_pieces_the_two_failures_only_a_lookahead_used_to_catch_are_refused():
+    try:
+        pack = scan.load_pack(CONFIG["pack"])
+    except Exception as error:  # noqa: BLE001 - the pack is an asset outside the repository; without it there is nothing to measure against
+        pytest.skip(f"the puzzles pack is not installed: {error}")
+    recorded = json.loads((ROOT / "mcp/tests/puzzle_fixtures/refusals.json").read_text())["cases"]
+    base, slots = CONFIG["base"], assembly.slot_poses(pack, CONFIG["base"])
+    order = {step["piece"]: step for step in assembly.build_order(pack, base)}
+    said = {}
+    for case in recorded:
+        believed = {name: np.array(at) for name, at in case["believed"].items()}
+        piece, step = case["piece"], order[case["piece"]]
+        others = {name: at for name, at in believed.items() if name != piece}
+        fits = lambda at_the_slot, **more: assembly.choose_grasps(
+            pack, piece, CONFIG["grasps"][piece], believed[piece], believed[base] @ slots[piece], others, at_the_slot, session.pad_setback,
+            believed[base][:3, :3] @ np.array(step["axis"], dtype=float), step["clear_m"] + build.MARGIN_M, **more)
+        # As the check was made until 2026-11-17 it found a way: the gripper only where it ends and at the gripped
+        # width, and at the slot only the base and the pieces already placed.
+        assert fits({name: believed[name] for name in [base, *case["placed"]]}, open_m=0.0, hover_m=0.0), case["case"]
+        why = []
+        assert fits(others, open_m=CONFIG["open_beyond_m"], hover_m=build.HOVER_M, refused=why) == [], case["case"]
+        said[case["case"]] = why
+    blocked = [why for name, why in said.items() if "blocked approach" in name]
+    taken = [why for name, why in said.items() if "slot occupied" in name]
+    assert len(blocked) == len(taken) == 4
+    assert all(why == ["line_red is in the open gripper's way down to line_brown"] for why in blocked)
+    assert all(why == ["line_red is where line_brown goes"] for why in taken)
+
+
+def stopped_build(metrics, refusals=()):
+    cell = object.__new__(build.Build)
+    cell.metrics, cell.refusals = metrics, list(refusals)
+    return cell
+
+
+def test_a_build_that_did_not_finish_says_what_stopped_it_in_its_own_words():
+    seated = {"attempts": 1, "final_seated": True}
+    done = stopped_build({"bar": seated, "fork": seated})
+    assert done.why_stopped({"success": True, "exit_status": "success"}) is None
+    # The graph's own error names its first failed node, here a question to a model that was not up, which decides nothing.
+    graph = {"success": False, "exit_status": "failure", "error": "first node error -- count_parts.ask: vlm: backend unavailable"}
+    abort = lambda last: {"attempts": 0, "final_seated": False, "lookahead": [{"verdict": "abort", "tries": [last]}]}
+    moved = stopped_build({"bar": seated, "fork": abort({"seated": True, "position_error_mm": 0.7, "others_moved_mm": 4.1, "moved_most": "plate"})})
+    assert moved.why_stopped(graph) == "the lookahead said abort before fork: its rehearsal seated the piece and moved plate 4.1 mm"
+    jammed = stopped_build({"bar": seated, "fork": abort({"seated": False, "position_error_mm": 133.1, "others_moved_mm": 36.0})})
+    assert jammed.why_stopped(graph) == "the lookahead said abort before fork: its rehearsal left the piece 133.1 mm from its slot"
+    misfit = stopped_build({"bar": abort({"seated": False, "misfit": "the place of bar corrected from the lookahead does not fit: the gripper would be in plate at the slot"})})
+    assert misfit.why_stopped(graph).endswith("does not fit: the gripper would be in plate at the slot")
+    refused = stopped_build({"bar": seated, "fork": {"attempts": 1, "final_seated": False}},
+                            [{"tool": "approach", "piece": "bar", "why": "an earlier refusal the build got past"},
+                             {"tool": "rescan", "piece": "fork", "why": "fork is not in its slot and cannot be picked again"}])
+    assert refused.why_stopped(graph) == "rescan of fork was refused: fork is not in its slot and cannot be picked again"
+    assert "vlm" not in refused.why_stopped(graph)
+    # Every piece seated and the graph still ended in failure (a checkpoint, say): that is not a finished build either.
+    assert stopped_build({"bar": seated}).why_stopped(graph) == "the graph ended in failure"
+    assert stopped_build({"bar": seated, "fork": {"attempts": 0, "final_seated": False}}).why_stopped(graph) == "the graph ended in failure with ['fork'] not seated"
+
+
+def test_the_script_exits_0_only_for_a_build_that_finished(monkeypatch, capsys):
+    class NoBuild:
+        def __init__(self, *args):
+            pass
+
+        def abandon(self):
+            pass
+
+    record = {"completed": True, "stopped": None, "simulated_seconds": 160.0, "wall_seconds": 260.0, "video": "build.mp4", "viewer": "viewer/index.html"}
+    monkeypatch.setattr(build, "Build", NoBuild)
+    monkeypatch.setattr(build, "run", lambda *args: record)
+    monkeypatch.setattr(build, "scattered", lambda *args: {})
+    monkeypatch.setattr(scan, "load_pack", lambda *args: None)
+    monkeypatch.setattr(sys, "argv", ["puzzle_build.py", *RUN])
+    build.main()                                               # finished: returns, which is exit code 0
+    assert json.loads(capsys.readouterr().out)["stopped"] is None
+    record.update(completed=False, stopped="rescan of fork was refused: fork is not in its slot and cannot be picked again")
+    with pytest.raises(SystemExit) as stop:
+        build.main()
+    assert stop.value.code == 1 and "cannot be picked again" in json.loads(capsys.readouterr().out)["stopped"]
