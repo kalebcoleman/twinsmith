@@ -114,6 +114,12 @@ class Recorder:
         self.frames.append({"world_from_camera": _matrix(optical)})
         return index
 
+    def idle(self, yes):
+        """A recorder kept between pictures has every render step draw its picture too, wanted or not, unless it is
+        idle: measured on a puzzle build, one kept recorder made the film's frames of every later step cost 1.4 times
+        as much. The first picture after it wakes is drawn afresh."""
+        self.product.hydra_texture.set_updates_enabled(not yes)
+
     def switch(self, folder):
         """A film's recorder writes its next frames to another folder, counted from zero, until ``back``."""
         self.kept = (self.folder, self.frames)

@@ -6,23 +6,28 @@
  "rail_mm": 655.0,
  "start_joint_deg": [90, -80, 100, -110, -90, 0],
  "survey": {
-  "what": "Wrist D415 straight down, gripper closed. The camera always sees its own gripper: it fills the top middle of the picture and the fingertips end at the picture's centre, so the point looked at is just on the robot's side of the base in the middle, and nothing of the base is hidden.",
-  "look_at_m": [0.02, -0.37, 0.0],
-  "height_m": 0.72
+  "what": "Wrist D415 straight down, gripper closed. The camera always sees its own gripper: it fills the top middle of the picture and the fingertips end at the picture's centre, so the point looked at is on the robot's side of the base in the middle and to its left, and nothing of the base is hidden.",
+  "look_at_m": [-0.125, -0.37, 0.0],
+  "height_m": 0.75,
+  "why_there": "The pose has to be one the real cell allows. Over [0.02, -0.37] at 0.72 m, where this survey used to stand, wrist 3 is at 141.5 degrees and the camera's cord needs 13.2 cm more than at the real scan pose: the real cell's wrist 3 window ends at 135 degrees and its cord's spare loop is taken as 10 cm (the puzzle project's ros2/config; both guesses until measured). From 0.145 m further along -x wrist 3 is at 114 degrees and the cord needs 9.2 cm. From 0.75 m the picture reaches x = 0.40 and y = -0.66 at 0.81 mm a pixel (0.78 before), and the flange stays 14 mm under the 0.80 m top of the bridge's workspace box."
+ },
+ "arm": {
+  "what": "Where wrist 3 is kept when a pose leaves the choice (which way round a piece is gripped): the range in which the camera's cord stayed inside its limit in the puzzle project's GaP bridge. Not a limit of the simulated arm; a grasp outside it is still taken when no other is in reach, and the bridge then refuses it.",
+  "wrist_3_deg": [-60.0, 110.0]
  },
  "scan": {
-  "what": "The scan step's views after the survey's own (straight down, the view the matcher reads): where the wrist camera is and the point it looks at. The depth of every view is compared with the matched pieces, which is what tells a piece's rival poses apart. Five frames a view, the number the matcher reads. The picture stays upright in every view (its right as near the world's x as the view allows); for that the arm unwinds wrist 3 from 106 degrees at the left view to -154 at the right one. With the right view a quarter turn round, wrist 3 stayed between 101 and 141 degrees, but only 36 to 200 pixels of each piece were then compared there (over 1000 upright) and the view lined up twenty times worse.",
+  "what": "The scan step's views after the survey's own (straight down, the view the matcher reads), taken only when the view from above leaves a piece in doubt: where the wrist camera is, the point it looks at, and its turn about the line of sight. The depth of every view is compared with the matched pieces, which is what tells a piece's rival poses apart. Five frames a view, the number the matcher reads. Each view, and each move between them, was chosen inside the real cell's limits as the puzzle project's GaP bridge holds them (joint and cable windows, at most 10 cm of camera cord, the workspace box): the sweep top, left, right, top needs 9.2, 7.7 and 9.2 cm of cord. The left view sees every piece; the right one, rolled a sixth of a turn to stay inside those limits, sees the base and what lies to its right and lines up poorly (cost 0.14 against the left view's 0.002): it adds little, and no better one was found inside the limits.",
   "frames": 5,
   "views": [
-   {"name": "left", "eye_m": [-0.28, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]},
-   {"name": "right", "eye_m": [0.32, -0.42, 0.50], "look_at_m": [0.02, -0.44, 0.0]}
+   {"name": "left", "eye_m": [-0.24, -0.30, 0.42], "look_at_m": [0.02, -0.47, 0.0], "roll_deg": -20.0},
+   {"name": "right", "eye_m": [0.32, -0.58, 0.58], "look_at_m": [0.02, -0.47, 0.0], "roll_deg": 60.0}
   ]
  },
  "base_check": {
-  "what": "The fast check of the base while a piece is brought to it (scripts/puzzle_base_check.py): one depth picture of the wrist camera at the pre-place hover and after every descent_step_m of lowering, fitted with the base's CAD from its last pose. The camera rides on the gripper and looks along it: a piece that goes in with the gripper level (the forks) is checked once instead, from look_height_m above the base, before it is carried in, and not again. A base found more than moved_mm or moved_deg away, by a fit that is trusted, takes its slots and seated pieces with it and the rest of the placement is laid out again and simulated ahead; at most corrections times per placement. A fit that is not trusted, or other pieces not where they were, puts the piece back and scans the table.",
-  "moved_mm": 3.0, "moved_deg": 1.5,
+  "what": "The fast check of the base while a piece is brought to it (scripts/puzzle_base_check.py): one depth picture of the wrist camera at the pre-place hover and after every descent_step_m of lowering, fitted with the base's CAD from its last pose. The camera rides on the gripper and looks along it: a piece that goes in with the gripper level (the forks) is checked once instead, from look (offset_m from the base's middle, height_m above the table, roll_deg about the line of sight: a pose with wrist 3 at 16 degrees, where the base is wholly in the picture beside the gripper), before it is carried in, and not again. A base found more than moved_mm or moved_deg away, by a fit that is trusted, takes its slots and seated pieces with it and the rest of the placement is laid out again (and simulated ahead when the build simulates ahead); at most corrections times per placement. moved_mm was 3.0: a look keeps a filled base's last pose unless it finds it 3 mm away, so the base could lie that far from where the robot had it, and a fork put in 2.6 mm off jammed (seed 3). Over 124 kept checks the trusted fit was 0.26 mm from the truth (median; 1.1 mm at the 95th percentile), and in all 18 that read 1.5 to 3 mm it was nearer the truth than the pose it was compared with. A fit that is not trusted, or other pieces not where they were, puts the piece back and scans the table.",
+  "moved_mm": 1.5, "moved_deg": 1.5,
   "descent_step_m": 0.010,
-  "look_height_m": 0.45,
+  "look": {"offset_m": [-0.10, 0.05], "height_m": 0.45, "roll_deg": -120.0},
   "corrections": 3
  },
  "base_target": {

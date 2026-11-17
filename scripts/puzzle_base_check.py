@@ -33,7 +33,7 @@ import numpy as np
 import puzzle_scan
 
 CELL = 0.0005                                            # the height map's cell: the matcher's 2 mm cells put an edge up to 1 mm off
-SETTINGS = {"moved_mm": 3.0, "moved_deg": 1.5,          # further than this from the last pose: the base has moved
+SETTINGS = {"moved_mm": 1.5, "moved_deg": 1.5,          # further than this from the last pose: the base has moved (a fork jams 2.6 mm off)
             "search_mm": 40.0, "search_deg": 9.0,        # how far from the last pose the fit looks
             "points": 8000,                              # depth points the fit uses, at most
             "stride": 3,                                 # every n-th pixel of the picture each way

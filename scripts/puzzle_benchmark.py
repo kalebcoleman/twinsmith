@@ -60,7 +60,9 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
     is the kind's entry of the benchmark: ``side`` (-1 the base starts on the left, +1 on the right; either without
     it), ``base_side_m`` (how far to that side of its target it starts; 0.24 to 0.32 m without it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in; ``band_for`` names the pieces it
     holds for when not all of them), ``cluster_m`` (every loose piece's middle within this of one random point),
-    ``gap_m`` (the least room between pieces, 35 mm without it). ``region``
+    ``gap_m`` (the least room between pieces, 35 mm without it), ``also`` (pieces of another puzzle that lie on the
+    table too, laid after the puzzle's own and clear of them and of the base's way; anywhere in ``also_region``, which
+    may be wider than the region since they are seen and not picked, or in the region without it). ``region``
     is ((x low, y low), (x high, y high)) of the table that every piece lies inside, and ``hidden`` the rectangles of
     it, given the same way, that no piece may touch. Returns {piece: world pose} with the base first. ``assembly`` and
     ``puzzle_scan`` are the build's own modules, so the footprints are the build's."""
@@ -74,9 +76,11 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
         rest = pack.shape(name).rests[0]
         return assembly.pose(puzzle_scan.yaw_matrix(rng.uniform(0, 2 * math.pi)) @ rest.turn, [xy[0], xy[1], rest.drop])
 
-    def inside(name, at):
+    wide = (np.array(spec["also_region"][0]), np.array(spec["also_region"][1])) if "also_region" in spec else (low, high)
+
+    def inside(name, at, within=(low, high)):
         corners, grown = assembly.footprint(pack, name, at), assembly.footprint(pack, name, at, gap)
-        return (corners > low).all() and (corners < high).all() and all(assembly._apart(grown, part) for part in hidden)
+        return (corners > within[0]).all() and (corners < within[1]).all() and all(assembly._apart(grown, part) for part in hidden)
 
     for _ in range(tries):
         side = spec.get("side") or rng.choice([-1, 1])
@@ -85,24 +89,25 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
             continue
         poses, keep_free = {base: start}, [assembly.footprint(pack, base, at, 0.03) for at in assembly.slide_path(start, target)]
         middle = rng.uniform(*band)
-        names = list(assembly.slot_poses(pack, base))
-        for name in sorted(names, key=lambda name: name not in spec.get("band_for", names)):       # the pieces a band holds for first: they have least room
-            band_low, band_high = band if name in spec.get("band_for", [name]) else (low, high)
+        names, also = list(assembly.slot_poses(pack, base)), list(spec.get("also", ()))
+        ordered = sorted(names, key=lambda name: name not in spec.get("band_for", names))      # the pieces a band holds for first: they have least room
+        for name in (*ordered, *also):                      # another puzzle's pieces last: where the puzzle's own leave room
+            band_low, band_high = band if name in names and name in spec.get("band_for", [name]) else (low, high) if name in names else wide
             for _ in range(PIECE_TRIES):
-                reach = spec.get("cluster_m")
+                reach = spec.get("cluster_m") if name in names else None
                 xy = middle + rng.uniform(-reach, reach, 2) if reach else rng.uniform(band_low, band_high)
                 if not ((xy >= band_low).all() and (xy <= band_high).all()):
                     continue
                 at = lying(name, xy)
                 grown = assembly.footprint(pack, name, at, gap)
-                if inside(name, at) and all(assembly._apart(grown, kept) for kept in keep_free) \
+                if inside(name, at, (low, high) if name in names else wide) and all(assembly._apart(grown, kept) for kept in keep_free) \
                         and all(assembly._apart(grown, assembly.footprint(pack, other, there)) for other, there in poses.items()):
                     poses[name] = at
                     break
             else:
                 break
-        if len(poses) == len(names) + 1:
-            return {name: poses[name] for name in (base, *names)}
+        if len(poses) == 1 + len(names) + len(also):
+            return {name: poses[name] for name in (base, *names, *also)}
     raise ValueError(f"no layout of this kind was found: {spec}")
 
 

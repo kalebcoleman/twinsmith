@@ -128,6 +128,18 @@ def test_a_layout_is_of_its_kind_inside_the_region_clear_of_what_is_hidden_and_t
         bench.lay_out(assembly, scan, pack, "plate", middle, np.random.default_rng(1), {"pieces_y": [-0.31, -0.30]}, REGION, HIDDEN, tries=3)
 
 
+def test_another_puzzles_pieces_lie_on_the_table_too_and_leave_the_puzzles_own_where_they_were():
+    both = scan.Pack({**PIECES, "peg": {"boxes": [box([0, 0, 0], [0.02, 0.02, 0.01])], "colour": [0.1, 0.6, 0.1]}}, SLOTS, "toy/v1")
+    middle = target(both)
+    laid = lambda spec: bench.lay_out(assembly, scan, both, "plate", middle, np.random.default_rng(5), spec, REGION, HIDDEN)
+    alone, crowded = laid({}), laid({"also": ["peg"]})
+    assert list(crowded) == ["plate", "cap", "bar", "peg"]                 # the base first, then its own pieces, then the others
+    assert all(np.array_equal(alone[name], crowded[name]) for name in alone)      # the same dice for the puzzle's own
+    peg = assembly.footprint(both, "peg", crowded["peg"], 0.035)
+    assert all(assembly._apart(peg, assembly.footprint(both, name, at)) for name, at in alone.items())
+    assert all(assembly._apart(peg, assembly.footprint(both, "plate", at, 0.03)) for at in assembly.slide_path(crowded["plate"], middle))
+
+
 def a_build(folder, seated, attempts=None, stopped="unset", scans=1, base_checks=None, success=None):
     """The folder a build leaves, as far as a row reads it."""
     folder.mkdir(parents=True)
