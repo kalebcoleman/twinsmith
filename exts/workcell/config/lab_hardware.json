@@ -798,6 +798,24 @@
       "value": 0.6,
       "status": "unconfirmed",
       "source": "Estimate, as above: the angle at which a sliding block keeps sliding. MuJoCo (Newton) uses one sliding coefficient per pair; PhysX uses both."
+    },
+    "newton_contact": {
+      "value": {
+        "solref": [
+          0.02,
+          1.0
+        ],
+        "solimp": [
+          0.99,
+          0.999,
+          0.0005,
+          0.5,
+          2.0
+        ],
+        "solmix": 1000.0
+      },
+      "status": "unconfirmed",
+      "source": "Newton (MuJoCo-Warp) only: how far the two fingertip colliders give way. Measured 2026-11-16 on ur5e-workcell/v4 at 40 N, between the colliders, after closing and after a 120 mm lift. With the solver's defaults each fingertip sank 0.62 mm into a puzzle bar and 0.65 to 0.72 mm into a fork's tab. With these values it is 0.24 mm into the bar and 0.27 mm into the tab, the same after the lift and a 2 s hold. solimp: impedance 0.99 rising to 0.999 over 0.5 mm. solref: time constant 0.02 s and damping ratio 1, written out so that it is these and not whatever a default becomes. A time constant of 0.004 s, the least a 500 Hz step allows, left only 0.03 mm, but the 1 kg puzzle base then slipped 24 mm in the fingers on its 0.28 m slide where these values slip 3 mm, and two of three puzzle builds failed: rejected. solmix 1000 makes these values, not the other body's, govern a fingertip's contacts, so no other contact in the cell changes. Why stiffer than the default at all: the real fingertip is a metal block with a 1.5 mm EPDM pad (pad_size_m), which at 40 N over about 4 cm2 compresses a few hundredths of a millimetre for a modulus of a few MPa; 0.24 mm is still several times that. The pad's stiffness is not measured and the tape over it is not modelled. PhysX does not read these."
     }
   },
   "finger_force_sensors": {

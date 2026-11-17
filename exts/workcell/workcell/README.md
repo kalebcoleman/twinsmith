@@ -121,6 +121,18 @@ How a piece is recognised:
   unless the segment's upper surface alone is the right size: a camera looking at an angle also sees the piece's walls,
   and a depth camera draws a skirt of mixed pixels down every edge, which on a thin piece adds half again to the
   footprint and nothing to the upper surface.
+- **A piece that does not lie flat.** What no flat rest explains (each object alone, and objects of one colour within
+  3 cm of each other together) is fitted with nothing assumed about how it lies: every face up, every turn about the
+  vertical, level and tipped onto the object's own largest flat face, then refined in all six freedoms against its
+  heights. Its height is whatever fits, but none of it may be under the table. The score and its limit are the flat
+  fit's own. A piece the flat fit did accept, but poorly, or raised, or standing on end or on its side, or from one
+  level of a mask, is tried the same way and takes that pose only when its cost is lower by 0.05. Such a piece's row
+  says how it stands (`rest: tilted`, `tilt_deg`, `lowest_point_mm`, `support`), and when another pose fits nearly as
+  well it is given whole (`other_pose`), not chosen between. Two poses up to 8 mm inside each other are one piece
+  resting on the other when lifting the upper straight up by that much takes it out of the lower: it is moved and says
+  so (`moved_up_mm`). Inside each other sideways, no lift parts them and one piece per place, below, applies.
+- **The gripper in the picture.** A mask that is mostly more than 0.25 m above the table is the gripper the camera
+  rides on, and neither it nor the mixed depth round its edge is an object.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside
   another, or lying on it, is a region of its own) and matched like any segment. With the first prompts tried SAM 3.1
   returned no mask at all for the base plates and the dark pieces, and this path carried much of the work; with the
@@ -185,8 +197,8 @@ position error 0.9 mm median and 2.1 mm at the 95th percentile, how the piece li
 bar lying loose in shadow was named as the red bar, with the flag "could be line_brown": lightness is all that
 separates those two, and a shadow now changes it. One green bar with half its length hidden under the gripper was
 placed 21 mm along its own length, with no flag. One base swap, reported exactly. Built back on Newton, no piece
-moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remains wrong: a piece not resting flat (tipped into a slot, leaning) is
-listed as `unexplained`, not posed; a U piece standing on end looks the same from straight above whichever end is
+moved more than 0.17 mm in eight layouts and 3.4 mm in one. What remained wrong then: a piece not resting flat (tipped into a slot, leaning) was
+listed as `unexplained`, not posed (it is now tried in any pose, above); a U piece standing on end looks the same from straight above whichever end is
 down, so its turn about the vertical is a guess, flagged as one; two touching pieces of one colour and one height
 under one mask stay one object.
 
@@ -213,6 +225,24 @@ the masks; there is no ground truth, and a 1 to 4 mm agreement of outlines is no
 1.0 to 1.4 mm a side. In the simulator the two changes do nothing: on the twenty recorded looks of the three v4 puzzle
 builds the old and the new matcher give the same pieces at the same poses to the last digit (the table there is at
 z = 0 to 0.001 degrees, and no segment was over the size limit). The simulator's own figures above were not run again.
+
+**Real pictures of pieces lying on and against each other (2026-11-16).** The same camera and view, fourteen clips of
+the red puzzle's parts as a person arranged them, colours as above (measured on the first of those clips).
+
+| Clips | Flat fit only | With the fit in any pose |
+|---|---|---|
+| Eight with every part flat on the table, removed, or assembled in the base | all parts found | the same parts at the same poses, to the last digit |
+| Two with the green bar lying across the orange U and the yellow part, the orange U on the maroon one | 3 of 5 | 5 of 5: the bar tilted 20 degrees and raised 14 mm, the orange U tilted 24 degrees |
+| One with the yellow part leaning on the base and the bar across two U pieces | 4 of 5 | 5 of 5: the yellow part tilted 29 degrees |
+| Three with the bar from the maroon U onto the base, the orange U standing, the yellow part leaning | 2 of 5 | 4 of 5; the maroon U, of which only the leg ends show under the bar, is listed and not posed |
+
+Built on Newton at those poses and rendered from the capture's camera before any physics step, the two-part stacks and
+the leaning part are where the pictures have them, the right part on top. Run for 2 s afterwards, the stacked parts
+move by up to 6.7 mm and 13 degrees: the poses are near a resting arrangement, not at one. On ray-cast pictures with
+perfect masks, made apart from this code with the poses hidden from it, 7 of 8 parts at random orientations came out
+within 5 mm and 5 degrees; the eighth, a U a quarter turn off, was flagged with the true pose as its `other_pose`. What
+one view cannot settle is reported, not resolved: a part mostly hidden under another, and poses a quarter or a half
+turn apart that look alike from where the camera is. A stacked scene takes 8 to 17 s to match, a flat one 4 to 5 s.
 
 ### Building a puzzle
 
@@ -312,6 +342,26 @@ other layouts than before, with the base 0.28 and 0.29 m from the middle: over t
 short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
 was added. On v3 the same move had stopped 3 to 8 mm short and passed.
 
+Why the base slipped, and the fingertips (the same day, after those runs). In the pictures the fingertips could be
+seen inside the pieces. Measured on a grasp alone (40 N, between the colliders, after closing and after a 120 mm
+lift): each fingertip's collider was 0.62 mm inside a bar and 0.65 to 0.72 mm inside a fork's tab. The fingertip's
+drawn face and its collider's face are one plane and a piece is exactly its collision boxes, so that was the contact
+giving way, with the solver's default softness. Measured on the base's slide alone (0.28 m, 40 N): the base slipped
+20, 24 and 21 mm in the fingers at 0.02, 0.04 and 0.08 m/s, so not a creep under load. The arm's joint targets were
+written every 10 ms; each jump jerks the gripper and the 1 kg base slips a little at each. Two changes follow.
+`workcell_session` writes a target every physics step (2 ms): the same slide slips 7 mm. And the two fingertip
+colliders get a stiffer contact of their own on Newton (`fingertips.newton_contact` in `lab_hardware.json`,
+authored by `newton_cell.prepare`; no other contact in the cell changes): 0.24 mm into the bar and 0.27 mm into the
+tab, and the slide slips 3 mm. A stiffer setting still, with the contact's time constant at the least the step
+allows, left 0.03 mm but slipped 24 mm and failed two of three builds; it is recorded in the config and not used.
+
+With both changes, the three layouts again, with the simulator's own poses in place of the camera (`--perception
+oracle`: the changes are to handling, and the lab's live scan was using the GPU's memory): the base stopped 2.6, 1.0
+and 3.7 mm from the middle after one slide each, no second slide needed; seeds 1 and 3 completed, 4 of 4 seated, final
+errors 0.30 to 0.98 mm; seed 5 seated three pieces (0.64 to 1.01 mm) and its lookahead then refused the last fork,
+whose insertion jammed in the twin. That fork's insertion had failed the same way once before these changes, in one of
+four runs of that layout, so it is counted as the build's own unreliability and not as caused or cured here.
+
 What the lookahead does for a fork: picked lying flat and turned upright in the hand, it sits 2.4 to 5.6 mm from the
 grasp as defined. Lowered from the grasp as defined it jams (it did in the first simulated try of all six forks, 16 mm
 from the slot with other pieces pushed 16 to 28 mm, while the correction was only applied in a second try). Corrected
@@ -362,8 +412,8 @@ above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from t
 said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
 run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
 layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
-against the pieces before a move; the arm's links are not. The base slips in the fingers when slid, and why it slips
-more from one side of the table than the other was not found; the second slide corrects it and does not explain it.
+against the pieces before a move; the arm's links are not. Seed 5's last fork jams in about two runs of five; a fork is
+inserted with 1.0 to 1.4 mm of clearance a side after turning in the hand, and nothing here makes that reliable.
 Nothing here has seen a real camera or a real robot.
 
 Machine-readable data:

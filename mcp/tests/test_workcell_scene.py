@@ -328,6 +328,63 @@ def test_prepare_writes_per_degree_gains_and_both_armatures(monkeypatch):
     assert applied == [True] and report["buffers"]["link_incoming_joint_force"] is True   # the Bota reading on Newton
 
 
+PADS = {"solref": [0.02, 1.0], "solimp": [0.99, 0.999, 0.0005, 0.5, 2.0], "solmix": 1000.0}
+
+
+def test_fingertip_contact_is_checked_before_a_stage_is_touched():
+    cell = load_newton_cell()
+    config = {"newton": newton_section(), "fingertips": {"newton_contact": PADS}}
+    assert cell.fingertip_contact(config) == PADS and set(cell.validate(config)) == set(ARM)
+    assert cell.fingertip_contact({"newton": newton_section(), "fingertips": {}}) is None         # none configured: the solver's defaults
+    for bad in (dict(PADS, solref=[0.003, 1.0]),            # under two 2 ms steps: the solver would clamp it
+                dict(PADS, solimp=[0.99, 0.9, 0.0005, 0.5, 2.0]), dict(PADS, solimp=[0.99, 1.0, 0.0005, 0.5, 2.0]),
+                dict(PADS, solmix=0), {"solref": [0.02, 1.0]}, dict(PADS, solref=[0.02]), dict(PADS, extra=1)):
+        with pytest.raises(ValueError, match="newton_contact"):
+            cell.validate({"newton": newton_section(), "fingertips": {"newton_contact": bad}})
+
+
+def test_prepare_stiffens_the_two_fingertip_colliders_and_nothing_else(monkeypatch):
+    Usd = pytest.importorskip("pxr.Usd")
+    from pxr import Sdf, UsdPhysics
+
+    cell = load_newton_cell()
+
+    def stage_with(fingertips):
+        stage = Usd.Stage.CreateInMemory()
+        scene = UsdPhysics.Scene.Define(stage, "/World/PhysicsScene").GetPrim()
+        scene.CreateAttribute("mjc:option:impratio", Sdf.ValueTypeNames.Float).Set(1.0)
+        for name in ARM:
+            UsdPhysics.DriveAPI.Apply(UsdPhysics.RevoluteJoint.Define(stage, f"/World/RobotAssembly/robot/joints/{name}").GetPrim(), "angular")
+        for path in [*fingertips, "/World/RobotAssembly/rg2/left_inner_finger/collisions", "/World/Puzzle/bar/fingertip"]:
+            UsdPhysics.CollisionAPI.Apply(stage.DefinePrim(path, "Cube"))
+        return stage
+
+    support = types.ModuleType("sim_tools.newton_support")
+    support.scene_settings = lambda prim, rate, tower: {}
+    support.collision_settings = lambda prim: None
+    support.prepare_buffers = lambda *args: (types.SimpleNamespace(solver_outputs=types.SimpleNamespace(link_incoming_joint_force=False)), {})
+    support.apply_buffers = lambda config: None
+    package = types.ModuleType("sim_tools")
+    package.__path__ = []
+    monkeypatch.setitem(sys.modules, "sim_tools", package)
+    monkeypatch.setitem(sys.modules, "sim_tools.newton_support", support)
+    tips = [f"/World/RobotAssembly/rg2/{side}_inner_finger/fingertip" for side in ("left", "right")]
+    config = {"newton": newton_section(), "fingertips": {"newton_contact": PADS}}
+    stage = stage_with(tips)
+    report = cell.prepare(stage, config, "/World/RobotAssembly", timeline=None)
+    assert report["fingertip_contact"] == dict(PADS, colliders=tips)
+    for path in tips:
+        prim = stage.GetPrimAtPath(path)
+        assert list(prim.GetAttribute("mjc:solref").Get()) == PADS["solref"] and list(prim.GetAttribute("mjc:solimp").Get()) == PADS["solimp"]
+        assert prim.GetAttribute("mjc:solmix").Get() == 1000.0
+    for path in ("/World/RobotAssembly/rg2/left_inner_finger/collisions", "/World/Puzzle/bar/fingertip"):     # the finger's body; a task's prim of that name
+        assert not stage.GetPrimAtPath(path).GetAttribute("mjc:solref")
+    plain = cell.prepare(stage_with(tips), {"newton": newton_section()}, "/World/RobotAssembly", timeline=None)
+    assert "fingertip_contact" not in plain
+    with pytest.raises(ValueError, match="1 fingertip colliders, not 2"):
+        cell.prepare(stage_with(tips[:1]), config, "/World/RobotAssembly", timeline=None)
+
+
 def test_a_bench_without_its_own_colliders_is_refused_on_newton(modules):
     Usd = pytest.importorskip("pxr.Usd")
     from pxr import UsdGeom

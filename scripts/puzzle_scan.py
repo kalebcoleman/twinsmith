@@ -182,6 +182,7 @@ class Shape:
                 seen.append(up)
                 rests.append(Rest(self, turn))
         self.rests = [rest for rest in rests if rest.stable]
+        self.all_rests = rests                               # every face up: what a piece leaning on another can also show
 
     def same_as(self, other):
         return abs(self.volume - other.volume) < 1e-4 * self.volume and \
@@ -389,7 +390,11 @@ class Scan:
             # A wall seen at an angle is a ramp a few pixels wide: steeper than about 60 degrees is a step, not a surface.
             surface = step < np.maximum(0.0015, 1.7 * metres / camera["fx"])
             taken = np.zeros(metres.shape, dtype=bool)
+            raised = (metres > 0) & (world[..., 2] > CEILING_M)
             for name, mask in sorted(masks, key=lambda item: item[1].sum()):     # a pixel goes to the smallest mask over it
+                if (mask & raised).sum() > 0.5 * mask.sum():                    # the gripper the camera rides on, or a hand: the
+                    taken |= mask                                               # mixed depth round its edge is no object on the
+                    continue                                                    # table, masked or not
                 own = mask & ~taken & valid & (world[..., 2] > TABLE_M)
                 if own.sum() < 0.25 * (mask & valid & (world[..., 2] > TABLE_M)).sum() or own.sum() < 30:
                     continue                                                    # another mask of the same thing, or the table
@@ -555,6 +560,143 @@ def fit(scan, item, shape):
     return sorted(found, key=lambda one: one["cost"])
 
 
+# ---- a piece that does not lie flat: any orientation, at any height ----------------------------------------------
+
+FREE_STARTS, FREE_BETTER = 6, 0.05      # starts refined per shape; how much better a free pose must be to replace a flat one
+CLEAR_M = 0.008                         # two poses up to this far inside each other are one piece resting on the other
+
+
+def _top_at(shape, turn, at, xy):
+    """Height of the shape's upper surface over each point of ``xy`` at a pose (-inf where the shape is not above it)."""
+    best = np.full(len(xy), -np.inf)
+    for centre, half in shape.boxes:
+        best = np.maximum(best, _box_top(xy, turn, turn @ centre + at, half))
+    return best
+
+
+def _lowest(shape, turn):
+    """How far below its origin the shape's lowest point is at an orientation (a positive number)."""
+    return -min(float((turn @ centre)[2] - np.abs(turn[2] * half).sum()) for centre, half in shape.boxes)
+
+
+def _free_cost(xy, z, shape, turn, at_xy):
+    """As ``_fit_cost``, for any orientation: the height of the shape's origin is whatever fits (the median), and a
+    pose that would put any of the shape under the table costs as much there as it does here."""
+    h = _top_at(shape, turn, np.array([at_xy[0], at_xy[1], 0.0]), xy)
+    inside = np.isfinite(h)
+    if inside.sum() < 10:
+        return 1.0, 0.0
+    lift = float(np.median((z - h)[inside]))
+    counted = ~(inside & (z - h - lift > 2 * TOLERANCE_M))
+    if counted.sum() < 0.3 * len(z):
+        return 1.0, lift
+    error = np.where(inside, np.minimum(np.abs(z - h - lift), CAP_M), CAP_M)[counted]
+    return float(error.mean() / CAP_M) + (1.0 if lift - _lowest(shape, turn) < -TABLE_M else 0.0), lift
+
+
+def _axis_turn(axis, angle):
+    """The rotation by ``angle`` about a unit ``axis``."""
+    x, y, z = axis
+    k = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]])
+    return np.eye(3) + math.sin(angle) * k + (1 - math.cos(angle)) * (k @ k)
+
+
+def _slope(xy, z):
+    """The rotation that tips the vertical onto the normal of the largest flat face among an object's points, or None
+    when that face is level within 5 degrees or there is none."""
+    points, rng, best = np.column_stack([xy, z]), np.random.default_rng(0), (0, None)
+    if len(points) < 30:
+        return None
+    for _ in range(80):
+        a, b, c = points[rng.choice(len(points), 3, replace=False)]
+        normal = np.cross(b - a, c - a)
+        if np.linalg.norm(normal) < 1e-9:
+            continue
+        normal = normal / np.linalg.norm(normal)
+        count = int((np.abs((points - a) @ normal) < 0.002).sum())
+        if count > best[0]:
+            best = (count, normal if normal[2] > 0 else -normal)
+    normal = best[1]
+    if normal is None or best[0] < 0.25 * len(points) or normal[2] > math.cos(math.radians(5)) or normal[2] < math.cos(math.radians(80)):
+        return None
+    axis = np.cross([0.0, 0.0, 1.0], normal)
+    return _axis_turn(axis / np.linalg.norm(axis), math.acos(float(normal[2])))
+
+
+def _stance(shape, turn, zmin):
+    """How a posed shape stands, in words and numbers: ``(rest, tilt in degrees, support)``. The tilt is the angle
+    between the vertical and the shape's nearest own axis: none for a piece standing on one of its faces."""
+    up = int(np.argmax(np.abs(turn[2])))
+    tilt = math.degrees(math.acos(min(1.0, float(np.abs(turn[2, up])))))
+    low = np.min([centre - half for centre, half in shape.boxes], axis=0)
+    high = np.max([centre + half for centre, half in shape.boxes], axis=0)
+    height = float((high - low)[up])
+    rest = "tilted" if tilt > 3.0 else "flat" if height < shape.sizes[0] + 1e-4 else "on end" if height > shape.sizes[2] - 1e-4 else "on its side"
+    return rest, tilt, "table" if zmin <= TABLE_M else "raised"
+
+
+def fit_free(scan, item, shape):
+    """The best poses of ``shape`` for one object with nothing assumed about how it lies: every face up, every turn
+    about the vertical, level and tipped onto the object's own largest flat face, then refined in all six freedoms
+    against the object's heights. Scored as ``fit`` scores: the heights of the object's own points, and the scan's
+    evidence for and against the whole upper surface the pose claims (what another object hides counts for neither).
+    Cheapest first: [{"cost", "turn", "at", "rest", "tilt_deg", "support", "lift", "agree", "colour", "other"}], where
+    ``other`` is the next best pose that is not this one (up to the shape's symmetry), when it costs nearly as little."""
+    if (item["area"] > 1.3 * max(rest.area for rest in shape.all_rests) + 2e-4 and
+            item.get("top_area", item["area"]) > 1.3 * max(rest.top_area for rest in shape.all_rests) + 2e-4) \
+            or item["area"] < 0.12 * min(rest.area for rest in shape.all_rests):
+        return []
+    rng = np.random.default_rng(0)
+    some, most = (rng.choice(len(item["z"]), min(len(item["z"]), count), replace=False) for count in (500, 2500))
+    xy, z, all_xy, all_z = item["xy"][some], item["z"][some], item["xy"][most], item["z"][most]
+    middle = np.array([*item["centroid"], float(np.median(item["z"]))])
+    slope = _slope(all_xy, all_z)
+    starts = []
+    for tip in ([np.eye(3)] if slope is None else [np.eye(3), slope]):
+        for rest in shape.all_rests:
+            for yaw in np.radians(np.arange(0, 360, 15)):
+                turn = tip @ yaw_matrix(yaw) @ rest.turn
+                at = item["centroid"] - (turn @ shape.centroid)[:2]
+                starts.append((_free_cost(xy, z, shape, turn, at)[0], len(starts), turn, at))
+    found = []
+    for cost, _, turn, at in sorted(starts, key=lambda start: start[:2])[:FREE_STARTS]:
+        cost, lift = _free_cost(all_xy, all_z, shape, turn, at)
+        turn_step, move_step = math.radians(6), 0.004
+        while turn_step > math.radians(0.1):
+            moved = False
+            for axis in ((0, 0, 1), (1, 0, 0), (0, 1, 0)):
+                for sign in (1, -1):
+                    step = _axis_turn(np.array(axis, dtype=float), sign * turn_step)
+                    trial_turn = step @ turn                    # about the object's own middle, so turning does not carry it away
+                    trial_at = (middle + step @ (np.array([at[0], at[1], lift]) - middle))[:2]
+                    trial = _free_cost(all_xy, all_z, shape, trial_turn, trial_at)
+                    if trial[0] < cost - 1e-6:
+                        cost, lift, turn, at, moved = trial[0], trial[1], trial_turn, trial_at, True
+            for shift in ((move_step, 0), (-move_step, 0), (0, move_step), (0, -move_step)):
+                trial = _free_cost(all_xy, all_z, shape, turn, at + shift)
+                if trial[0] < cost - 1e-6:
+                    cost, lift, at, moved = trial[0], trial[1], at + shift, True
+            if not moved:
+                turn_step, move_step = turn_step / 2, move_step / 2
+        position = np.array([at[0], at[1], lift])
+        verdict, _, tint = scan.evidence(shape.top(turn, position))
+        agree, against = int((verdict == 1).sum()), int((verdict == -1).sum())
+        rest, tilt, support = _stance(shape, turn, lift - _lowest(shape, turn))
+        found.append({"cost": 0.5 * cost + 0.5 * against / max(1, agree + against), "turn": turn, "at": position, "rest": rest,
+                      "tilt_deg": tilt, "support": support, "lift": lift - _lowest(shape, turn), "agree": agree / max(1, len(verdict)),
+                      "colour": np.median(tint[verdict == 1], axis=0) if agree >= 20 else item["colour"], "other": None})
+    found.sort(key=lambda one: one["cost"])
+    if found:                                                  # the next best pose that is not the same pose, up to symmetry
+        def apart(one):
+            return min(angle_between(found[0]["turn"] @ s, one["turn"]) for s, _ in shape.symmetries)
+        rivals = [(one["cost"], apart(one), one) for one in found[1:] if one["cost"] - found[0]["cost"] < MARGIN and apart(one) > 10.0]
+        if rivals:
+            cost, angle, one = min(rivals, key=lambda rival: rival[0])
+            found[0]["other"] = {"degrees_away": round(angle, 1), "shape_cost": round(cost, 3), "rest": one["rest"],
+                                 "position_m": [round(float(v), 5) for v in one["at"]], "rpy_deg": [round(v, 3) for v in matrix_rpy(one["turn"])]}
+    return found
+
+
 def _overlap(pack, a, b):
     """How deep two posed pieces are inside each other, in metres (0 when apart): over their boxes, the smallest
     overlap along the separating axes of each pair."""
@@ -570,6 +712,15 @@ def _overlap(pack, a, b):
             depth = min(np.abs(ha @ axis).sum() + np.abs(hb @ axis).sum() - abs((cb - ca) @ axis) for axis in axes)
             worst = max(worst, depth)
     return worst
+
+
+def _lifted_clear(pack, upper, lower, depth):
+    """The upper piece's pose moved straight up by ``depth`` and half a millimetre, when that takes it out of the lower
+    one: a piece resting on another and found a little inside it. None when it does not, as when the two are inside
+    each other sideways, where no lift parts them."""
+    pose = upper["pose"].copy()
+    pose[2, 3] += depth + 0.0005
+    return pose if _overlap(pack, lower, {"name": upper["name"], "pose": pose}) <= 0.003 else None
 
 
 def _hue(colour):
@@ -754,6 +905,62 @@ def match(scan, pack):
                        support="table" if found["lift"] == 0.0 else "raised", shape_cost=found["cost"], colour_cost=cost,
                        seen=found["agree"], lift=found["lift"], split_from=scan.objects[o]["name"])
 
+    # Pieces that do not lie flat: leaning, tipped, standing in a way no flat rest is, or lying across other pieces.
+    # A piece matched flat but poorly, or raised, is tried in any pose and takes that pose when it fits clearly better.
+    # So is a piece found standing on end or on its side, which one view seldom tells from leaning, and a piece taken
+    # from one level of a mask, tried on the whole mask when no other piece came out of it.
+    by_name = {item["name"]: item for item in scan.objects}
+    for piece in pieces:
+        split = piece.get("split_from")
+        alone = split is None or sum(other.get("split_from") == split for other in pieces) == 1
+        item = by_name.get(split if split else piece.get("object")) if alone else None
+        if item is None or piece["rest"] == "assembled" or piece["name"] in pack.assemblies:
+            continue
+        if piece["shape_cost"] <= 0.6 * SHAPE_MAX and piece["support"] == "table" and piece["rest"] == "flat":
+            continue
+        found = fit_free(scan, item, pack.shape(piece["name"]))
+        if found and found[0]["cost"] < piece["shape_cost"] - FREE_BETTER:
+            best = found[0]
+            piece.update(pose=_pose(best["turn"], best["at"]), rest=best["rest"], support=best["support"], shape_cost=best["cost"],
+                         seen=best["agree"], lift=best["lift"], tilt_deg=best["tilt_deg"], other_pose=best["other"],
+                         colour_cost=_colour_cost(best["colour"], pack.colour[piece["name"]], gain), flat_cost=piece["shape_cost"])
+    # What is still unmatched, each object alone and objects of one colour within 3 cm of each other together.
+    left = [o for o in range(len(scan.objects)) if o not in used]
+    groups = []
+    for o in left:
+        near = [group for group in groups if any(
+            _colour_cost(scan.objects[o]["colour"], scan.objects[other]["colour"], 0.0) < 0.15
+            and np.abs(scan.objects[o]["cells"][:, None, :] - scan.objects[other]["cells"][None, ::7, :]).max(2).min() * CELL < 0.03
+            for other in group)]
+        groups = [group for group in groups if group not in near] + [[o] + [other for group in near for other in group]]
+    tried = [([o], scan.objects[o]) for o in left]
+    for group in (group for group in groups if len(group) > 1):
+        parts = [scan.objects[o] for o in group]
+        whole = {"name": " + ".join(part["name"] for part in parts), "cells": np.concatenate([part["cells"] for part in parts]),
+                 "xy": np.concatenate([part["xy"] for part in parts]), "z": np.concatenate([part["z"] for part in parts]),
+                 "area": sum(part["area"] for part in parts), "top_area": sum(part.get("top_area", part["area"]) for part in parts),
+                 "colour": np.median([part["colour"] for part in parts], axis=0)}
+        whole["centroid"] = whole["xy"].mean(0)
+        tried.append((group, whole))
+    options = []
+    for group, item in tried:
+        poses = {}
+        for piece in sorted(free):
+            shape = pack.shape_of[piece]
+            if shape not in poses:
+                poses[shape] = fit_free(scan, item, pack.shapes[shape])
+            if poses[shape] and poses[shape][0]["cost"] <= SHAPE_MAX:
+                best = poses[shape][0]
+                cost = _colour_cost(best["colour"], pack.colour[piece], gain)
+                if cost <= COLOUR_MAX:
+                    options.append((best["cost"] + COLOUR_WEIGHT * cost, len(options), group, item, piece, best, cost))
+    for _, _, group, item, piece, best, cost in sorted(options, key=lambda option: option[:2]):
+        if piece in free and not used & set(group):
+            used.update(group)
+            record(piece, _pose(best["turn"], best["at"]), object=item["name"], rest=best["rest"], support=best["support"],
+                   shape_cost=best["cost"], colour_cost=cost, seen=best["agree"], lift=best["lift"], tilt_deg=best["tilt_deg"],
+                   other_pose=best["other"], **({"in_fragments": len(group)} if len(group) > 1 else {}))
+
     # Two pieces cannot be in one place: of a pair more than 3 mm inside each other, the worse fit is withdrawn.
     unexplained = []
     for a in sorted(pieces, key=lambda piece: (piece["rest"] != "assembled" and piece["name"] not in pack.assemblies, piece["shape_cost"])):
@@ -761,6 +968,17 @@ def match(scan, pack):
             continue
         for b in [piece for piece in pieces if piece is not a]:
             depth = _overlap(pack, a, b)
+            # A piece resting on another is found a few millimetres inside it as often as above it. The upper of the
+            # two is moved straight up by that much and says so, when that takes it out of the lower one. Inside each
+            # other sideways no lift parts them, and deeper than CLEAR_M: the worse fit is still withdrawn.
+            upper = max((a, b), key=lambda piece: piece["pose"][2, 3] + piece.get("lift", 0.0))
+            lower = b if upper is a else a
+            if 0.003 < depth <= CLEAR_M and (upper["support"] == "raised" or upper["rest"] == "tilted") and upper["rest"] != "assembled":
+                lifted = _lifted_clear(pack, upper, lower, depth)
+                if lifted is not None:
+                    rise = float(lifted[2, 3] - upper["pose"][2, 3])
+                    upper.update(pose=lifted, moved_up_mm=round(upper.get("moved_up_mm", 0.0) + rise * 1000, 1), cleared=lower["name"])
+                    continue
             if depth > 0.003:
                 pieces.remove(b)
                 free.add(b["name"])
@@ -800,8 +1018,14 @@ def match(scan, pack):
     for piece in pieces:
         shape, pose = pack.shape(piece["name"]), piece.pop("pose")
         flags = []
-        if piece["rest"] not in ("flat", "assembled"):
+        if piece["rest"] == "tilted":
+            flags.append(f"tilted {piece['tilt_deg']:.0f} degrees: leaning on something or lying across it")
+        elif piece["rest"] not in ("flat", "assembled"):
             flags.append(f"lying {piece['rest']}")
+        if piece.get("other_pose"):
+            flags.append(f"another pose, {piece['other_pose']['degrees_away']:.0f} degrees from this one, fits nearly as well (other_pose)")
+        if piece.get("moved_up_mm"):
+            flags.append(f"moved up {piece['moved_up_mm']:.1f} mm to clear {piece['cleared']}: the two poses were that far inside each other")
         if piece["support"] == "raised":
             flags.append(f"raised {piece['lift'] * 1000:.0f} mm: on top of something")
         if piece.get("upside_down"):
@@ -821,7 +1045,12 @@ def match(scan, pack):
         index, inside = scan.cell(shape.top(pose[:3, :3], pose[:3, 3], cell=CELL)[:, :2])
         piece["_cells"] = np.zeros(scan.height.shape, dtype=bool)
         piece["_cells"][index[inside, 0], index[inside, 1]] = True
-        out.append({**{k: v for k, v in piece.items() if k not in ("slot", "_cells", "lift", "upside_down", "other_stance", "in_fragments", "split_from")},
+        if "tilt_deg" in piece:                              # found by the fit that assumes nothing about how it lies
+            piece.update(tilt_deg=round(piece["tilt_deg"], 1), lowest_point_mm=round(piece["lift"] * 1000, 1))
+            if "flat_cost" in piece:
+                piece["flat_cost"] = round(piece["flat_cost"], 3)
+        out.append({**{k: v for k, v in piece.items() if k not in ("slot", "_cells", "lift", "upside_down", "other_stance", "in_fragments", "split_from", "cleared")
+                       and not (k == "other_pose" and v is None)},
                     "position_m": [round(float(v), 5) for v in pose[:3, 3]], "rotation": np.round(pose[:3, :3], 6).tolist(),
                     "rpy_deg": [round(v, 3) for v in matrix_rpy(pose[:3, :3])],
                     "centroid_m": [round(float(v), 5) for v in pose[:3, :3] @ shape.centroid + pose[:3, 3]],
