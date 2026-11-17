@@ -482,6 +482,34 @@ other layouts than before, with the base 0.28 and 0.29 m from the middle: over t
 short, more than the 10 mm the next step allows, and the first v4 runs of both ended there. The second slide is what
 was added. On v3 the same move had stopped 3 to 8 mm short and passed.
 
+The base moved under the hand (2026-11-17, the same cell and puzzle, `--perception oracle` so that only the base check
+reads a picture, the lookahead as on this branch; six builds on seeds 1, 3 and 5, each with a scripted slide of the base
+before or during every placement it reached: `--shift-base`, 22 slides in all). The slide is a teleport along one
+direction, with what is seated in the base, not a hand pushing it.
+
+| | |
+|---|---|
+| Slides of 10 mm, and of 25 mm with 5 degrees, noticed at the first check after them | 17 of 17 (6 at a bar's hover, 3 during a bar's lowering, 8 from the look above the base before a fork) |
+| Slides of 2 mm, under the 3 mm threshold, left alone | 5 of 5; the piece then went in up to 1.1 mm from the CAD |
+| Piece seated after its slide | 22 of 22, on the first attempt, 0.11 to 1.10 mm from the CAD (median 0.72) |
+| The fit, per check (57 checks) | 84 ms median, 122 ms at most, on one core beside three other simulators; 0.24 mm from the simulator's truth at the median, 0.94 mm at most at a hover and 0.65 mm from the look |
+| The fit while lowering, closer to the base and seeing less of it | up to 2.0 mm and 2.7 degrees off. It is only what sends the arm back up; the correction is measured again at the hover |
+| The picture, in the simulator | 0.54 to 1.8 s, two renders each time (below). Not a camera's time: a D415 frame is 33 ms |
+| From noticing to lowering again | 0.7 to 0.83 simulated seconds of motion at a hover, none after a look; 15 to 56 s of wall time, nearly all of it the Newton lookahead of what is left of the placement |
+| A slide during the lowering | noticed at the next check, at most one 10 mm stage (1.2 simulated seconds) after it; in these runs the slide was made just before a check |
+| Builds completed | 4 of 6. Both builds of seed 5 stopped where that layout stops without any slide: the lookahead refuses its last fork, before it is picked |
+
+Three things these runs showed. The simulator's renderer is one picture behind whatever was last put somewhere without
+moving there (the scripted slide, a rehearsal put back): the first picture after a slide showed the base where it had
+been, and the check said steady. Every check now draws twice and reads the second; a real camera has no such lag. With
+the gripper level the wrist camera does not see enough of the base (the fit could slide along the approach for free),
+so a fork is checked from above before it is carried in, and **a base moved after that look, while a fork is carried in
+and lowered, is not noticed until the look after the placement**. And the matcher's 2 mm height-map cells put the base
+up to 1.2 mm and 1.5 degrees off under the hand; the check's own map has 0.5 mm cells. Not tried: a real depth picture
+(at a bar's hover the camera is nearer the base than a D415 measures), a base that is still moving when the picture is
+taken, a slide of more than 40 mm (the fit says unsure, the piece is put back and the table scanned; that path ran in
+the first trials, and its numbers are not in this table), and SAM 3.1 perception together with the slides.
+
 Why the base slipped, and the fingertips (the same day, after those runs). In the pictures the fingertips could be
 seen inside the pieces. Measured on a grasp alone (40 N, between the colliders, after closing and after a 120 mm
 lift): each fingertip's collider was 0.62 mm inside a bar and 0.65 to 0.72 mm inside a fork's tab. The fingertip's
