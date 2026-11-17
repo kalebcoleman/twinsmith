@@ -1,0 +1,369 @@
+{
+ "description": "The puzzle build's benchmark (scripts/puzzle_benchmark.py): the cases every branch is built on. FROZEN on 2026-11-17, before anything was tuned on them: a case is not changed, dropped or re-seeded to make a number better. The green puzzle (base3: two bars, two forks), Newton, SAM 3.1 looking, the pieces at the friction the checkout's own physics gives them. Seeds 21 and up: none of the seeds the build or its correction table were worked out on (1 to 6, 11 to 16).",
+ "perception": "sam3",
+ "timeout_s": 2400,
+ "region": [
+  [
+   -0.36,
+   -0.64
+  ],
+  [
+   0.4,
+   -0.3
+  ]
+ ],
+ "hidden": [
+  [
+   [
+    -0.068,
+    -0.379
+   ],
+   [
+    0.135,
+    -0.25
+   ]
+  ],
+  [
+   [
+    -0.154,
+    -0.26
+   ],
+   [
+    0.224,
+    -0.088
+   ]
+  ]
+ ],
+ "layouts": {
+  "scatter": {
+   "what": "The pieces anywhere in the region, 35 mm apart, the base 0.24 to 0.32 m to either side of the middle: as the build's own scatter lays them."
+  },
+  "base_left": {
+   "what": "The base starts on the left of the middle; the pieces anywhere.",
+   "side": -1
+  },
+  "base_right": {
+   "what": "The base starts on the right of the middle; the pieces anywhere.",
+   "side": 1
+  },
+  "tight": {
+   "what": "The loose pieces close together: every middle within 0.13 m of one point, and 22 mm between pieces where the others have 35 mm. An open finger needs 18.4 mm.",
+   "cluster_m": 0.13,
+   "gap_m": 0.022
+  },
+  "far": {
+   "what": "Both forks in the far part of the table, away from the robot; the bars anywhere. (All four pieces do not fit there beside the base's way to the middle.)",
+   "pieces_y": [
+    -0.64,
+    -0.5
+   ],
+   "band_for": [
+    "fork_orange",
+    "fork_yellow"
+   ]
+  },
+  "near": {
+   "what": "Both forks in the near part of the table, toward the robot, where the survey looks past its own gripper; the bars anywhere.",
+   "pieces_y": [
+    -0.42,
+    -0.3
+   ],
+   "band_for": [
+    "fork_orange",
+    "fork_yellow"
+   ]
+  },
+  "pieces_left": {
+   "what": "For the long carries: the base starts on the left of its target and every loose piece lies in the left third of the table.",
+   "side": -1,
+   "pieces_x": [
+    -0.36,
+    -0.14
+   ]
+  }
+ },
+ "in_view": "Every layout lies inside region (x and y ranges of the table, metres), which is what the survey of every checkout compared sees from its pose, and outside hidden, the patches of it that a survey's own gripper hides: every piece is in view at the survey in every base case, whatever checkout builds it. A piece the scan does not find there is the loop's miss, not the layout's. Not so in the stretch cases that move the base's target outward.",
+ "base": {
+  "scatter": {
+   "seeds": [
+    21,
+    22,
+    23
+   ]
+  },
+  "base_left": {
+   "seeds": [
+    31,
+    32,
+    33
+   ]
+  },
+  "base_right": {
+   "seeds": [
+    41,
+    42,
+    43
+   ]
+  },
+  "tight": {
+   "seeds": [
+    51,
+    52,
+    53
+   ]
+  },
+  "far": {
+   "seeds": [
+    61,
+    62,
+    63
+   ]
+  },
+  "near": {
+   "seeds": [
+    71,
+    72,
+    73
+   ]
+  }
+ },
+ "disturbance": {
+  "what": "Made from outside the build, by scripts/puzzle_disturb.py, when the build prints the caption named; the build is not told. Recovered means every piece seated at the end and the graph ended in success.",
+  "piece_knocked": {
+   "kind": "piece_knocked",
+   "piece": "line_red",
+   "mm": 50,
+   "on_caption": "line_red: approaching",
+   "on": [
+    [
+     "scatter",
+     21
+    ],
+    [
+     "base_left",
+     32
+    ],
+    [
+     "far",
+     63
+    ]
+   ]
+  },
+  "base_moved": {
+   "kind": "base_moved",
+   "mm": 25,
+   "deg": 5,
+   "on_caption": "line_red: carrying it over its slot",
+   "on": [
+    [
+     "scatter",
+     21
+    ],
+    [
+     "base_left",
+     32
+    ],
+    [
+     "far",
+     63
+    ]
+   ]
+  },
+  "table_shift_50": {
+   "kind": "table_shift_50",
+   "mm": 50,
+   "on_caption": "line_red: looking again",
+   "on": [
+    [
+     "scatter",
+     21
+    ],
+    [
+     "base_left",
+     32
+    ],
+    [
+     "far",
+     63
+    ]
+   ]
+  },
+  "table_shift_100": {
+   "kind": "table_shift_100",
+   "mm": 100,
+   "on_caption": "line_red: looking again",
+   "on": [
+    [
+     "scatter",
+     21
+    ],
+    [
+     "base_left",
+     32
+    ],
+    [
+     "far",
+     63
+    ]
+   ]
+  }
+ },
+ "stretch": {
+  "what": "Reported, and outside the bar's rates: where the loop stops working.",
+  "reach_far": {
+   "what": "The base's target moved away from the robot in 40 mm steps until the build fails; the first is the build's own target.",
+   "layout": "near",
+   "seed": 81,
+   "cases": [
+    {
+     "name": "y-460",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.0,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "y-500",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.0,
+        -0.5
+       ]
+      }
+     }
+    },
+    {
+     "name": "y-540",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.0,
+        -0.54
+       ]
+      }
+     }
+    },
+    {
+     "name": "y-580",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.0,
+        -0.58
+       ]
+      }
+     }
+    },
+    {
+     "name": "y-620",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.0,
+        -0.62
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "reach_side": {
+   "what": "The base's target moved along the rail in 80 mm steps until the build fails.",
+   "layout": "base_left",
+   "seed": 82,
+   "cases": [
+    {
+     "name": "x080",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.08,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "x160",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.16,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "x240",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.24,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "x320",
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.32,
+        -0.46
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "long_carry": {
+   "what": "The base's target 0.24 m to the right of the middle and every loose piece in the left third of the table: each piece is carried 0.38 m or more.",
+   "layout": "pieces_left",
+   "cases": [
+    {
+     "name": "91",
+     "seed": 91,
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.24,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "92",
+     "seed": 92,
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.24,
+        -0.46
+       ]
+      }
+     }
+    },
+    {
+     "name": "93",
+     "seed": 93,
+     "settings": {
+      "base_target": {
+       "position_m": [
+        0.24,
+        -0.46
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}
