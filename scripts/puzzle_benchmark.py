@@ -60,7 +60,8 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
     is the kind's entry of the benchmark: ``side`` (-1 the base starts on the left, +1 on the right; either without
     it), ``pieces_x`` and ``pieces_y`` (the band the loose pieces' middles lie in; ``band_for`` names the pieces it
     holds for when not all of them), ``cluster_m`` (every loose piece's middle within this of one random point),
-    ``gap_m`` (the least room between pieces, 35 mm without it). ``region``
+    ``gap_m`` (the least room between pieces, 35 mm without it), ``also`` (pieces of another puzzle that lie on the
+    table too, anywhere in the region, laid after the puzzle's own and clear of them and of the base's way). ``region``
     is ((x low, y low), (x high, y high)) of the table that every piece lies inside, and ``hidden`` the rectangles of
     it, given the same way, that no piece may touch. Returns {piece: world pose} with the base first. ``assembly`` and
     ``puzzle_scan`` are the build's own modules, so the footprints are the build's."""
@@ -85,10 +86,11 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
             continue
         poses, keep_free = {base: start}, [assembly.footprint(pack, base, at, 0.03) for at in assembly.slide_path(start, target)]
         middle = rng.uniform(*band)
-        for name in assembly.slot_poses(pack, base):
-            band_low, band_high = band if name in spec.get("band_for", [name]) else (low, high)
+        own, also = list(assembly.slot_poses(pack, base)), list(spec.get("also", ()))
+        for name in (*own, *also):
+            band_low, band_high = band if name in own and name in spec.get("band_for", [name]) else (low, high)
             for _ in range(PIECE_TRIES):
-                reach = spec.get("cluster_m")
+                reach = spec.get("cluster_m") if name in own else None
                 xy = middle + rng.uniform(-reach, reach, 2) if reach else rng.uniform(band_low, band_high)
                 if not ((xy >= band_low).all() and (xy <= band_high).all()):
                     continue
@@ -100,7 +102,7 @@ def lay_out(assembly, puzzle_scan, pack, base, target, rng, spec, region, hidden
                     break
             else:
                 break
-        if len(poses) == len(pack.assemblies[base]) + 1:
+        if len(poses) == 1 + len(own) + len(also):
             return poses
     raise ValueError(f"no layout of this kind was found: {spec}")
 

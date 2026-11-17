@@ -168,7 +168,6 @@ class Build:
         self.order = assembly.build_order(pack, self.base)
         self.slots = assembly.slot_poses(pack, self.base)
         self.names = [self.base, *self.slots]
-        self.paths = {name: f"{PUZZLE}/{name}" for name in self.names}
         self.estimate, self.placed, self.held, self.looks, self.marks, self.adjust, self.avoid = {}, [], None, 0, [], {}, {}
         self.metrics = {name: {"attempts": 0} for name in self.slots}
         self.correction = args.correction                   # where a place's in-hand correction comes from: lookahead, table or none
@@ -193,6 +192,7 @@ class Build:
 
     def start(self, layout):
         """Build the cell with the layout, park the rail and start filming."""
+        self.paths = {name: f"{PUZZLE}/{name}" for name in layout}      # all that lies on the table: another puzzle's pieces are seen and kept clear of
         with self.log.step("build stage"):
             task = puzzle_scan.write_task(assembly.layout_estimate(self.pack, layout), self.out / "task", "puzzle_build.py, a random layout")
             built = self.cell.build(task, self.config["start_joint_deg"], 0.05, self.args.discard_changes)
@@ -333,17 +333,18 @@ class Build:
         top = cell.pose(np.diag([1.0, -1.0, -1.0]), np.array(survey["look_at_m"]) + [0.0, 0.0, survey["height_m"]])
         return [("top", top), *((view["name"], self._view(view["eye_m"], view["look_at_m"], view.get("roll_deg", 0.0))) for view in self.config["scan"]["views"])]
 
-    def _sweep(self, folder):
-        """Stop at every view and, when there is a camera to read, take its pictures there; then back to the first
-        view. With pictures, ``folder`` becomes what a scan mover writes on the robot's side (``scan_mover.multiview/1``:
-        a manifest and one stationary capture per view). Returns the views' names."""
-        views, taken, frames = self._views(), [], self.config["scan"]["frames"]
-        base = self.cell.world_from_base
+    def _sweep(self, folder, views, taken):
+        """Stop at each of ``views`` ([(name, world from camera)], numbered on from the views already ``taken``) and,
+        when there is a camera to read, take its pictures there. With pictures, ``folder`` becomes what a scan mover
+        writes on the robot's side (``scan_mover.multiview/1``: a manifest and one stationary capture per view, those
+        taken before included). Adds to ``taken``."""
+        frames, base = self.config["scan"]["frames"], self.cell.world_from_base
         self.cell.open_to(0.0)
-        for number, (name, eye) in enumerate(views):
+        for number, (name, eye) in enumerate(views, start=len(taken)):
             self.say(f"scan: view {name}")
             self.cell.camera_to(eye)
             if self.args.perception == "oracle":
+                taken.append({"name": name})
                 continue
             clip = self.cell.record("wrist", folder / "views" / f"{number:02d}_{name}", frames=frames)
             camera = json.loads((clip / "camera.json").read_text())
@@ -361,8 +362,7 @@ class Build:
                             "world_from_camera": frame["world_from_camera"]} for index, frame in enumerate(camera["frames"])]}) + "\n")
             taken.append({"index": number, "name": name, "folder": f"views/{number:02d}_{name}", "frames": frames, "joints_rad": joints,
                           **{key: at.tolist() for key, at in poses.items()}})
-        self.cell.camera_to(views[0][1])
-        if taken:
+        if self.args.perception != "oracle":
             (folder / "manifest.json").write_text(json.dumps({
                 "schema": "scan_mover.multiview/1", "created": time.strftime("%Y-%m-%dT%H:%M:%S"), "state": "complete", "why": None, "command": "scan",
                 "mock_robot": True, "rail_mm": self.config["rail_mm"], "joint_names": list(cell.ARM),
@@ -370,7 +370,6 @@ class Build:
                 "camera": {"kind": "rendered", "synthetic": True, "colour": intrinsics, "depth_scale_m": camera["depth_scale"], "depth_aligned_to": "colour"},
                 "capture": {"frames_per_view": frames, "written_by": "twinsmith scripts/puzzle_build.py, the scan step"}, "views": taken,
                 "disclosures": ["NOT a capture: pictures rendered by the simulator (noise-free depth, exact intrinsics and camera poses)"]}, indent=1) + "\n")
-        return [name for name, _ in views]
 
     def _combine(self, folder):
         """The scan folder's views as one estimate, by the multi-view cycle ``--scan-cycle`` names (a command given a
@@ -385,9 +384,27 @@ class Build:
             raise Refused(f"the scan's cycle gave no estimate ({folder / 'cycle.log'}): {(done.stdout + done.stderr)[-300:]}")
         return json.loads((folder / "answer/estimate.json").read_text())
 
+    def _seen(self, folder):
+        """The scan's views taken and combined: (the cycle's report, the names of the views taken). From above first,
+        the survey's own view, and from the sides only when that leaves a piece in doubt: the views from the sides
+        tell a piece's rival poses apart and add nothing to a table read without doubt (in 16 scans of simulated
+        builds the view from above left none). With ``--perception oracle`` there is no report and no doubt."""
+        views, taken = self._views(), []
+        self._sweep(folder / "scan", views[:1], taken)
+        if self.args.perception == "oracle":
+            return {}, [view["name"] for view in taken]
+        report = self._combine(folder)
+        if report.get("doubtful"):
+            self.say(f"scan: {', '.join(report['doubtful'])} in doubt from above; the views from the sides")
+            (folder / "answer").rename(folder / "answer_from_above")
+            self._sweep(folder / "scan", views[1:], taken)
+            self.cell.camera_to(views[0][1])
+            report = self._combine(folder)
+        return report, [view["name"] for view in taken]
+
     @stepped("scan")
     def scan(self):
-        """Scan the table: sweep the views, combine them into one estimate, rebuild the twin from it (the estimate
+        """Scan the table: take the views, combine them into one estimate, rebuild the twin from it (the estimate
         the lookahead simulates from, and its task file), and say what the build has to do next. It is the graph's
         first step, and the step it comes back to when a pick closed on nothing or a look found the table changed."""
         self.scans, self.looks = self.scans + 1, self.looks + 1
@@ -402,8 +419,7 @@ class Build:
             self.cell.open_to(0.08)
             self.cell.gripper_line(shifted(at, [0, 0, CARRY_M]), self.config["speeds"]["approach_m_s"])
         self.held = None
-        self.say("scan: sweeping the views")
-        views = self._sweep(folder / "scan")
+        report, views = self._seen(folder)
         truth, name = self.truth(), f"look_{self.looks:02d}_scan"
         outlines = lambda poses: {piece: {"xyz": [round(float(v), 5) for v in at[:3, 3]],
                                           "outline": np.round(assembly.footprint(self.pack, piece, at), 5).tolist()} for piece, at in poses.items()}
@@ -411,10 +427,9 @@ class Build:
         self.look_log.append(record)
         self.log.note(look=self.looks, views=views)
         if self.args.perception == "oracle":
-            seen, report = truth, {}
+            seen = truth
             record.update(estimate=outlines(truth), oracle=True)
         else:
-            report = self._combine(folder)
             report["score"] = puzzle_scan.score(report, {piece: at.tolist() for piece, at in truth.items()}, self.pack)
             seen = {piece["name"]: cell.pose(np.array(piece["rotation"]), piece["position_m"]) for piece in report["pieces"]}
             shutil.copy(folder / "answer/real_rgb.png", self.out / f"{name}.png")
@@ -442,7 +457,7 @@ class Build:
             following = next((step["piece"] for step in self.order if step["piece"] not in self.placed), "done")
         else:
             following, self.base_slides = self.base, 0
-        doubtful = sorted(set(report.get("doubtful", [])) - set(self.placed))
+        doubtful = sorted((set(report.get("doubtful", [])) & set(self.names)) - set(self.placed))       # another puzzle's pieces stay obstacles where they were seen
         if doubtful:
             raise Refused(f"the scan leaves {doubtful} in doubt; one more view would be: {(report.get('next_view') or {}).get('view')}")
         puzzle_scan.write_task(assembly.layout_estimate(self.pack, {piece: self._twin_pose(piece) for piece in self.estimate}), folder / "task",
@@ -502,7 +517,8 @@ class Build:
             self.cell.kit(f"base_check = Recorder({prim!r}, {body!r}, {str(self.checker)!r}, {[intrinsics['width'], intrinsics['height']]!r}, {intrinsics!r})")
         # Two pictures, the second one read: the simulator's renderer is one picture behind whatever was last put
         # somewhere without moving there (a rehearsal put back, the test's slide of the base). A camera has no such lag.
-        index, frame, scale = self.cell.kit("await shoot([base_check]); shot = await shoot([base_check]); "
+        # Between pictures the recorder is idle: kept awake, it has every render step of the build draw its picture too.
+        index, frame, scale = self.cell.kit("base_check.idle(False); await shoot([base_check]); shot = await shoot([base_check]); base_check.idle(True); "
                                             "result = [shot[0], base_check.frames[shot[0]], base_check.intrinsics['depth_scale']]")
         depth = np.asarray(Image.open(self.checker / "depth" / f"{index:05d}.png"), dtype=np.float32) * scale
         return depth, {**intrinsics, "pose": np.array(frame["world_from_camera"]), "depth_scale": scale}, round(1000 * (time.perf_counter() - began), 1), index

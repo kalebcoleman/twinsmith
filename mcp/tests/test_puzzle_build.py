@@ -3,6 +3,7 @@ simulator, no camera."""
 
 import importlib.util
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -114,6 +115,70 @@ def test_a_shift_measured_one_way_round_is_turned_with_the_gripper():
     # way it points: what was to the gripper's -y is to its +y, and how far out along the fingers is the same.
     assert np.allclose(cell._table_shift("fork", False), shift(-0.5, 2.0, -4.0))
     assert build.in_hand_shift(cell._table_shift("fork", False)) == build.in_hand_shift(cell._table_shift("fork", True))
+
+
+def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypatch):
+    import contextlib
+
+    spot = lambda x: assembly.pose(np.eye(3), [x, 0.0, 0.0])
+    ways = [{"pick": spot(way), "place": spot(way + 0.5)} for way in range(3)]
+    monkeypatch.setattr(assembly, "choose_grasps", lambda *given, **named: list(ways))
+
+    class Arm:
+        wrist_from_gripper = np.eye(4)
+
+        def __init__(self, wrist_3_deg, out_of_reach=()):
+            self.turns, self.far = wrist_3_deg, out_of_reach
+
+        def timed(self, what):
+            return contextlib.nullcontext()
+
+        def reconfigure(self, pose):
+            way = int(pose[0, 3])                             # every pose of a way has its x between way and way + 1
+            if way in self.far:
+                raise session.MoveFailed("out of reach")
+            return {"wrist_3_joint": math.radians(self.turns[way])}
+
+    def taken(arm, avoid=()):
+        cell = object.__new__(build.Build)
+        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": [-60.0, 110.0]}}
+        cell.pack, cell.cell, cell.avoid = None, arm, {"bar": set(avoid)}
+        return cell._grasp("bar", spot(0), spot(0.5), {}, {})
+
+    first = taken(Arm([20.0, 30.0, 40.0]))
+    assert first["way"] == 0 and first["wrist_3_deg"] == [20.0, 20.0, 20.0]        # all inside: the order of the ways decides, as before
+    assert taken(Arm([150.0, 30.0, 40.0]))["way"] == 1                            # the first way winds the cord: the next inside the window
+    assert taken(Arm([150.0, 30.0, 40.0]), avoid=[1])["way"] == 2                 # a way a lookahead found blocked is still passed over
+    assert taken(Arm([150.0, -90.0, 170.0]))["way"] == 0                          # none inside: the first within reach, and the record says so
+    assert taken(Arm([150.0, -90.0, 170.0], out_of_reach=[0]))["way"] == 1
+    with pytest.raises(build.Refused, match="within reach"):
+        taken(Arm([20.0, 30.0, 40.0], out_of_reach=[0, 1, 2]))
+
+
+def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_piece_in_doubt(tmp_path):
+    def scanned(doubt_from_above, perception="sam3"):
+        cell = object.__new__(build.Build)
+        cell.args, cell.said, cell.combined = type("Args", (), {"perception": perception})(), [], []
+        cell.say, cell.cell = cell.said.append, type("Arm", (), {"camera_to": lambda self, eye: cell.said.append("back above")})()
+        cell._views = lambda: [("top", 0), ("left", 1), ("right", 2)]
+        cell._sweep = lambda folder, views, taken: taken.extend({"name": name} for name, eye in views)
+        folder = tmp_path / f"{perception}_{len(doubt_from_above)}"
+
+        def combine(given):
+            (given / "answer").mkdir(parents=True)
+            cell.combined.append(sorted(path.name for path in given.iterdir()))
+            return {"doubtful": doubt_from_above if len(cell.combined) == 1 else [], "views": len(cell.combined)}
+
+        cell._combine = combine
+        return cell, *cell._seen(folder)
+
+    cell, report, views = scanned([])
+    assert views == ["top"] and report["views"] == 1 and cell.said == []          # nothing in doubt: one view, one pass of the cycle
+    cell, report, views = scanned(["bar"])
+    assert views == ["top", "left", "right"] and report == {"doubtful": [], "views": 2}
+    assert cell.combined[1] == ["answer", "answer_from_above"] and "bar in doubt from above" in cell.said[0] and cell.said[-1] == "back above"
+    cell, report, views = scanned(["bar"], perception="oracle")
+    assert (report, views, cell.combined) == ({}, ["top"], [])                    # the simulator's own poses: no cycle and no doubt
 
 
 def test_without_a_lookahead_nothing_is_simulated_and_the_answer_is_go():

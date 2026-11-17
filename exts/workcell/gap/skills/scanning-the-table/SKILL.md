@@ -1,8 +1,9 @@
 ---
 name: scanning-the-table
-description: Scan the whole table before anything is planned - sweep the wrist camera over several views, combine
-  them into one estimate of every piece (SAM 3.1 and the CAD match on the first view, the depth of every view
-  checked against it), rebuild the simulated twin from that estimate and say what the build has to do next. Use
+description: Scan the whole table before anything is planned - look with the wrist camera from above, and from the
+  sides too when that leaves a piece in doubt, combine the views into one estimate of every piece (SAM 3.1 and
+  the CAD match on the first view, the depth of every view checked against it), rebuild the simulated twin from
+  that estimate and say what the build has to do next. Use
   when a graph starts on a table it has not seen, and again whenever a pick closed on nothing or a look found a
   piece or the base elsewhere than the last scan put it.
 compatibility: requires gap>=0.1
@@ -18,9 +19,12 @@ gap:
 
 # scanning-the-table
 
-One tool, `workcell.scan`. It stops the wrist camera at each configured view, the first
-straight down (the view the matcher reads), hands the views to the multi-view cycle as the folder a scan mover
-writes on the robot's side (`scan_mover.multiview/1`), and takes the cycle's one estimate as where everything is.
+One tool, `workcell.scan`. It stops the wrist camera straight above the table (the view the matcher reads), hands
+the view to the multi-view cycle as the folder a scan mover writes on the robot's side
+(`scan_mover.multiview/1`), and takes the cycle's one estimate as where everything is. When the cycle leaves a
+piece in doubt from above (two poses its depth cannot tell apart), the camera stops at the configured views from
+the sides as well and the cycle is given all of them; the views from the sides add nothing to a table read
+without doubt, and are not taken then.
 From it the twin is rebuilt: the poses the lookahead simulates from, and a task file of the scene. The scan then
 works out what is already done (the base in the middle, pieces seated in it) and returns `next`: the base's name,
 the next piece of the build order, or `done`.

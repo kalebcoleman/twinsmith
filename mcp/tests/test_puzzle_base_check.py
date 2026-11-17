@@ -47,7 +47,7 @@ def seen(pack, poses, cam, **more):
     return base_check.world_points(scan.render(pack, poses, cam, **more)[1], cam, stride=3)
 
 
-@pytest.mark.parametrize("shift_mm, yaw_deg", [(0.0, 0.0), (2.0, 0.0), (10.0, 0.0), (25.0, 5.0), (10.0, -5.0)])
+@pytest.mark.parametrize("shift_mm, yaw_deg", [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (10.0, 0.0), (25.0, 5.0), (10.0, -5.0)])
 def test_a_slid_base_is_found_from_one_depth_picture(pack, shift_mm, yaw_deg):
     last = plate((0.0, -0.46), 90.0)
     now = plate((shift_mm / 1000 * math.cos(0.6), -0.46 + shift_mm / 1000 * math.sin(0.6)), 90.0 + yaw_deg)
@@ -55,7 +55,8 @@ def test_a_slid_base_is_found_from_one_depth_picture(pack, shift_mm, yaw_deg):
     off = np.linalg.norm(found["pose"][:2, 3] - now[:2, 3]) * 1000
     turned = abs(math.degrees(math.atan2(found["pose"][1, 0], found["pose"][0, 0])) - 90.0 - yaw_deg)
     assert off < 0.5 and turned < 0.35, found
-    assert found["verdict"] == ("moved" if shift_mm > 3.0 or abs(yaw_deg) > 1.5 else "steady")
+    assert base_check.SETTINGS["moved_mm"] == 1.5              # 2 mm is a move: a fork put in 2.6 mm off jammed
+    assert found["verdict"] == ("moved" if shift_mm > 1.5 or abs(yaw_deg) > 1.5 else "steady")
     assert abs(found["moved_mm"] - shift_mm) < 1.5 and found["agreement"] > 0.9 and found["on_base"] > 300
     assert found["fit_ms"] < 300.0                            # the budget: one picture's fit, on one core
 
