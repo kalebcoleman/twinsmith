@@ -312,21 +312,25 @@ class Build:
     SCAN_MOVED_M, SCAN_MOVED_DEG = 0.005, 5.0       # a piece this far from where the last scan put it: the table has changed
     BASE_LINK_FROM_BASE = np.diag([-1.0, -1.0, 1.0, 1.0])     # ROS base_link is the UR controller's Base turned half round about z
 
+    @staticmethod
+    def _view(eye_m, look_at_m, roll_deg=0.0):
+        """World from the wrist camera's optical frame for a view: where the camera is, the point it looks at, and its
+        turn about the line of sight (0: the picture's right as near the world's x as the view allows). The turn
+        changes nothing of what is in the middle of the picture; it sets how far wrist 3 has to turn to see it, and
+        which side of the table the camera's own gripper hides."""
+        forward = np.subtract(look_at_m, eye_m)
+        forward = forward / np.linalg.norm(forward)
+        right = np.array([1.0, 0.0, 0.0]) - forward[0] * forward
+        right, roll = right / np.linalg.norm(right), math.radians(roll_deg)
+        right = math.cos(roll) * right + math.sin(roll) * np.cross(forward, right)
+        return cell.pose(np.column_stack([right, np.cross(forward, right), forward]), eye_m)
+
     def _views(self):
         """The scan's views, the survey's own first (the matcher reads the first): [(name, world from the wrist
-        camera's optical frame)]. A view is where the camera is and the point it looks at, the picture's right
-        staying as near the world's x as the view allows."""
+        camera's optical frame)]."""
         survey = self.config["survey"]
-        given = [{"name": "top", "eye_m": np.add(survey["look_at_m"], [0.0, 0.0, survey["height_m"]]), "look_at_m": survey["look_at_m"]},
-                 *self.config["scan"]["views"]]
-        views = []
-        for view in given:
-            forward = np.subtract(view["look_at_m"], view["eye_m"])
-            forward = forward / np.linalg.norm(forward)
-            right = np.array([1.0, 0.0, 0.0]) - forward[0] * forward
-            right = right / np.linalg.norm(right)
-            views.append((view["name"], cell.pose(np.column_stack([right, np.cross(forward, right), forward]), view["eye_m"])))
-        return views
+        top = cell.pose(np.diag([1.0, -1.0, -1.0]), np.array(survey["look_at_m"]) + [0.0, 0.0, survey["height_m"]])
+        return [("top", top), *((view["name"], self._view(view["eye_m"], view["look_at_m"], view.get("roll_deg", 0.0))) for view in self.config["scan"]["views"])]
 
     def _sweep(self, folder):
         """Stop at every view and, when there is a camera to read, take its pictures there; then back to the first
@@ -646,10 +650,11 @@ class Build:
         self.put_back = None
         if self._sees_base():
             return True
-        with self.log.step("look", piece, height_m=self.config["base_check"]["look_height_m"]):
+        look = self.config["base_check"]["look"]
+        with self.log.step("look", piece, **look):
             self.say(f"{piece}: a look at the base from above before it is carried in level")
-            over = self.estimate[self.base][:3, 3] + [0.0, 0.0, self.config["base_check"]["look_height_m"]]
-            self.cell.camera_to(cell.pose(np.diag([1.0, -1.0, -1.0]), over))
+            over = self.estimate[self.base][:3, 3] * [1, 1, 0] + [*look["offset_m"], 0.0]
+            self.cell.camera_to(self._view(over + [0.0, 0.0, look["height_m"]], over, look["roll_deg"]))
         return self._vouch(piece, "look")
 
     def _descend(self, piece):
@@ -717,15 +722,22 @@ class Build:
                                              open_m=self.config["open_beyond_m"], hover_m=HOVER_M, refused=why)
         if not options:
             raise Refused(f"no grasp of {piece} fits: {'; '.join(why[:3]) or 'it does not lie the way its grasp takes it, from above'}")
+        low, high = np.radians(self.config["arm"]["wrist_3_deg"])
+        in_reach = []
         for way, option in enumerate(options):
             if way in self.avoid.get(piece, ()):
                 continue
             try:
-                for at in (option["pick"], option["place"], shifted(option["place"], np.array(axis) * clear_m)):
-                    self.cell.reconfigure(self._tcp(at, grasp["width_m"]) @ back)
+                turned = [self.cell.reconfigure(self._tcp(at, grasp["width_m"]) @ back)["wrist_3_joint"]
+                          for at in (option["pick"], option["place"], shifted(option["place"], np.array(axis) * clear_m))]
             except cell.MoveFailed:
                 continue
-            return {**option, "width_m": grasp["width_m"], "piece": piece, "way": way}
+            hold = {**option, "width_m": grasp["width_m"], "piece": piece, "way": way, "wrist_3_deg": [round(math.degrees(q), 1) for q in turned]}
+            if all(low <= q <= high for q in turned):       # the camera's cord: the way that winds wrist 3 least out of its window
+                return hold
+            in_reach.append(hold)
+        if in_reach:
+            return in_reach[0]
         raise Refused(f"no grasp of {piece} that fits is within reach")
 
     @staticmethod
@@ -766,8 +778,10 @@ class Build:
 
     def _grasp_plan(self, piece, hold):
         """A chosen grasp as the run's log keeps it: its definition on the CAD and which way of holding was taken."""
+        low, high = self.config["arm"]["wrist_3_deg"]
         return {**{key: self.config["grasps"][piece][key] for key in ("point_m", "closing_axis", "approach_axis", "width_m", "what")},
-                "way": hold["way"], "gripper_in_piece": np.round(hold["in_piece"], 5).tolist(), "force_n": self.config["grip_force_n"]}
+                "way": hold["way"], "gripper_in_piece": np.round(hold["in_piece"], 5).tolist(), "force_n": self.config["grip_force_n"],
+                "wrist_3_deg": hold["wrist_3_deg"], "wrist_3_in_window": all(low <= turned <= high for turned in hold["wrist_3_deg"])}
 
     def _seat(self, piece):
         return self.estimate[self.base] @ self.slots[piece]
