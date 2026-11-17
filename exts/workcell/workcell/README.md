@@ -129,7 +129,8 @@ How a piece is recognised:
   level of a mask, is tried the same way and takes that pose only when its cost is lower by 0.05. Such a piece's row
   says how it stands (`rest: tilted`, `tilt_deg`, `lowest_point_mm`, `support`), and when another pose fits nearly as
   well it is given whole (`other_pose`), not chosen between. Two poses up to 8 mm inside each other are one piece
-  resting on the other: the upper is moved straight up by that much and says so (`moved_up_mm`).
+  resting on the other when lifting the upper straight up by that much takes it out of the lower: it is moved and says
+  so (`moved_up_mm`). Inside each other sideways, no lift parts them and one piece per place, below, applies.
 - **The gripper in the picture.** A mask that is mostly more than 0.25 m above the table is the gripper the camera
   rides on, and neither it nor the mixed depth round its edge is an object.
 - **What SAM 3 left out.** Raised surface in no mask is cut into regions of level height (a piece standing beside

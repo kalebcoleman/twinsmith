@@ -714,6 +714,15 @@ def _overlap(pack, a, b):
     return worst
 
 
+def _lifted_clear(pack, upper, lower, depth):
+    """The upper piece's pose moved straight up by ``depth`` and half a millimetre, when that takes it out of the lower
+    one: a piece resting on another and found a little inside it. None when it does not, as when the two are inside
+    each other sideways, where no lift parts them."""
+    pose = upper["pose"].copy()
+    pose[2, 3] += depth + 0.0005
+    return pose if _overlap(pack, lower, {"name": upper["name"], "pose": pose}) <= 0.003 else None
+
+
 def _hue(colour):
     """Hue in degrees of a linear RGB colour, or None for a grey."""
     high, low = float(np.max(colour)), float(np.min(colour))
@@ -960,15 +969,16 @@ def match(scan, pack):
         for b in [piece for piece in pieces if piece is not a]:
             depth = _overlap(pack, a, b)
             # A piece resting on another is found a few millimetres inside it as often as above it. The upper of the
-            # two is moved straight up by that much and says so; deeper than CLEAR_M the worse fit is still withdrawn.
+            # two is moved straight up by that much and says so, when that takes it out of the lower one. Inside each
+            # other sideways no lift parts them, and deeper than CLEAR_M: the worse fit is still withdrawn.
             upper = max((a, b), key=lambda piece: piece["pose"][2, 3] + piece.get("lift", 0.0))
+            lower = b if upper is a else a
             if 0.003 < depth <= CLEAR_M and (upper["support"] == "raised" or upper["rest"] == "tilted") and upper["rest"] != "assembled":
-                lower = b if upper is a else a
-                rise = depth + 0.0005
-                upper["pose"] = upper["pose"].copy()
-                upper["pose"][2, 3] += rise
-                upper.update(moved_up_mm=round(upper.get("moved_up_mm", 0.0) + rise * 1000, 1), cleared=lower["name"])
-                continue
+                lifted = _lifted_clear(pack, upper, lower, depth)
+                if lifted is not None:
+                    rise = float(lifted[2, 3] - upper["pose"][2, 3])
+                    upper.update(pose=lifted, moved_up_mm=round(upper.get("moved_up_mm", 0.0) + rise * 1000, 1), cleared=lower["name"])
+                    continue
             if depth > 0.003:
                 pieces.remove(b)
                 free.add(b["name"])
