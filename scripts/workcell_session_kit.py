@@ -150,10 +150,17 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
     and advance physics ``steps`` after each, without a round trip per row. The count of steps starts at ``done``:
     each time it reaches a multiple of ``every`` every recorder in ``film`` saves a frame, and at each multiple of
     ``sample`` the joint positions are read. Returns ``{"shot": frames per recorder, "samples": [[count, position
-    per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping and filming."""
+    per DOF]], "physics_s", "render_s"}``, the last two being the wall time spent stepping and filming. A stretch of
+    stepping is timed as a whole, until the GPU has finished it: ``physics.step`` returns while steps are still queued
+    there, so a clock stopped when it returns reads short, and waiting after every single step keeps the GPU idle
+    while the next row is prepared (measured on the work cell, a target and a step per row: 2.5 ms a step against
+    1.1 ms with one wait at the end). The writes of the targets and the reads of the samples are in ``physics_s``."""
     view, out = physics.view_for(articulation, articulation=True), {"shot": 0, "samples": [], "physics_s": 0.0, "render_s": 0.0}
     targets = physics.dof_row(view, view.get_dof_position_targets())        # read once: reading it back before every row cost 3 ms a row
+    began = None                                         # when the stretch of stepping that is under way started
     for row in rows:
+        if began is None:
+            began = time.perf_counter()
         if row:
             for index, value in row.items():
                 targets[0, int(index)] = value
@@ -161,18 +168,40 @@ async def drive(articulation, rows, steps, film=(), every=0, done=0, sample=0):
         left = steps
         while left:
             count = min([left] + ([every - done % every] if film else []) + ([sample - done % sample] if sample else []))
-            started = time.perf_counter()
             physics.step(_stage(), count)
-            out["physics_s"] += time.perf_counter() - started
             left, done = left - count, done + count
             if sample and done % sample == 0:
                 out["samples"].append([done, *physics.dof_row(view, view.get_dof_positions())[0].tolist()])
             if film and done % every == 0:
+                wp.synchronize()                         # the stretch ends here: what the GPU still owes it is not filming
                 started = time.perf_counter()
+                out["physics_s"] += started - began
                 await shoot(film)
                 out["render_s"] += time.perf_counter() - started
                 out["shot"] += 1
+                began = time.perf_counter() if left else None
+    if began is not None:
+        wp.synchronize()
+        out["physics_s"] += time.perf_counter() - began
     return out
+
+
+def solver_friction(prefixes):
+    """The friction coefficients Newton's own model holds for the shapes under each prim path that collide with other
+    shapes: {path: sorted coefficients}. Read from the solver's model after Play, not from the stage: a material bound
+    where Newton does not look leaves the solver's default, and only this shows it. A body's drawn mesh is a shape of
+    the model too, with the default coefficient and no collisions; it is left out, so that a default among the
+    answers means a collider that the material did not reach."""
+    import newton
+    from isaacsim.physics.newton import acquire_stage
+
+    model = acquire_stage().model
+    labels = list(getattr(model, "shape_label", None) or getattr(model, "shape_key"))
+    mu, flags = model.shape_material_mu.numpy(), model.shape_flags.numpy()
+    collides = int(newton.ShapeFlags.COLLIDE_SHAPES)
+    return {prefix: sorted({round(float(mu[index]), 4) for index, label in enumerate(labels)
+                            if int(flags[index]) & collides and (label == prefix or label.startswith(prefix + "/"))})
+            for prefix in prefixes}
 
 
 class Checkpoint:

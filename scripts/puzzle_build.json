@@ -42,6 +42,10 @@
    "point_m": [0.0, -0.0255, 0.006], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.021
   }
  },
+ "corrected_from_table": {
+  "what": "The pieces whose place --correction table shifts by the table's entry for their type (scripts/puzzle_build_corrections.json); a measuring run (--write-corrections) rehearses exactly these. The forks: picked lying flat by the tab and turned upright in the hand, they sit 1.5 to 6.5 mm from the grasp as defined. Not the bars: a bar sits 0.4 to 3.4 mm off in no steady direction, a correction lowers the gripper (the arm hangs about 1 mm low at the pick, so the pads hold the bar lower than defined), and the bar's grasp leaves the pads only 0.5 mm above the slot's walls. With the bars corrected too the build seated 18 of 24 pieces over six layouts, against 23 of 24 without (2026-11-17).",
+  "pieces": ["fork_orange", "fork_yellow"]
+ },
  "table_camera": {
   "what": "A second camera for the video only: any camera on a tripod beyond the table's far edge. Off unless --table-camera is given; drawn on the stage for the run, not part of the ur5e-workcell pack, and no step of the build reads it.",
   "width": 1280, "height": 720, "fx": 900.0, "fy": 900.0,

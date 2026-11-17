@@ -272,7 +272,9 @@ piece. It talks to one simulator bridge on this machine and cannot reach a real 
 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
-seeing one; `--no-lookahead` skips simulating ahead. Run it with the host environment's Python (NumPy, SciPy, Pillow).
+seeing one. `--correction table` (the default), `lookahead` or `none` says how a place allows for the way the piece
+sits in the hand ([below](#correcting-the-place-three-ways)). Run it with the host environment's Python (NumPy, SciPy,
+Pillow).
 The keep-out boxes of the gripper and the camera, and what the closed gripper hides in the wrist camera's own picture
 (both in `scripts/puzzle_assembly.py`), and the measured runs below are of `ur5e-workcell/v4`, the pack with the
 calibrated wrist camera. On a cell built from another pack the run stops after building it, unless
@@ -288,7 +290,9 @@ piece, defined on the piece's CAD (a point, a closing axis, an approach axis, a 
 | Survey | Wrist D415 straight down from 0.72 m, gripper closed. At the calibrated camera pose the gripper fills the top middle of the picture and its fingertips end at the picture's centre, so the point looked at is 90 mm to the robot's side of the middle of the table: the base in the middle is then wholly in view, and a layout puts no piece where the gripper hides the table (`puzzle_assembly.hidden_on_table`). The `sam3` tool (SAM 3.1) masks the pieces; `puzzle_scan` names and poses them against the CAD. Every later look is the same, from the same pose |
 | Build order | `puzzle_assembly.build_order`: the assembled CAD is taken apart piece by piece along directions in which nothing is in the way; reversed, that is the order, each piece's slot axis and the pieces it needs in first |
 | Base | Gripped by its centre island, fingertips in the bar slots, and slid on the table to the middle. Lifted by that 7 mm island it tilted 7 degrees in the fingers. Slid, it slips in the fingers and stops short, by 3 to 20 mm: the look that follows measures where it stopped, and a base more than 10 mm (and less than 50 mm) from the middle is slid once more from there |
-| Lookahead | Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort |
+| Grasp check | `puzzle_assembly.choose_grasps`, on the CPU, before every pick: each way of holding the piece is tried on the CAD against a keep-out model of the gripper and the camera. The gripper is tested as it comes down (open 16 mm wider than it grips, from the hover to the piece) and as it holds the piece at the pick and along the insertion; the held piece is tested along the insertion too. Everything the robot believes is on the table counts at both ends: the base, the pieces it has placed, and the loose ones where the last look saw them. No way fits: the step is refused, with the reason in words |
+| Correcting the place | A piece does not sit in the closed gripper exactly as its grasp is defined, and the place is shifted by how it does sit: from a table of one shift per piece type, from a lookahead, or not at all (`--correction`, [below](#correcting-the-place-three-ways)). The gripper is checked again at the corrected place, and a place it does not fit is refused |
+| Lookahead | Only with `--correction lookahead`. Before each piece: the stage's physics state is saved, the pieces are put where the scan says they are, the pick and the insertion are simulated on Newton, and the state is put back. Over the slot the try reads how the piece sits in the hand (in the twin, where that can be read) and corrects the place by it before lowering; the real pick then uses that grasp. A try in which the arm is blocked is repeated with the next way of holding the piece; then go or abort. It says abort when the piece does not end seated, and also when any other piece ends 3 mm from where it was |
 | Pick and insert | Open, pads round the piece, close at the gripper's force, lift 0.12 m, carry over the slot, lower along the slot axis at 10 mm/s, let go, back away 0.08 m and rise 0.15 m |
 | Look again | From the survey pose. The piece is placed when the scan finds it assembled in its slot; a piece seen loose and flat is tried once more |
 
@@ -304,7 +308,9 @@ puzzle looks complete at the end. Those answers are recorded and decide nothing:
 The graph's trace (`<out>/trace/dag_trace.json`, `node_data/`) has every node's inputs and outputs.
 
 Outputs in `<out>`: `metrics.json` (per piece: named correctly, gripped, seated, final pose error against the CAD,
-what the lookahead said; the graph's result and checkpoints), `build.mp4` (the table camera and the wrist camera side
+which correction its place had and how far what the place assumed was from how the piece really sat, what a lookahead
+said; the friction coefficients Newton's own model holds for the pieces and the pads; the graph's result and
+checkpoints), `build.mp4` (the table camera and the wrist camera side
 by side, captioned), `key_*.png`, `look_*_masks.png` (each look with its SAM 3.1 masks), the graph, `run_log.json`
 and `viewer/`.
 
@@ -333,6 +339,118 @@ The page is panels over one value. `viewer.js` keeps a registry (`Viewer.panel(i
 run names the panels to show (`panels` in `run.js`), and `Viewer.load(run)` mounts them afresh, so a page fed a
 growing run shows it live and a page with other panels (a lab display) reads the same records. Neither is built yet:
 today the page is written once, when the run ends. The grip force plotted is the commanded limit, not a measurement.
+
+#### Correcting the place: three ways
+
+A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD: it settles as the pads close,
+and the arm hangs about 1 mm below its targets at the pick. Read over the slot in the builds of 2026-11-17, a fork sat
+1.5 to 6.5 mm from its grasp as defined (median 4.1 mm, 32 picks) and a bar 0.4 to 3.4 mm (median 1.6 mm, 41 picks); a
+slot leaves 1.0 to 1.4 mm a side. `--correction` says what the place does about it.
+
+| `--correction` | What it does | What it costs | What it does not do |
+|---|---|---|---|
+| `table` (the default) | Shifts a fork's place by one fixed amount, the mean of how forks sat in several rehearsals, read from `scripts/puzzle_build_corrections.json`. The bars have no entry and are placed by their grasp as defined. Nothing is simulated ahead: the lookahead step answers go at once | Nothing while building. The table is measured once, in a measuring run of about twenty minutes, and again when a grasp, the grip force, the pack or the solver's friction changes (a table measured with others is refused) | It does not know how this pick's fork sits, only how forks sit on average. And it cannot say abort: it rehearses nothing, so only the grasp check can refuse a pick. On seed 5 it drives the last fork into a jam that a lookahead at the old friction stopped short of |
+| `lookahead` | Rehearses every pick on Newton first, reads in the rehearsal how the piece sits in the hand, corrects the place by that, and says go or abort | 36 to 45 s of wall time a piece on a GPU shared with other simulators: 178 s of a 440 s build | With the pieces at the task file's friction it stops most builds at a bar (below). A rehearsal is no check on the real cell: over 120 trials of the look-ahead study it never said abort for a scan that was off or for physics that differed |
+| `none` | Places every piece by its grasp as defined | Nothing | A fork placed so seated 5 times of 9 |
+
+**What was measured** (2026-11-17, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v4`, `puzzles/v1`, the green puzzle,
+`--perception oracle`; six layouts, seeds 1 to 6, each way built in turn on one simulator on a GPU that other simulators
+shared; the runs, with every build's records, are outside this repository):
+
+| Way | Pieces' friction in the solver | Seated, of 24 | Builds finished, of 6 | Wall time of a finished build |
+|---|---|---|---|---|
+| `lookahead` | 1.0, as every build before the fix ran | 23 | 5 | 401 to 433 s |
+| `lookahead` | 0.4, the task's | 9 | 1 | 440 s |
+| `table`, a single reading for each fork (the table as first measured) | 0.4 | 23 | 5 | 251 to 272 s, and 370 s |
+| `table`, one averaged entry for the forks (the table in the repository) | 0.4 | 24 | 6 | 404 to 563 s, on a busier GPU |
+| `none` | 0.4 | 17 | 2 | 293 to 349 s |
+
+The first row is one batch; the second, third and fifth were built in turn; all at 1.0 to 1.5 ms a physics step. The
+averaged table was built some hours later with the GPU busier (1.4 to 2.2 ms a step), so its wall times say nothing
+about its speed: it does the same work as the row above it.
+
+So the table at the task's friction does as well as the lookahead did at the old one, and a build is about 160 s shorter
+than a lookahead build of 400 to 440 s; where both finished at 0.4 in turn (seed 2) it was 266 s against 440 s. It is
+not shown to be better than the lookahead: the lookahead's 9 of 24 comes from correcting the bars (below), and a
+lookahead that left the bars alone was not run. Nor is it firmly better than no correction: that rests on the first
+fork, which jammed in 3 of 8 `none` builds and in 1 of 19 with a table, and forks seated uncorrected 5 times of 9. The
+sample is six layouts. A layout built again mostly repeats itself (the in-hand shifts came back to 0.01 mm on seed 3)
+and sometimes does not (seed 4: four of four, then two of four with the same table), so repeats add little: count this
+as about six builds a way.
+
+- **Why the lookahead stops at a bar.** Its verdict is abort when the rehearsed piece does not end seated, and also
+  when any other piece ends 3 mm from where it was. The rehearsal reads that the pads hold the bar lower than the
+  grasp defines (the arm hangs about 0.9 mm below its targets at the pick) and lowers the gripper by that at the
+  slot. The grasp leaves the pads 0.5 mm above the slot's 7 mm walls and the lowering stops 1 mm short, so a gripper
+  lowered 1.5 mm has its pads on the walls, and when it opens they push the base. Of nine bar rehearsals, the five
+  that lowered the gripper 0.3 to 1.3 mm said go and the four that lowered it 1.4 to 2.4 mm aborted, each with the
+  bar seated (0.2 to 1.1 mm) and the base or the other bar moved 4 to 8 mm. Traced on another layout: with the
+  correction the pads' lower edge was 0.07 mm below the walls' top before the gripper opened and the base was pushed
+  3.5 mm as it opened; placed by the grasp as defined, the pads were 0.85 mm above the walls and the base did not
+  move. A table entry for the bars makes the same correction with no verdict to stop it: with one, 18 of 24 seated.
+  That is why the settings name only the forks (`corrected_from_table` in `puzzle_build.json`).
+- **A corrected place is checked at the slot.** The grasp check passes the place as defined; a correction moves the
+  gripper from there. The same test of the gripper against the base and the pieces is now made again at the
+  corrected place, from the table or from a lookahead, and a place at which the gripper would be more than 1 mm into
+  something is refused (in a rehearsal: abort, before the gripper is lowered).
+- **The friction.** None of this showed before 2026-11-17, because the pieces' friction was not what the task file
+  says. `puzzle.py` bound the contact material to each piece's root; Newton reads a collider's own binding, and its
+  model held 1.0 for every collision box and not the task's 0.4. Bound to the boxes as well, the model holds 0.4.
+  Every run reads it back from Newton's model (`metrics.json`, `cell.friction_in_the_solver`): the coefficients of
+  the shapes under each piece that collide. (A piece's drawn mesh is a shape of the model as well, at 1.0 and
+  colliding with nothing; runs recorded before the read-back left it out show `[0.4, 1.0]` for that reason.) A
+  touching pair takes the larger coefficient, so the base on the bench went from 1.0 to 0.4 and is pushed far more
+  easily. Every puzzle scene built on Newton changes with this, not only this script.
+- **Seed 5's last fork** jams at the first try every way, and this is what the default gives up. With `lookahead` at
+  the old friction the rehearsal jams, the verdict is abort, and the build stops with three seated and the fork
+  untouched. With `table` and `none` nothing says abort: the build tries it, the arm is stopped while lowering (5.4
+  to 5.9 degrees from its targets) and the fork ends 60 to 140 mm from its slot. Four times of five it then lay so
+  that it could not be picked again and the build stopped with three seated; once (the averaged table) it lay flat,
+  was picked again and seated. Why it jams there is not known. In a simulation that costs a fork thrown aside; on a
+  real cell it would be a collision that a rehearsal could have refused.
+- **With SAM 3.1 looking** (`--perception sam3`, each look served by a SAM 3.1 worker that was already up, 3.6 s a
+  look where the build's own cold job takes about 24 s; the table of single readings that came before the averaged
+  one): seed 2, `lookahead` 4 of 4 in 646 s, `table` 4 of 4 in 341 s, `none` 4 of 4 in 319 s; seed 4, `lookahead`
+  1 of 4 (abort before the second bar), `table` 4 of 4 in 405 s, `none` 4 of 4 in 400 s.
+- **A run that Newton ends.** Once in these builds (seed 3 with `lookahead`, as the gripper opened in a rehearsal),
+  and six times in about 750 picks of the look-ahead study, Newton returned values that are not finite numbers. The session now raises a named error on any such value (`workcell_session.PhysicsStateInvalid`),
+  the build writes `metrics.json` with what was known and `stopped` saying why, and exits with an error. It is not
+  retried and not turned into a verdict: after it nothing the simulator returns means anything until the scene is
+  built again.
+
+**The table.** `scripts/puzzle_build_corrections.json` has one entry per piece type (pieces of one shape held by one
+grasp: the two forks are one type). An entry is `in_hand`, the gripper as a piece of the type sat in it over its
+slot, in the frame of the gripper as the grasp defines it, the mean of its readings; its distance from the grasp as
+defined; the readings themselves and their spread; and a check of whether it helps. The forks' entry is the mean of 12 readings on six layouts: 3.2 mm and
+0.2 degrees from the grasp as defined (a fork sits 3.2 mm further out along the fingers than the grasp defines and
+0.5 mm lower), with a spread of 1.3 and 1.2 mm from reading to reading. Its check: a reading is 3.3 mm from the grasp as defined and 1.4 mm from the mean of the
+other layouts' readings (medians; the same for each fork). In the six builds above the first fork's place was
+1.6 mm from how the fork really sat, where uncorrected it would have been 4.1 mm; the second fork's 2.1 mm against
+2.4 mm (medians of six). Measure it again with
+
+    python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes \
+        --perception oracle --write-corrections <file>
+
+a measuring run of about twenty minutes in place of a build: on six layouts (the seed given and the five after it; 11 to 16 are none of the
+six above), the survey and the base's slide, then one lookahead per piece the settings want corrected, with the
+pieces before it put in the base where the CAD has them, and nothing placed. An entry measured with the gripper half
+round is turned with the gripper when a piece is held the other way round; that follows from the two fingers being
+alike and has not been measured. Nothing in the table was measured on a real gripper or a real piece.
+
+**What the grasp check refuses.** A neighbour in the way of the open gripper (the gripper is tested as it comes
+down, 16 mm wider than it grips), and a loose piece that the scan saw lying in the slot (every piece the robot
+believes is on the table counts at the slot, and the held piece is tested along its insertion). Until 2026-11-17 only
+a lookahead caught these. On the look-ahead study's recorded layouts, the four with the other bar 14 mm beside the
+piece and the four with it in the piece's slot passed the check as it was called before and are refused now, and its
+other 140 trials pass both with the same first way of holding; laid out in the simulator, the build answers "no
+grasp of line_brown fits: line_red is in the open gripper's way down to line_brown" and "... line_red is where
+line_brown goes", and moves nothing. What geometry of believed poses cannot know stays unrefused: a piece the scan
+put elsewhere, a piece wrongly believed seated, a fork read half a turn round, a grasp that drops the piece.
+
+#### Earlier measurements
+
+Everything from here to the end of this section was measured on 2026-11-16, before the above: with the lookahead
+before every piece (the only way there was), and with the pieces at 1.0 in the solver and not at the task's 0.4.
 
 Measured (2026-11-16, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v4` and `puzzles/v1`, the green puzzle: a base,
 two bars, two forks; one run on each of three layouts; the runs, their videos and their viewers are in the puzzle
@@ -398,6 +516,13 @@ times slower than real time:
 | Joint targets written without reading them back | 329, 331, 340 s | The loop in Kit read the target array from the GPU before each row: 3 ms a row |
 
 No physics setting changed: timestep, substeps, solver, contacts, collision shapes and grip force are as before.
+
+The solver's share in these numbers reads short. The loop in Kit stopped its clock when `physics.step` returned, and on
+Newton that call returns while the GPU still has steps queued; the rest was booked to whatever call next waited for the
+GPU ("bridge"). Since 2026-11-17 a stretch of stepping is timed as a whole and waited for once, when a film frame is due
+or the call ends. Waiting after every step, which was tried first, more than doubled the cost of an arm move (a target
+and a step per row): 2.5 ms a step against 1.1 ms, measured in turn. In a build so counted the solver is 125 s of 266 s
+and rendering 73 s (seed 2 with the first table).
 The captured step was checked three ways before the full runs: 500 steps of a moving arm end in the same state to
 1e-8 with and without capture (two uncaptured runs differ by as much); a gripper closing at 3 N and at 40 N, the gains
 set between steps, follows the same path in both to the 0.01 mm logged; and one fork pick and insertion differs between

@@ -36,4 +36,5 @@ time on `127.0.0.1:$WORKCELL_SKILLS_PORT`. Nothing here can reach a real robot.
 
 - A tool that cannot do what was asked raises, so its subgraph leaves through `on_error`.
 - `workcell.lookahead` changes nothing: it saves the stage's physics state, tries the move and puts the state back.
+  When the build was started with `--correction table` or `none` it simulates nothing and answers go at once.
 - `workcell.state` is ground truth from the simulator. Graphs use it for checkpoints, never for planning.
