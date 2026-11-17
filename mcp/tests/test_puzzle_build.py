@@ -225,6 +225,13 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
         cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
 
 
+def test_the_turn_on_the_table_is_off_as_shipped_and_every_piece_that_needs_one_has_a_grip_for_it():
+    assert CONFIG["arm"]["turn_on_table"] is False and CONFIG["arm"]["wrist_3_rise_deg"] == 90.0
+    assert sorted(set(CONFIG["turn_grasps"]) - {"what"}) == sorted(set(CONFIG["grasps"]) - {CONFIG["base"]})
+    source = (ROOT / "scripts/puzzle_build.py").read_text()
+    assert 'self.config["arm"]["turn_on_table"] and not self.ahead and self._turn(' in source      # the one place a turn starts
+
+
 def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_piece_in_doubt(tmp_path):
     def scanned(doubt_from_above, perception="sam3"):
         cell = object.__new__(build.Build)

@@ -901,7 +901,7 @@ class Build:
         others = {name: self._twin_pose(name) if name in self.placed else at for name, at in self.estimate.items() if name != piece}
         axis = self.estimate[self.base][:3, :3] @ np.array(step["axis"], dtype=float)
         hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
-        if not hold["in_window"] and not self.ahead and self._turn(piece, hold, others, axis, step["clear_m"] + MARGIN_M):
+        if not hold["in_window"] and self.config["arm"]["turn_on_table"] and not self.ahead and self._turn(piece, hold, others, axis, step["clear_m"] + MARGIN_M):
             hold = self._grasp(piece, self.estimate[piece], self._seat(piece), others, others, axis, step["clear_m"] + MARGIN_M)
         hold.update(axis=axis, clear_m=step["clear_m"] + MARGIN_M, corrected_by=None, others=others)
         self.trying = hold

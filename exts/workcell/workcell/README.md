@@ -474,7 +474,7 @@ the survey pose (wrist 3 at 141.5 degrees, 13.2 cm of cord), the scan's right vi
 | Scan's side views | wrist 3 to -154 degrees | chosen by a search over the bridge's own limits and workspace box; each leg of top, left, right, top needs 9.2 cm of cord or less. The right view lines up poorly (cost 0.14 against 0.002) |
 | Look above the base | straight above, wrist 3 at 153 degrees | 0.10 m to its left and 0.05 m nearer, from 0.45 m, rolled: 16 degrees |
 | Which way a piece is held | the first way that fits and is in reach | the first of those that keeps wrist 3 where `arm` says (below), else the first of all; the run's log says which (`wrist_3_in_window`) |
-| A piece no way of holding keeps there | picked as it lies | turned on the table first (`Build._turn`, step kind `turn`), when it has a grip to be turned by (`turn_grasps`) |
+| A piece no way of holding keeps there | picked as it lies | picked as it lies, or with `arm.turn_on_table` turned on the table first (`Build._turn`, step kind `turn`), when it has a grip to be turned by (`turn_grasps`). Off as shipped: see the turn, below |
 
 Replayed after the change (SAM 3.1, the table of corrections, one build each): seed 1, 0 of 54 goals refused; seed 3,
 2 of 48; seed 5, 9 of 51; seed 6, 5 of 49. All four builds seated all four pieces. Every refusal left but two is a
@@ -501,10 +501,13 @@ where the look read 0.1 to 1.5 degrees off), unless the look disagrees by more t
 own grip. Measured so far, one build each: on seed 6 the turned fork (150 degrees, 20 simulated seconds and 37 s of
 wall time with its look) was seated 1.13 mm from the CAD, and the bridge sent every goal of the turn and of the fork's
 pick; of that build's 58 goals one was refused at the limits (the bar's carry that the quarter-turn rule is for). On
-seed 5 the turned fork jammed in its slot in three builds of three, although it was picked where and how its grip is
-defined (0.2 mm, 0.04 degrees): it had slid 7.5 mm along its tab in the fingers on the way, where the same fork picked
-as it lay slid 1.5 mm the other way and was seated. A fork slides in these fingers by 0 to 7.5 mm from one pick to the
-next, and the insertion takes about 5: the turn changes which pick it is, not how the fingers hold.
+seed 5 a bar turned by its own grip was seated (1.39 mm), and the turned fork jammed in its slot in four builds of
+four (turned 150 degrees in three, 180 in one), although it was picked where and how its grip is defined (0.2 mm,
+0.04 degrees): it sat 2.2 and 7.5 mm further along its tab in the fingers than its grip is defined, where the same
+fork picked as it lay sat 1.5 mm the other way and was seated in three builds of three. The fingers hold a fork by
+the top of its tab, and it slides in them by 0 to 7.5 mm from one pick to the next; the turn changes which pick it
+is, not how the fingers hold. So `arm.turn_on_table` is off as shipped: on, it trades seated forks for goals the
+bridge sends, and how many of each is for a benchmark column of its own to say.
 
 #### Earlier measurements
 
