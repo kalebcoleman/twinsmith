@@ -16,11 +16,18 @@ arm, not directly before a picture.
 ``replay`` hands a finished build's run folder to the puzzle project's GaP bridge (``ros2/gap_bridge``, not part of this
 repository; no ROS, nothing is sent anywhere): ``export`` then a dry ``run``, and returns the gate log's summary.
 
+``report`` reads what ``replay`` left for every case of a benchmark folder and writes ``bridge_report.md`` there: per
+case the goals sent and refused, by which gate and for what, and the goals that follow a corrected base
+(``python scripts/puzzle_disturb.py report --out <the benchmark's folder> [--label integ]``).
+
 Simulation only. Nothing here can reach a robot.
 """
 
+import argparse
+import collections
 import json
 import math
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -147,3 +154,81 @@ def replay(run, bridge):
     plan = json.loads((out / "plan.json").read_text())
     corrected = [a["corrected"]["gates_at_export"]["pass"] for a in plan["actions"] if a.get("corrected")]
     return {**json.loads(log.read_text())["summary"], "corrected_goals": len(corrected), "corrected_goals_refused": corrected.count(False)}
+
+
+def cause(why):
+    """A gate's reason in a few words, so that reasons can be counted: the numbers taken out."""
+    if "camera cord" in why:
+        return "camera cord over its spare loop"
+    joint = re.search(r"(\w+_joint) goes .* outside .* of (the cell's joint limits|the cable's window)", why)
+    if joint:
+        return f"{joint.group(1)} outside {joint.group(2)}"
+    return re.sub(r"-?\d+(\.\d+)?", "N", why)[:80]
+
+
+def judged(folder):
+    """One replayed build as the report reads it: ``{"goals", "sent", "refused": [{"goal", "gate", "causes"}],
+    "corrected", "corrected_refused", "no_plan"}``. ``no_plan`` is the export's reason when the bridge made no plan of
+    the run (a build in which the arm was blocked is not one path), else None."""
+    bridge = Path(folder) / "bridge"
+    log, plan = bridge / "dry_run" / "gate_log.json", bridge / "plan.json"
+    if not log.is_file():
+        said = (bridge / "export.log").read_text().strip().splitlines() if (bridge / "export.log").is_file() else []
+        return {"goals": 0, "sent": 0, "refused": [], "corrected": 0, "corrected_refused": 0, "no_plan": said[-1][:300] if said else "not replayed"}
+    record, refused = json.loads(log.read_text()), []
+    for action in record["actions"]:
+        failed = [gate for gate in action.get("gates") or [] if not gate["pass"]]
+        if failed:
+            refused.append({"goal": action["id"], "gate": failed[0]["gate"], "causes": sorted({cause(why) for gate in failed for why in gate["why"]})})
+    corrected = [action["corrected"]["gates_at_export"]["pass"] for action in json.loads(plan.read_text())["actions"] if action.get("corrected")]
+    return {"goals": record["summary"]["goals"], "sent": record["summary"]["goals_sent"], "refused": refused, "corrected": len(corrected),
+            "corrected_refused": corrected.count(False), "no_plan": None}
+
+
+def report(out, label=None):
+    """Write ``<out>/bridge_report.md`` from the rows of a benchmark folder (``row.json`` of every case, of ``label``
+    when one is given) and what ``replay`` left beside each build. Returns the text."""
+    out = Path(out).resolve()
+    rows = sorted((json.loads(path.read_text()) for path in out.glob("*/**/row.json")), key=lambda row: (row["label"], row["case"]))
+    rows = [row for row in rows if label in (None, row["label"])]
+    lines = ["# The puzzle builds through the GaP bridge, dry", "",
+             "Every build of the benchmark replayed through the puzzle project's `ros2/gap_bridge` (`export`, then a dry `run`: the built-in mock "
+             "controller, no ROS, nothing sent anywhere). The limits are the bridge's shipped ones; its cable limits are placeholders that are NOT "
+             "MEASURED. A goal is what the bridge would send as one trajectory; the plan re-solves the simulator's sampled joint feedback on the "
+             "calibrated arm, so this is no statement about how closely a real arm would follow it.", "",
+             "| Case | Label | Seated | Goals | Sent | Refused | By gate | After a corrected base (refused) | Why |", "|---|---|---|--:|--:|--:|---|---|---|"]
+    totals, causes = collections.defaultdict(lambda: collections.Counter()), collections.defaultdict(lambda: collections.Counter())
+    for row in rows:
+        found = judged(row["folder"])
+        seated = row["pieces_total"] is not None and row["pieces_seated"] == row["pieces_total"]
+        gates = collections.Counter(goal["gate"] for goal in found["refused"])
+        why = collections.Counter(reason for goal in found["refused"] for reason in goal["causes"])
+        replayed = seated and found["no_plan"] is None
+        totals[row["label"]].update(builds=1, seated=int(seated), seated_replayed=int(replayed), seated_clean=int(replayed and not found["refused"]),
+                                    goals=found["goals"], refused=len(found["refused"]))
+        causes[row["label"]].update(why)
+        lines.append(f"| {row['case']} | {row['label']} | {'yes' if seated else 'no'} | {found['goals']} | {found['sent']} | {len(found['refused'])} | "
+                     + (", ".join(f"gate {gate}: {count}" for gate, count in sorted(gates.items())) or "-") + f" | {found['corrected']} ({found['corrected_refused']}) | "
+                     + (found["no_plan"] or "; ".join(f"{reason} ({count})" for reason, count in why.most_common()) or "-") + " |")
+    lines += ["", "## Totals", "", "| Label | Builds | Seated | Seated and replayed | Seated with no goal refused | Goals | Refused |", "|---|--:|--:|--:|--:|--:|--:|"]
+    lines += [f"| {name} | {total['builds']} | {total['seated']} | {total['seated_replayed']} | {total['seated_clean']} | {total['goals']} | {total['refused']} |"
+              for name, total in totals.items()]
+    for name, counted in causes.items():
+        if counted:
+            lines += ["", f"## Why goals were refused: {name}", ""] + [f"- {reason}: {count} goals" for reason, count in counted.most_common()]
+    text = "\n".join(lines) + "\n"
+    (out / "bridge_report.md").write_text(text)
+    return text
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("action", choices=["report"])
+    parser.add_argument("--out", type=Path, required=True, help="the benchmark's folder (the one puzzle_benchmark.py run and summary use)")
+    parser.add_argument("--label", help="only the builds of this label")
+    args = parser.parse_args()
+    print(report(args.out, args.label))
+
+
+if __name__ == "__main__":
+    main()

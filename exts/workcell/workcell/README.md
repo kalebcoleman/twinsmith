@@ -457,6 +457,55 @@ grasp of line_brown fits: line_red is in the open gripper's way down to line_bro
 line_brown goes", and moves nothing. What geometry of believed poses cannot know stays unrefused: a piece the scan
 put elsewhere, a piece wrongly believed seated, a fork read half a turn round, a grasp that drops the piece.
 
+#### Poses inside the real cell's limits
+
+The real arm carries the wrist camera's cord, and the puzzle project's GaP bridge (`ros2/gap_bridge` of
+`sim2real-puzzle`, not part of this repository) refuses a goal that leaves the cell's joint windows or asks for more
+than the cord's spare loop. Those numbers are the bridge's shipped ones, and the cable ones are placeholders that are
+not measured: wrist 3 from -100 to 135 degrees, 10 cm of cord. A build replayed through the bridge, dry, says how many
+of its goals such an arm would be sent (`scripts/puzzle_disturb.py`: `replay`, and `report` for a table of every case).
+The build as it was could not be sent: 36 of the 52 goals of a seed-1 build were refused, all at the limits gate, from
+the survey pose (wrist 3 at 141.5 degrees, 13.2 cm of cord), the scan's right view (-154), bars put in with wrist 3 at
+-108 and the look above the base (153). What was changed, in `puzzle_build.json` and `Build._grasp`:
+
+| What | Before | Now |
+|---|---|---|
+| Survey | over [0.02, -0.37] from 0.72 m: wrist 3 at 141.5 degrees | over [-0.125, -0.37] from 0.75 m: 114 degrees, 9.2 cm of cord. The picture ends at x = 0.399 where it reached 0.523 |
+| Scan's side views | wrist 3 to -154 degrees | chosen by a search over the bridge's own limits and workspace box; each leg of top, left, right, top needs 9.2 cm of cord or less. The right view lines up poorly (cost 0.14 against 0.002) |
+| Look above the base | straight above, wrist 3 at 153 degrees | 0.10 m to its left and 0.05 m nearer, from 0.45 m, rolled: 16 degrees |
+| Which way a piece is held | the first way that fits and is in reach | the first of those that keeps wrist 3 where `arm` says (below), else the first of all; the run's log says which (`wrist_3_in_window`) |
+| A piece no way of holding keeps there | picked as it lies | turned on the table first (`Build._turn`, step kind `turn`), when it has a grip to be turned by (`turn_grasps`) |
+
+Replayed after the change (SAM 3.1, the table of corrections, one build each): seed 1, 0 of 54 goals refused; seed 3,
+2 of 48; seed 5, 9 of 51; seed 6, 5 of 49. All four builds seated all four pieces. Every refusal left but two is a
+fork's pick, and two are a bar's carry at 10.5 and 10.6 cm of cord. A bar can be held four ways and one of them is
+inside the window. A fork goes into its slot one way round and is held one way, so how it lies on the table fixes
+where wrist 3 stands at its pick: 4 of the 8 forks of those builds lay outside the window (wrist 3 at 121.5, -172, -154
+and -143.5 degrees). The limits are not this repository's to change, and no pose of the arm reaches such a fork inside
+them: another arm configuration turns wrist 2 out of its cable window.
+
+**Where wrist 3 may stand** (`arm` in `puzzle_build.json`) was then read off the bridge's cord model on these builds'
+own moves, the pick's wrist 3 varied: a fork's approach, lift and move to the look need 9.3 cm of cord or less from -90
+to 100 degrees and 10.2 cm at 110; a bar's carry to its slot (wrist 3 at 69 degrees there) needs 3.8 cm from a pick at
+-20 degrees and 10.6 cm from one at -40, whatever the order the joints turn in. So wrist 3 is kept between -90 and 100
+degrees at the pick and the place (`wrist_3_deg`), and turns up by a quarter turn at most from the one to the other
+(`wrist_3_rise_deg`). It is a stand-in for the cord model, which this repository does not have, for these moves only.
+
+**The turn on the table.** A fork that lies so that its one grip is outside that range is turned where it lies before
+it is picked: gripped along its middle (tab end to centre prong tip, 69.9 mm; its own grip half a turn round is no help,
+since when the one is outside the range the other is inside and a turn that brings the first inside takes the second
+out), lifted 30 mm, turned by the angle that brings its own grip nearest the middle of the range, set down and looked
+at again. Where it lies is taken from that look (it slid 1.6 to 4.6 mm in the fingers); how it is turned is taken from
+the gripper, whose fingers square it between its two flat ends (0.0 to 0.04 degrees from the truth in three turns,
+where the look read 0.1 to 1.5 degrees off), unless the look disagrees by more than 3 degrees. A bar is turned by its
+own grip. Measured so far, one build each: on seed 6 the turned fork (150 degrees, 20 simulated seconds and 37 s of
+wall time with its look) was seated 1.13 mm from the CAD, and the bridge sent every goal of the turn and of the fork's
+pick; of that build's 58 goals one was refused at the limits (the bar's carry that the quarter-turn rule is for). On
+seed 5 the turned fork jammed in its slot in three builds of three, although it was picked where and how its grip is
+defined (0.2 mm, 0.04 degrees): it had slid 7.5 mm along its tab in the fingers on the way, where the same fork picked
+as it lay slid 1.5 mm the other way and was seated. A fork slides in these fingers by 0 to 7.5 mm from one pick to the
+next, and the insertion takes about 5: the turn changes which pick it is, not how the fingers hold.
+
 #### Earlier measurements
 
 Everything from here to the end of this section was measured on 2026-11-16, before the above: with the lookahead

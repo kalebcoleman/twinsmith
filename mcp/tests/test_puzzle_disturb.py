@@ -72,3 +72,38 @@ def test_a_run_the_bridge_cannot_plan_gives_none(tmp_path):
     run = tmp_path / "run"
     run.mkdir()
     assert disturb.replay(run, bridge) is None and "REFUSED" in (run / "bridge/export.log").read_text()
+
+
+def test_the_report_counts_goals_refused_by_gate_and_by_cause(tmp_path):
+    import json
+
+    def built(case, label, seated, actions=None, corrected=(), said=None):
+        folder = tmp_path / label / case
+        (folder / "bridge").mkdir(parents=True)
+        (folder / "row.json").write_text(json.dumps({"case": case, "label": label, "folder": str(folder), "pieces_total": 4, "pieces_seated": seated}))
+        if actions is None:
+            (folder / "bridge/export.log").write_text(said)
+            return
+        (folder / "bridge/dry_run").mkdir()
+        refused = sum(any(not gate["pass"] for gate in action["gates"]) for action in actions)
+        (folder / "bridge/dry_run/gate_log.json").write_text(json.dumps({
+            "actions": actions, "summary": {"goals": len(actions), "goals_sent": len(actions) - refused}}))
+        (folder / "bridge/plan.json").write_text(json.dumps({"actions": [{"corrected": {"gates_at_export": {"pass": ok}}} for ok in corrected] + [{}]}))
+
+    goal = lambda name, *why: {"id": name, "gates": [{"gate": 1, "pass": True, "why": []}, {"gate": 2, "pass": not why, "why": list(why)}]}
+    window = "wrist_3_joint goes -171.7 to 113.7 deg, outside -100 to 135 deg of the cell's joint limits"
+    cord = "the camera cord would need 14.6 cm more than at the scan pose, 4.6 cm over the 10 cm spare loop, at 100 % of goal 046"
+    built("base/a", "integ", 4, [goal("001_survey"), goal("002_approach_fork", window, cord), goal("003_lift_fork", window.replace("-171.7", "-150.0"))], corrected=[True, False])
+    built("base/b", "integ", 4, [goal("001_survey")])
+    built("base/c", "integ", 3, said="REFUSED: 056 begins 11.80 deg from where 054 ends: the run's samples are not one path.\n")
+    built("base/a", "main", 4, [goal("001_survey")])
+    assert disturb.cause(window) == "wrist_3_joint outside the cell's joint limits" and disturb.cause(cord) == "camera cord over its spare loop"
+    found = disturb.judged(tmp_path / "integ/base/a")
+    assert (found["goals"], found["sent"], found["corrected"], found["corrected_refused"], found["no_plan"]) == (3, 1, 2, 1, None)
+    assert [(row["goal"], row["gate"]) for row in found["refused"]] == [("002_approach_fork", 2), ("003_lift_fork", 2)]
+    text = disturb.report(tmp_path, "integ")
+    assert (tmp_path / "bridge_report.md").read_text() == text and "| base/a | main |" not in text
+    assert "| base/a | integ | yes | 3 | 1 | 2 | gate 2: 2 | 2 (1) | wrist_3_joint outside the cell's joint limits (2); camera cord over its spare loop (1) |" in text
+    assert "| base/c | integ | no | 0 | 0 | 0 | - | 0 (0) | REFUSED: 056 begins" in text
+    assert "| integ | 3 | 2 | 2 | 1 | 4 | 2 |" in text                      # builds, seated, seated and replayed, seated and clean, goals, refused
+    assert "- wrist_3_joint outside the cell's joint limits: 2 goals" in text and "| base/a | main |" in disturb.report(tmp_path)
