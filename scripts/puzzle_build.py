@@ -654,7 +654,7 @@ class Build:
         with self.log.step("set down", piece, why=why, waypoints=[waypoint("lift", path["lift"]), waypoint("pick", path["pick"])]):
             self.say(f"{piece}: {why}; putting it back to scan the table")
             self.cell.gripper_line(shifted(self.cell.gripper_pose(), [0, 0, CARRY_M]), speeds["approach_m_s"])
-            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["held_deg_s"])
+            self.cell.gripper_carry(path.get("above", path["lift"]), speed_deg_s=speeds["held_deg_s"])     # swung back where it was swung out: above what is built
             self.cell.gripper_line(shifted(path["pick"], [0, 0, 0.002]), speeds["approach_m_s"])
             self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
             self.cell.gripper_line(path["hover"], speeds["approach_m_s"])
