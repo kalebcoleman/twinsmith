@@ -221,7 +221,7 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
 
     def turned(turn_grasps, room=True, turning_in_window=True, lying=lying):
         cell = object.__new__(build.Build)
-        cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0]}, "survey": {"look_at_m": [-0.125, -0.37, 0.0], "height_m": 0.75}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
+        cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0], "wrist_3_rise_deg": 90.0}, "survey": {"look_at_m": [-0.125, -0.37, 0.0], "height_m": 0.75}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
                        "speeds": {"approach_m_s": 0.05, "joint_deg_s": 45.0, "held_deg_s": 20.0}}
         cell.pack, cell.cell, cell.estimate, cell.metrics, cell.said = pack, Arm(), {"bar": lying}, {"bar": {}}, []
         cell.say, cell._seat = cell.said.append, lambda piece: lying
@@ -238,7 +238,7 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
         cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)), [lying[0, 3] + 0.0015, lying[1, 3], lying[2, 3]])
         cell._look = lambda label: ({"bar": cell.lands()} if cell.misread is not None else {}, {})
         others = {} if room else {"plate": assembly.pose(np.eye(3), [0.2, -0.4, 0.0])}
-        hold = {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}
+        hold = {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0, 0.0, 0.0], "in_window": False}
         return cell, cell._turn("bar", hold, others, np.array([0.0, 0.0, 1.0]), 0.03)
 
     cell, done = turned({})
@@ -246,29 +246,30 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
     across = dict(TOY_GRASP, closing_axis=[0, 1, 0], what="across")
     cell, done = turned({"bar": across})
     step = cell.log.steps[0]
-    # From -150 the middle of the window (25) is 175 degrees on; of the angles tried, 15 degrees apart, 180 and 165 are as near.
-    assert done is True and step["kind"] == "turn" and step["plan"]["deg"] in (165, 180) and cell.metrics["bar"]["turned_deg"] == step["plan"]["deg"]
+    # The pick is taken as far from where wrist 3 stands at the place (0 here) as the window allows with 10 degrees to spare
+    # (-50 to 100): 90 degrees, which from -150 is a turn of -120.
+    assert done is True and step["kind"] == "turn" and step["plan"]["deg"] == -120 and cell.metrics["bar"]["turned_deg"] == -120
     assert cell.cell.did == ["open_to", "gripper_carry", "gripper_line", "grip", "gripper_line", "gripper_carry", "gripper_line", "open_to", "gripper_line"]
     # Where it lies is the look's (it slid 1.5 mm); how it is turned is the gripper's, which squared it.
     apart = lambda a, b: abs((a - b + 180) % 360 - 180)
     assert np.allclose(cell.estimate["bar"][:3, 3], [0.2015, -0.4, lying[2, 3]]) and 1.0 < step["result"]["off_mm"] < 2.6
     assert apart(yaw_of(cell.estimate["bar"]), step["plan"]["deg"]) < 1e-6 and step["result"] == dict(step["result"], off_deg=1.2, turn_taken_from="the gripper")
     cell.misread, cell.estimate["bar"] = 8.0, lying            # turned again, and found 8 degrees from the gripper's turn: the look is believed
-    assert cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
+    assert cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0, 0.0, 0.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
     again = cell.log.steps[-1]
     assert apart(yaw_of(cell.estimate["bar"]), again["plan"]["deg"] + 8.0) < 1e-6 and again["result"]["turn_taken_from"] == "the look"
     assert "wrist 3 at -150 degrees" in cell.said[0]
     assert turned({"bar": across}, room=False)[1] is False                       # another piece where it would lie
     # Near the far edge of the survey's picture a bar turned half round would reach out of it, and the look after the turn
-    # would misread it: it is turned by an angle that keeps it in the picture, though further from the middle of the window.
+    # would misread it: it is turned by an angle that keeps it in the picture, though the pick is then nearer the place's wrist 3.
     far, done = turned({"bar": across}, lying=assembly.pose(np.eye(3), [0.2, -0.625, lying[2, 3]]))
     by = far.log.steps[0]["plan"]["deg"]
-    assert done is True and by not in (165, 180) and far._in_the_picture("bar", far.estimate["bar"])
+    assert done is True and by != -120 and far._in_the_picture("bar", far.estimate["bar"])
     assert not far._in_the_picture("bar", assembly.pose(scan.yaw_matrix(math.pi), [0.2, -0.625, lying[2, 3]]))
     assert turned({"bar": across}, turning_in_window=False)[1] is False          # the turning grip itself out of the window
     cell.misread, cell.estimate["bar"] = None, lying           # turned once more, and gone from the look after it
     with pytest.raises(build.Refused, match="does not find it"):
-        cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
+        cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0, 0.0, 0.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
 
 
 def test_the_turn_on_the_table_is_off_as_shipped_and_every_piece_that_needs_one_has_a_grip_for_it():

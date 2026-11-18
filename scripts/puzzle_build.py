@@ -163,6 +163,7 @@ class Build:
     one tool of the graph: it takes and returns plain data."""
 
     TURN_LIFT_M = 0.03                                      # how high a piece is lifted to be turned on the table
+    TURN_MARGIN_DEG = 10.0                                  # a piece is turned to where its pick has this much to spare inside the limits
     TURN_LOOK_DEG = 3.0                                     # a look that reads a turned piece further than this from the gripper's turn is believed
 
     TOOLS = ("scan", "survey", "picture", "place_base", "rescan", "lookahead", "approach", "close", "lift", "insert", "release", "state")
@@ -859,15 +860,19 @@ class Build:
         where wrist 3 stands at its pick, and for about half the ways a fork can lie that is outside the window. The
         same grip half a turn round is no help: when the one is outside the window the other is inside, and a turn
         that brings the first inside takes the second out. So the piece is turned by another grip (``turn_grasps``,
-        a quarter turn from its own), lifted ``TURN_LIFT_M``, by the angle that brings its own grip's pick nearest
-        the middle of the window, and looked at again where it was set down. Returns whether it was turned: False
+        a quarter turn from its own), lifted ``TURN_LIFT_M``, and looked at again where it was set down. Of the angles
+        that put its own grip's pick inside the limits with ``TURN_MARGIN_DEG`` to spare, the one is taken at which
+        wrist 3 stands furthest from where it stands at the place: a held fork creeps toward the end of its tab
+        when the hand is swung level quickly, and the swing is quickest when wrist 3 has nothing to turn on the way
+        (of 69 forks, those picked within 15 degrees of the place's wrist 3 sat up to 3.8 mm that way and one of
+        them jammed; those picked 90 degrees from it sat 0.9 mm that way in the mean). Returns whether it was turned: False
         when the piece has no such grip, or no angle leaves room, reach, both grips inside the window and the
         piece wholly in the survey's picture."""
         grasp = self.config["turn_grasps"].get(piece)
         if grasp is None:
             return False
         now, back = self.estimate[piece], np.linalg.inv(self.cell.wrist_from_gripper)
-        low, high = self.config["arm"]["wrist_3_deg"]
+        (low, high), rise, placed = self.config["arm"]["wrist_3_deg"], self.config["arm"]["wrist_3_rise_deg"], hold["wrist_3_deg"][1]
         about = (now @ np.array([*grasp["point_m"], 1.0]))[:3] * [1.0, 1.0, 0.0]     # the turn is about the gripper's own axis: it stays where it is
         ways = []
         for deg in range(-165, 181, 15):
@@ -877,9 +882,9 @@ class Build:
                 wrist = math.degrees(self.cell.reconfigure(self._tcp(spin @ hold["pick"], hold["width_m"]) @ back)["wrist_3_joint"])
             except cell.MoveFailed:
                 continue
-            if deg and low <= wrist <= high:
-                ways.append((abs(wrist - (low + high) / 2), deg, spin @ now))
-        for _, deg, there in sorted(ways, key=lambda way: way[:2]):
+            if deg and low + self.TURN_MARGIN_DEG <= wrist <= high - self.TURN_MARGIN_DEG and placed - wrist <= rise - self.TURN_MARGIN_DEG:
+                ways.append((-abs(wrist - placed), abs(deg), deg, spin @ now))
+        for *_, deg, there in sorted(ways, key=lambda way: way[:3]):
             grown = assembly.footprint(self.pack, piece, there, MARGIN_M)
             if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()) or not self._in_the_picture(piece, there):
                 continue
