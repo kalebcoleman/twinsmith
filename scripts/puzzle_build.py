@@ -840,6 +840,18 @@ class Build:
             return min(in_reach, key=lambda found: found[:2])[2]
         raise Refused(f"no grasp of {piece} that fits is within reach")
 
+    def _in_the_picture(self, piece, at, margin_m=0.010):
+        """Whether a piece lying at a pose is wholly in the survey's picture and clear of what the gripper hides there:
+        the look that follows a turn reads the piece from that picture, and one that reached out of it was read
+        11 mm from where it lay (a bar near the table's far edge, turned across it)."""
+        survey, camera = self.config["survey"], self.cell.cameras["wrist"][2]
+        (x, y), height = survey["look_at_m"][:2], survey["height_m"]
+        low = np.array([x - height * camera["cx"] / camera["fx"], y - height * (camera["height"] - camera["cy"]) / camera["fy"]]) + margin_m
+        high = np.array([x + height * (camera["width"] - camera["cx"]) / camera["fx"], y + height * camera["cy"] / camera["fy"]]) - margin_m
+        corners = assembly.footprint(self.pack, piece, at)
+        hidden = [np.array([a, [b[0], a[1]], b, [a[0], b[1]]]) for a, b in assembly.hidden_on_table(survey["look_at_m"], height, margin_m)]
+        return bool((corners > low).all() and (corners < high).all() and all(assembly._apart(corners, patch) for patch in hidden))
+
     def _turn(self, piece, hold, others, axis, clear_m):
         """Turn a lying piece on the table, where it lies, so that it can be picked with wrist 3 inside its window.
 
@@ -849,7 +861,8 @@ class Build:
         that brings the first inside takes the second out. So the piece is turned by another grip (``turn_grasps``,
         a quarter turn from its own), lifted ``TURN_LIFT_M``, by the angle that brings its own grip's pick nearest
         the middle of the window, and looked at again where it was set down. Returns whether it was turned: False
-        when the piece has no such grip, or no angle leaves room, reach and both grips inside the window."""
+        when the piece has no such grip, or no angle leaves room, reach, both grips inside the window and the
+        piece wholly in the survey's picture."""
         grasp = self.config["turn_grasps"].get(piece)
         if grasp is None:
             return False
@@ -868,7 +881,7 @@ class Build:
                 ways.append((abs(wrist - (low + high) / 2), deg, spin @ now))
         for _, deg, there in sorted(ways, key=lambda way: way[:2]):
             grown = assembly.footprint(self.pack, piece, there, MARGIN_M)
-            if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()):
+            if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()) or not self._in_the_picture(piece, there):
                 continue
             try:
                 after = self._grasp(piece, there, self._seat(piece), others, others, axis, clear_m)

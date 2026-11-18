@@ -208,6 +208,7 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
 
     class Arm:                                                 # wrist 3 follows the gripper's turn about the vertical, from -150 as the bar lies
         wrist_from_gripper = np.eye(4)
+        cameras = {"wrist": (None, None, {"fx": 924.0, "fy": 924.0, "cx": 640.0, "cy": 360.0, "width": 1280, "height": 720})}
 
         def __init__(self):
             self.did = []
@@ -218,9 +219,9 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
         def __getattr__(self, name):
             return lambda *given, **named: self.did.append(name)
 
-    def turned(turn_grasps, room=True, turning_in_window=True):
+    def turned(turn_grasps, room=True, turning_in_window=True, lying=lying):
         cell = object.__new__(build.Build)
-        cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0]}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
+        cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0]}, "survey": {"look_at_m": [-0.125, -0.37, 0.0], "height_m": 0.75}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
                        "speeds": {"approach_m_s": 0.05, "joint_deg_s": 45.0, "held_deg_s": 20.0}}
         cell.pack, cell.cell, cell.estimate, cell.metrics, cell.said = pack, Arm(), {"bar": lying}, {"bar": {}}, []
         cell.say, cell._seat = cell.said.append, lambda piece: lying
@@ -234,7 +235,7 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
         cell._grasp = grasp
         # Where the look finds it: slid 1.5 mm, and read ``misread`` degrees from the turn the open step asked for.
         cell.misread = 1.2
-        cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)), [0.2015, -0.4, lying[2, 3]])
+        cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)), [lying[0, 3] + 0.0015, lying[1, 3], lying[2, 3]])
         cell._look = lambda label: ({"bar": cell.lands()} if cell.misread is not None else {}, {})
         others = {} if room else {"plate": assembly.pose(np.eye(3), [0.2, -0.4, 0.0])}
         hold = {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0], "in_window": False}
@@ -258,6 +259,12 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
     assert apart(yaw_of(cell.estimate["bar"]), again["plan"]["deg"] + 8.0) < 1e-6 and again["result"]["turn_taken_from"] == "the look"
     assert "wrist 3 at -150 degrees" in cell.said[0]
     assert turned({"bar": across}, room=False)[1] is False                       # another piece where it would lie
+    # Near the far edge of the survey's picture a bar turned half round would reach out of it, and the look after the turn
+    # would misread it: it is turned by an angle that keeps it in the picture, though further from the middle of the window.
+    far, done = turned({"bar": across}, lying=assembly.pose(np.eye(3), [0.2, -0.625, lying[2, 3]]))
+    by = far.log.steps[0]["plan"]["deg"]
+    assert done is True and by not in (165, 180) and far._in_the_picture("bar", far.estimate["bar"])
+    assert not far._in_the_picture("bar", assembly.pose(scan.yaw_matrix(math.pi), [0.2, -0.625, lying[2, 3]]))
     assert turned({"bar": across}, turning_in_window=False)[1] is False          # the turning grip itself out of the window
     cell.misread, cell.estimate["bar"] = None, lying           # turned once more, and gone from the look after it
     with pytest.raises(build.Refused, match="does not find it"):
