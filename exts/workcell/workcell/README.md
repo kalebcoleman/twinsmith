@@ -350,17 +350,20 @@ today the page is written once, when the run ends. The grip force plotted is the
 A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD: it settles as the pads close,
 and the arm hangs about 1 mm below its targets at the pick. Read over the slot in the builds of 2026-11-17, a fork sat
 1.5 to 6.5 mm from its grasp as defined (median 4.1 mm, 32 picks) and a bar 0.4 to 3.4 mm (median 1.6 mm, 41 picks); a
-slot leaves 1.0 to 1.4 mm a side. `--correction` says what the place does about it.
+slot leaves 1.0 to 1.4 mm a side. `--correction` says what the place does about it. Those builds carried a held
+piece at the empty hand's speed; since the held piece is carried slower (**The carry**, below) a fork sits 0.2 to
+2.1 mm from its grasp as defined (median 1.2 mm, 12 rehearsals).
 
 | `--correction` | What it does | What it costs | What it does not do |
 |---|---|---|---|
-| `table` (the default) | Shifts a fork's place by one fixed amount, the mean of how forks sat in several rehearsals, read from `scripts/puzzle_build_corrections.json`. The bars have no entry and are placed by their grasp as defined. Nothing is simulated ahead: the lookahead step answers go at once | Nothing while building. The table is measured once, in a measuring run of about twenty minutes, and again when a grasp, the grip force, the pack or the solver's friction changes (a table measured with others is refused) | It does not know how this pick's fork sits, only how forks sit on average. And it cannot say abort: it rehearses nothing, so only the grasp check can refuse a pick. On seed 5 it drives the last fork into a jam that a lookahead at the old friction stopped short of |
+| `table` (the default) | Shifts a fork's place by one fixed amount, the mean of how forks sat in several rehearsals, read from `scripts/puzzle_build_corrections.json`. The bars have no entry and are placed by their grasp as defined. Nothing is simulated ahead: the lookahead step answers go at once | Nothing while building. The table is measured once, in a measuring run of about twenty minutes, and again when a grasp, the grip force, the speed a held piece is carried at, the pack or the solver's friction changes (a table measured with others is refused) | It does not know how this pick's fork sits, only how forks sit on average. And it cannot say abort: it rehearses nothing, so only the grasp check can refuse a pick. On seed 5 it drives the last fork into a jam that a lookahead at the old friction stopped short of |
 | `lookahead` | Rehearses every pick on Newton first, reads in the rehearsal how the piece sits in the hand, corrects the place by that, and says go or abort | 36 to 45 s of wall time a piece on a GPU shared with other simulators: 178 s of a 440 s build | With the pieces at the task file's friction it stops most builds at a bar (below). A rehearsal is no check on the real cell: over 120 trials of the look-ahead study it never said abort for a scan that was off or for physics that differed |
 | `none` | Places every piece by its grasp as defined | Nothing | A fork placed so seated 5 times of 9 |
 
 **What was measured** (2026-11-17, Isaac Sim 6.2.0 on Newton, `ur5e-workcell/v4`, `puzzles/v1`, the green puzzle,
 `--perception oracle`; six layouts, seeds 1 to 6, each way built in turn on one simulator on a GPU that other simulators
-shared; the runs, with every build's records, are outside this repository):
+shared; the runs, with every build's records, are outside this repository). Every row but the last carried a held
+piece at 45 degrees a second, and the two `table` rows above it used the tables measured at that speed:
 
 | Way | Pieces' friction in the solver | Seated, of 24 | Builds finished, of 6 | Wall time of a finished build |
 |---|---|---|---|---|
@@ -383,6 +386,20 @@ sample is six layouts. A layout built again mostly repeats itself (the in-hand s
 and sometimes does not (seed 4: four of four, then two of four with the same table), so repeats add little: count this
 as about six builds a way.
 
+- **The carry.** How far a piece sits from its grasp does not arise as the pads close or in the lift (0.1 mm there).
+  It arises in the move that swings the held piece from one posture of the arm to another: the piece creeps along
+  the fingertips, outward, while the wrist turns, and stays where it crept to. The creep goes with the speed of the
+  swing: carried from its lift to over its slot, one fork ended 5.2 mm out at 45 degrees a second (the fastest
+  joint's mean speed) and 1.8 mm at 15, the other 2.3 and 0.8 mm. It was the same to 0.3 mm with the solver's
+  `impratio` at 100 for 10, with the pads' contact time constant at 0.01 and 0.004 s for 0.02, and with the pieces at
+  friction 1.0 or 0.4: it is not friction giving way but the solver carrying a contact round a curve in steps of
+  2 ms, and a real gripper holding a 40 N grip would not show it. Turning the hand about its own fingertips in place
+  left 1.3 mm, but that straight-line turn changed the arm's configuration under way on the other fork and threw it;
+  it is not used. So a held piece is carried at `speeds.held_deg_s` (20 degrees a second) and the empty hand at
+  `joint_deg_s` as before; speeds between were not compared on whole builds. A fork has 1.0 mm a side in its slot
+  along the fingers. Further off it still seats most times, by landing on the slot wall's top, rocking in the pads
+  and slipping off the edge (seen up to 5 mm; at 8 mm it stays on top and the arm is stopped), which is why forks
+  4 to 5 mm off at the old speed seated more often than not and jammed without a pattern.
 - **Why the lookahead stops at a bar.** Its verdict is abort when the rehearsed piece does not end seated, and also
   when any other piece ends 3 mm from where it was. The rehearsal reads that the pads hold the bar lower than the
   grasp defines (the arm hangs about 0.9 mm below its targets at the pick) and lowers the gripper by that at the
@@ -426,12 +443,11 @@ as about six builds a way.
 **The table.** `scripts/puzzle_build_corrections.json` has one entry per piece type (pieces of one shape held by one
 grasp: the two forks are one type). An entry is `in_hand`, the gripper as a piece of the type sat in it over its
 slot, in the frame of the gripper as the grasp defines it, the mean of its readings; its distance from the grasp as
-defined; the readings themselves and their spread; and a check of whether it helps. The forks' entry is the mean of 12 readings on six layouts: 3.2 mm and
-0.2 degrees from the grasp as defined (a fork sits 3.2 mm further out along the fingers than the grasp defines and
-0.5 mm lower), with a spread of 1.3 and 1.2 mm from reading to reading. Its check: a reading is 3.3 mm from the grasp as defined and 1.4 mm from the mean of the
-other layouts' readings (medians; the same for each fork). In the six builds above the first fork's place was
-1.6 mm from how the fork really sat, where uncorrected it would have been 4.1 mm; the second fork's 2.1 mm against
-2.4 mm (medians of six). Measure it again with
+defined; the readings themselves and their spread; and a check of whether it helps. The forks' entry is the mean of 12 readings on six layouts with a held piece carried at 20 degrees a second: 1.0 mm and
+0.1 degrees from the grasp as defined (a fork sits 1.0 mm further out along the fingers than the grasp defines and
+0.2 mm lower), with a spread of 0.5 and 0.5 mm from reading to reading; at 45 degrees a second it was 3.2 mm with a
+spread of 1.3 and 1.2 mm. The table records the speed and is refused at another. Its check: a reading is 1.2 mm from the grasp as defined and 0.5 mm from the mean of the
+other layouts' readings (medians; 1.1 and 0.5 mm for the first fork, 1.2 and 0.7 mm for the second). Measure it again with
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes \
         --perception oracle --write-corrections <file>

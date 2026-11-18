@@ -18,7 +18,10 @@
  "grip_force_n": 40.0,
  "grip_force_source": "The lab's RG2 driver (RISL_onrobot_ros, custom_libraries/onrobot.py) sends force_val=400, in units of 0.1 N, with every move: 40 N, the RG2's maximum (datasheet: 3 to 40 N). Not measured on the real gripper.",
  "open_beyond_m": 0.016,
- "speeds": {"approach_m_s": 0.05, "insert_m_s": 0.01, "slide_m_s": 0.04, "joint_deg_s": 45.0},
+ "speeds": {
+  "what": "joint_deg_s is for a move of the arm from one posture to another with the hand empty, held_deg_s for the same move with a piece in the fingers (the fastest joint's mean speed). A held piece creeps along the fingertips while the wrist swings it round, further the faster the swing; the pads' and the pieces' friction, the solver's impratio and the pads' stiffness do not change it (Newton at 500 Hz). So the held move is the slow one.",
+  "approach_m_s": 0.05, "insert_m_s": 0.01, "slide_m_s": 0.04, "joint_deg_s": 45.0, "held_deg_s": 20.0
+ },
  "seated": {"position_m": 0.0015, "rotation_deg": 2.0},
  "grasps": {
   "base3": {

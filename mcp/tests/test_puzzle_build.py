@@ -45,7 +45,8 @@ def shift(x_mm, y_mm, z_mm):
 
 def a_table(tmp_path, change=None):
     """A table as --write-corrections writes it, for the demo's own corrected pieces as one type."""
-    table = {"measured": {"pack": CONFIG["pack"], "grip_force_n": CONFIG["grip_force_n"], "friction_in_the_solver": FRICTION},
+    table = {"measured": {"pack": CONFIG["pack"], "grip_force_n": CONFIG["grip_force_n"], "held_deg_s": CONFIG["speeds"]["held_deg_s"],
+                          "friction_in_the_solver": FRICTION},
              "entries": [{"pieces": list(CORRECTED), "grasp": {key: CONFIG["grasps"][CORRECTED[0]][key] for key in build.GRASP_KEYS},
                           "flipped": True, "in_hand": shift(0, -2, -3.464).tolist()}]}
     if change:
@@ -96,6 +97,27 @@ def test_a_table_is_refused_for_a_grasp_a_force_a_pack_or_pieces_it_was_not_meas
         build.read_corrections(a_table(tmp_path, lambda table: table["measured"].update(grip_force_n=20.0)), CONFIG)
     with pytest.raises(SystemExit, match="other/v9"):
         build.read_corrections(a_table(tmp_path, lambda table: table["measured"].update(pack="other/v9")), CONFIG)
+    with pytest.raises(SystemExit, match="carried at 45 degrees a second"):    # a held piece creeps in the fingers by the speed of its carry
+        build.read_corrections(a_table(tmp_path, lambda table: table["measured"].update(held_deg_s=45.0)), CONFIG)
+
+
+def test_a_piece_in_the_fingers_is_carried_slower_than_an_empty_hand_moves():
+    assert CONFIG["speeds"]["held_deg_s"] < CONFIG["speeds"]["joint_deg_s"]
+    carried = []
+
+    class Cell:                                                 # the carry over the slot is all this lets through
+        def gripper_carry(self, pose, speed_deg_s):
+            carried.append(speed_deg_s)
+            raise build.cell.MoveFailed("far enough")
+
+    made = object.__new__(build.Build)
+    made.config, made.cell, made.ahead = CONFIG, Cell(), True
+    made.log = sys.modules["step_log"].StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
+    made.held = {"width_m": 0.021, "path": {"carry": np.eye(4), "over": np.eye(4)}}
+    made.say = lambda text: None
+    with pytest.raises(build.cell.MoveFailed):
+        made.insert("fork_orange")
+    assert carried == [CONFIG["speeds"]["held_deg_s"]]
 
 
 def test_pieces_of_one_shape_held_by_one_grasp_are_one_type():
