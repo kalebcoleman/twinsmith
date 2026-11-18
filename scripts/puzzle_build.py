@@ -400,7 +400,10 @@ class Build:
         """The scan's views taken and combined: (the cycle's report, the names of the views taken). From above first,
         the survey's own view, and from the sides only when that leaves a piece in doubt: the views from the sides
         tell a piece's rival poses apart and add nothing to a table read without doubt (in 16 scans of simulated
-        builds the view from above left none). With ``--perception oracle`` there is no report and no doubt."""
+        builds the view from above left none). A piece of the puzzle that the view from above does not find at all
+        is looked for from above the parts of the table its picture does not reach (``scan.beyond``), each such
+        view read by the cycle on its own; found there, it joins the report. With ``--perception oracle`` there is
+        no report and no doubt."""
         views, taken = self._views(), []
         self._sweep(folder / "scan", views[:1], taken)
         if self.args.perception == "oracle":
@@ -412,7 +415,21 @@ class Build:
             self._sweep(folder / "scan", views[1:], taken)
             self.cell.camera_to(views[0][1])
             report = self._combine(folder)
-        return report, [view["name"] for view in taken]
+        names = [view["name"] for view in taken]
+        for view in self.config["scan"]["beyond"]:          # what the survey's picture does not reach: looked for from above there, when it is missed
+            missing = sorted(set(self.names) - {piece["name"] for piece in report["pieces"]})
+            if not missing:
+                break
+            self.say(f"scan: {', '.join(missing)} not in the picture; looking from above ({view['name']})")
+            there = []
+            self._sweep(folder / view["name"] / "scan", [(view["name"], self._view(view["eye_m"], view["look_at_m"], view["roll_deg"]))], there)
+            self.cell.camera_to(views[0][1])
+            more = self._combine(folder / view["name"])
+            found = [piece for piece in more["pieces"] if piece["name"] in missing]
+            report["pieces"] += found
+            report["doubtful"] = [*report.get("doubtful", []), *(name for name in more.get("doubtful", []) if name in missing)]
+            names.append(view["name"])
+        return report, names
 
     @stepped("scan")
     def scan(self):
@@ -456,8 +473,13 @@ class Build:
         far = lambda piece, a, b: (lambda metres, degrees: metres > self.SCAN_MOVED_M or degrees > self.SCAN_MOVED_DEG)(*assembly.pose_error(self.pack, piece, a, b))
         moved = sorted(piece for piece in seen if piece in self.estimate and far(piece, seen[piece], self.estimate[piece]))
         before, self.estimate = self.placed, dict(seen)
+        limit = self.config["seated"]
+        near = lambda read: read["position_error_mm"] <= 2000 * limit["position_m"] and read["rotation_error_deg"] <= 2 * limit["rotation_deg"]
+        # In its slot: read there; or placed before and not seen elsewhere; or put in, read just outside its seat by the
+        # look after it (which sent the build here) and read no further out now. Two readings that near are a seated piece.
         self.placed = [piece for piece in self.slots if self._seated(piece, seen, seen[self.base])["seated"]
-                       or (piece in before and not far(piece, seen[piece], self._seat(piece)))]
+                       or (piece in before and not far(piece, seen[piece], self._seat(piece)))
+                       or (self.metrics[piece].get("read_again") and near(self._seated(piece, seen, seen[self.base])))]
         for piece in self.placed:
             self.estimate[piece] = self._seat(piece)
         metres, degrees = assembly.pose_error(self.pack, self.base, seen[self.base], self._base_target())
@@ -744,7 +766,7 @@ class Build:
     def _grasp(self, piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0, grasp=None):
         """The first way of holding a piece that fits the CAD, that the arm reaches at both ends, and that a
         lookahead has not found blocked: of those, the first that keeps wrist 3 in its window (``in_window``), or
-        the first of all. The gripper is checked as it comes down, open, and as it holds the piece. ``grasp`` is the
+        the one that leaves it least. The gripper is checked as it comes down, open, and as it holds the piece. ``grasp`` is the
         piece's own definition unless another is given (the one a piece is turned on the table by)."""
         grasp = grasp or self.config["grasps"][piece]
         back, why = np.linalg.inv(self.cell.wrist_from_gripper), []
@@ -763,13 +785,16 @@ class Build:
                           for at in (option["pick"], option["place"], shifted(option["place"], np.array(axis) * clear_m))]
             except cell.MoveFailed:
                 continue
+            # How far outside what arm allows: out of the range first (the cell's own joint window lies just beyond it), then how much
+            # further up than a quarter turn (a little more cord than there is).
+            out = (float(sum(max(0.0, low - q, q - high) for q in turned[:2])), float(max(0.0, turned[1] - turned[0] - rise)))
             hold = {**option, "width_m": grasp["width_m"], "piece": piece, "way": way, "wrist_3_deg": [round(math.degrees(q), 1) for q in turned],
-                    "in_window": all(low <= q <= high for q in turned) and turned[1] - turned[0] <= rise}
+                    "in_window": out == (0.0, 0.0)}
             if hold["in_window"]:                           # the camera's cord: a way that does not wind wrist 3 out of its window
                 return hold
-            in_reach.append(hold)
-        if in_reach:
-            return in_reach[0]
+            in_reach.append((out, way, hold))
+        if in_reach:                                        # none inside: the one least outside, the first of equals
+            return min(in_reach, key=lambda found: found[:2])[2]
         raise Refused(f"no grasp of {piece} that fits is within reach")
 
     def _turn(self, piece, hold, others, axis, clear_m):
@@ -1140,6 +1165,14 @@ class Build:
             return {"result": "changed" if changed else "placed", **seated, "changed": changed}
         if piece in seen and self.metrics[piece]["attempts"] < 2 and abs(seen[piece][2, 2]) > 0.99 and seen[piece][2, 3] < 0.02:
             return {"result": "changed" if changed else "retry", **(seated or {}), "changed": changed}
+        limit = self.config["seated"]
+        if seated and seated["position_error_mm"] <= 2000 * limit["position_m"] and seated["rotation_error_deg"] <= 2 * limit["rotation_deg"] \
+                and not self.metrics[piece].get("read_again"):
+            # One look reads a piece up to 1.6 mm from where it is, and a seat allows 1.5: a bar that was seated 1.2 mm
+            # from the CAD was read 1.6 mm off and the build ended there. A reading this near the seat is not the end:
+            # the table is scanned once, and what the scan reads stands.
+            self.metrics[piece]["read_again"] = True
+            return {"result": "changed", **seated, "changed": sorted({*changed, piece})}
         raise Refused(f"{piece} is not in its slot and cannot be picked again")
 
     @stepped("release")

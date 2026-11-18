@@ -21,6 +21,10 @@
   "views": [
    {"name": "left", "eye_m": [-0.24, -0.30, 0.42], "look_at_m": [0.02, -0.47, 0.0], "roll_deg": -20.0},
    {"name": "right", "eye_m": [0.32, -0.58, 0.58], "look_at_m": [0.02, -0.47, 0.0], "roll_deg": 60.0}
+  ],
+  "beyond_what": "Where a piece of the puzzle is looked for when the view from above does not find it: straight down again, over the part of the table that picture does not reach. The survey stands to the left to keep wrist 3 and the cord inside the real cell's limits, and its picture ends at x = 0.399: a bar knocked 50 mm to the right from x = 0.35 was out of it, and the scan was refused. This view sees x from -0.27 to 0.57 and every spot of the strip from x = 0.36 to 0.52; it is turned half round, so that its gripper hides the far side and wrist 3 stands at 0 degrees, and was chosen like the others inside the bridge's limits: 9.2 cm of cord from the survey pose and back, and the flange inside the workspace box all the way (from 0.68 m over x = 0.10, the first choice, the flange rose 17 mm out of the box on the way there).",
+  "beyond": [
+   {"name": "beyond_right", "eye_m": [0.15, -0.47, 0.60], "look_at_m": [0.15, -0.47, 0.0], "roll_deg": -180.0}
   ]
  },
  "base_check": {

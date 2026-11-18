@@ -24,7 +24,8 @@ the view to the multi-view cycle as the folder a scan mover writes on the robot'
 (`scan_mover.multiview/1`), and takes the cycle's one estimate as where everything is. When the cycle leaves a
 piece in doubt from above (two poses its depth cannot tell apart), the camera stops at the configured views from
 the sides as well and the cycle is given all of them; the views from the sides add nothing to a table read
-without doubt, and are not taken then.
+without doubt, and are not taken then. A piece of the puzzle that the view from above does not find at all is
+looked for from a second view straight down over the part of the table the first picture does not reach.
 From it the twin is rebuilt: the poses the lookahead simulates from, and a task file of the scene. The scan then
 works out what is already done (the base in the middle, pieces seated in it) and returns `next`: the base's name,
 the next piece of the build order, or `done`.

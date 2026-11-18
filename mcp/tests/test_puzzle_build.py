@@ -140,18 +140,21 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
             turn = self.turns[way]                            # one angle for the pick and the place, or one for each
             return {"wrist_3_joint": math.radians(turn[int(pose[0, 3] - way >= 0.5)] if isinstance(turn, tuple) else turn)}
 
-    def taken(arm, avoid=()):
+    def with_range(arm, wrist_3_deg, avoid=()):
         cell = object.__new__(build.Build)
-        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": [-60.0, 110.0], "wrist_3_rise_deg": 90.0}}
+        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": wrist_3_deg, "wrist_3_rise_deg": 90.0}}
         cell.pack, cell.cell, cell.avoid = None, arm, {"bar": set(avoid)}
-        return cell._grasp("bar", spot(0), spot(0.5), {}, {})
+        return cell
+
+    taken = lambda arm, avoid=(): with_range(arm, [-60.0, 110.0], avoid)._grasp("bar", spot(0), spot(0.5), {}, {})
 
     first = taken(Arm([20.0, 30.0, 40.0]))
     assert first["way"] == 0 and first["wrist_3_deg"] == [20.0, 20.0, 20.0]        # all inside: the order of the ways decides, as before
     assert taken(Arm([150.0, 30.0, 40.0]))["way"] == 1                            # the first way winds the cord: the next inside the window
     assert taken(Arm([150.0, 30.0, 40.0]), avoid=[1])["way"] == 2                 # a way a lookahead found blocked is still passed over
-    assert taken(Arm([150.0, -90.0, 170.0]))["way"] == 0                          # none inside: the first within reach, and the record says so
-    assert taken(Arm([150.0, -90.0, 170.0], out_of_reach=[0]))["way"] == 1
+    assert taken(Arm([150.0, -90.0, 170.0]))["way"] == 1                          # none inside (-60 to 110 here): the one least outside, and the record says so
+    assert taken(Arm([150.0, -90.0, 170.0]))["in_window"] is False and taken(Arm([150.0, 150.0, 170.0]))["way"] == 0      # the first of equals
+    assert taken(Arm([150.0, -90.0, 170.0], out_of_reach=[1]))["way"] == 0
     with pytest.raises(build.Refused, match="within reach"):
         taken(Arm([20.0, 30.0, 40.0], out_of_reach=[0, 1, 2]))
     # Both ends inside the window is not enough: from the pick to the place wrist 3 turns up a quarter turn at most.
@@ -159,6 +162,10 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
     assert rising["way"] == 1 and rising["wrist_3_deg"] == [-20.0, 69.0, 69.0] and rising["in_window"] is True
     assert taken(Arm([(-40.0, 69.0), (90.0, 0.0)]))["way"] == 1                    # turning down is as far as the window is wide
     assert taken(Arm([(-40.0, 69.0)]))["in_window"] is False
+    # The bar of benchmark table scatter/21 (the range is -90 to 100 there): put in at -108.2 degrees it is out of the range, which
+    # is worse than turned up 108.7 degrees to 69.5 inside it, though the one is 18.2 degrees too far and the other 18.7.
+    wide = lambda turns: (lambda cell: cell._grasp("bar", spot(0), spot(0.5), {}, {}))(with_range(Arm(turns), [-90.0, 100.0]))
+    assert wide([(-39.2, -108.2), (-39.2, 69.5), (140.8, 69.5)])["way"] == 1
 
 
 def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_table_first():
@@ -233,9 +240,10 @@ def test_the_turn_on_the_table_is_off_as_shipped_and_every_piece_that_needs_one_
 
 
 def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_piece_in_doubt(tmp_path):
-    def scanned(doubt_from_above, perception="sam3"):
+    def scanned(doubt_from_above, perception="sam3", seen_from_above=("plate", "bar", "cap"), seen_beyond=()):
         cell = object.__new__(build.Build)
         cell.args, cell.said, cell.combined = type("Args", (), {"perception": perception})(), [], []
+        cell.config = {"scan": {"beyond": [{"name": "beyond_right", "eye_m": [0.2, -0.4, 0.7], "look_at_m": [0.2, -0.4, 0.0], "roll_deg": 0.0}]}}
         cell.names, cell.base, cell.placed = ["plate", "bar", "cap"], "plate", []
         cell.say, cell.cell = cell.said.append, type("Arm", (), {"camera_to": lambda self, eye: cell.said.append("back above")})()
         cell._views = lambda: [("top", 0), ("left", 1), ("right", 2)]
@@ -245,7 +253,10 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
         def combine(given):
             (given / "answer").mkdir(parents=True)
             cell.combined.append(sorted(path.name for path in given.iterdir()))
-            return {"doubtful": doubt_from_above if len(cell.combined) == 1 else [], "views": len(cell.combined)}
+            if given.name == "beyond_right":                   # the cycle on the view beyond the picture: what lies there, and a piece seen from above too
+                return {"doubtful": ["cap", "bar"], "pieces": [{"name": name, "from": "beyond"} for name in (*seen_beyond, "plate")]}
+            return {"doubtful": doubt_from_above if len(cell.combined) == 1 else [], "views": len(cell.combined),
+                    "pieces": [{"name": name, "from": "top"} for name in seen_from_above]}
 
         cell._combine = combine
         return cell, *cell._seen(folder)
@@ -253,7 +264,7 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
     cell, report, views = scanned([])
     assert views == ["top"] and report["views"] == 1 and cell.said == []          # nothing in doubt: one view, one pass of the cycle
     cell, report, views = scanned(["bar"])
-    assert views == ["top", "left", "right"] and report == {"doubtful": [], "views": 2}
+    assert views == ["top", "left", "right"] and (report["doubtful"], report["views"]) == ([], 2)
     assert cell.combined[1] == ["answer", "answer_from_above"] and "bar in doubt from above" in cell.said[0] and cell.said[-1] == "back above"
     # Doubt the build need not act on takes no more views: another puzzle's piece, a piece in its slot, the base it lies in.
     assert scanned(["peg"])[2] == ["top"]
@@ -261,8 +272,45 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
     assert cell._in_doubt({"doubtful": ["plate", "bar", "cap", "peg"]}) == ["cap"] and cell._in_doubt({}) == []
     cell.placed = []
     assert cell._in_doubt({"doubtful": ["plate", "bar"]}) == ["bar", "plate"]      # a bare base is still to be slid: its doubt counts
+    # A piece of the puzzle the view from above does not find is looked for beyond its picture, and joins the report.
+    cell, report, views = scanned([], seen_from_above=("plate", "bar"), seen_beyond=("cap",))
+    assert views == ["top", "beyond_right"] and "cap not in the picture; looking from above (beyond_right)" in cell.said[0]
+    assert [(piece["name"], piece["from"]) for piece in report["pieces"]] == [("plate", "top"), ("bar", "top"), ("cap", "beyond")]
+    assert report["doubtful"] == ["cap"] and len(cell.combined) == 2             # its doubt comes with it, the others' does not
+    cell, report, views = scanned([], seen_from_above=("plate", "bar"))
+    assert views == ["top", "beyond_right"] and [piece["name"] for piece in report["pieces"]] == ["plate", "bar"]      # not there either: the scan will say it is missing
     cell, report, views = scanned(["bar"], perception="oracle")
     assert (report, views, cell.combined) == ({}, ["top"], [])                    # the simulator's own poses: no cycle and no doubt
+
+
+def test_a_piece_one_look_reads_just_outside_its_seat_is_read_again_by_the_scan_before_the_build_gives_up():
+    step_log = sys.modules["step_log"]
+    pack = scan.Pack(TOY, TOY_SLOTS, "toy/v1")
+    plate = assembly.pose(np.eye(3), [0.0, -0.46, pack.shape("plate").rests[0].drop])
+    seat = plate @ assembly.slot_poses(pack, "plate")["bar"]
+
+    def looked(off_mm, attempts=2):
+        cell = object.__new__(build.Build)
+        cell.pack, cell.base, cell.config = pack, "plate", {"seated": {"position_m": 0.0015, "rotation_deg": 2.0}}
+        cell.slots, cell.names = assembly.slot_poses(pack, "plate"), ["plate", "bar", "cap"]
+        cell.estimate, cell.base_goal, cell.placed, cell.said = {"plate": plate, "bar": seat}, plate, [], []
+        cell.metrics, cell.say = {"bar": {"attempts": attempts}}, cell.said.append
+        cell.log = step_log.StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
+        read = seat.copy()
+        read[0, 3] += off_mm / 1000
+        cell._look = lambda label: ({"plate": plate, "bar": read}, {})
+        cell.truth = lambda: {"plate": plate, "bar": seat}     # it is in its slot, whatever the look reads
+        return cell
+
+    cell = looked(1.0)
+    assert cell.rescan("bar")["result"] == "placed" and cell.placed == ["bar"]
+    cell = looked(1.63)                                        # as the bar of the knocked-piece case was read: 1.2 mm off in truth
+    first = cell.rescan("bar")
+    assert first["result"] == "changed" and first["changed"] == ["bar"] and cell.placed == [] and cell.metrics["bar"]["read_again"] is True
+    with pytest.raises(build.Refused, match="not in its slot"):                 # once: a second such look is the end
+        cell.rescan("bar")
+    with pytest.raises(build.Refused, match="not in its slot"):                 # and a reading far from the seat is no near miss
+        looked(4.0).rescan("bar")
 
 
 def test_without_a_lookahead_nothing_is_simulated_and_the_answer_is_go():
