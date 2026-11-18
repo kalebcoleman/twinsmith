@@ -120,8 +120,8 @@ def read_corrections(path, config):
     """The table of in-hand corrections: ``{"pieces": {piece: {"in_hand", "flipped"}}, "friction": ...}``. ``in_hand``
     is 4 x 4, the gripper as a piece of that type sits in it, in the frame of the gripper as the grasp defines it;
     ``flipped`` whether that was measured with the gripper half round; ``friction`` the solver's coefficients it was
-    measured at. A correction belongs to the pack, the grip force, the grasp and the pieces it was measured for: a
-    table measured for others is refused. The pieces are the ones the settings name (``corrected_from_table``); every
+    measured at. A correction belongs to the pack, the grip force, the speed a held piece is carried at, the grasp and
+    the pieces it was measured for: a table measured for others is refused. The pieces are the ones the settings name (``corrected_from_table``); every
     other piece is placed by its grasp as defined."""
     table = json.loads(Path(path).read_text())
     measured, wanted = table["measured"], sorted(config["corrected_from_table"]["pieces"])
@@ -129,6 +129,9 @@ def read_corrections(path, config):
     if measured["pack"] != config["pack"] or measured["grip_force_n"] != config["grip_force_n"]:
         raise SystemExit(f"{path} was measured with {measured['pack']} at {measured['grip_force_n']} N; this build is of {config['pack']} at "
                          f"{config['grip_force_n']} N. {again}")
+    if measured["held_deg_s"] != config["speeds"]["held_deg_s"]:
+        raise SystemExit(f"{path} was measured with a held piece carried at {measured['held_deg_s']:g} degrees a second; this build carries one at "
+                         f"{config['speeds']['held_deg_s']:g}, and how a piece sits in the hand goes with that speed. {again}")
     if sorted(piece for entry in table["entries"] for piece in entry["pieces"]) != wanted:
         raise SystemExit(f"{path} has entries for {[entry['pieces'] for entry in table['entries']]}; the settings want {wanted} corrected. {again}")
     out = {}
@@ -623,7 +626,7 @@ class Build:
                 self.cell.step(50)
                 before = self.truth()
                 try:
-                    self.cell.gripper_carry(hold["path"]["carry"], speed_deg_s=speeds["joint_deg_s"])
+                    self.cell.gripper_carry(hold["path"]["carry"], speed_deg_s=speeds["held_deg_s"])
                     self.cell.gripper_line(hold["path"]["over"], speeds["approach_m_s"])
                     self.cell.gripper_line(hold["path"]["place"], speeds["insert_m_s"], segment_m=0.005)
                     self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
@@ -651,7 +654,7 @@ class Build:
         with self.log.step("set down", piece, why=why, waypoints=[waypoint("lift", path["lift"]), waypoint("pick", path["pick"])]):
             self.say(f"{piece}: {why}; putting it back to scan the table")
             self.cell.gripper_line(shifted(self.cell.gripper_pose(), [0, 0, CARRY_M]), speeds["approach_m_s"])
-            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(shifted(path["pick"], [0, 0, 0.002]), speeds["approach_m_s"])
             self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
             self.cell.gripper_line(path["hover"], speeds["approach_m_s"])
@@ -888,7 +891,7 @@ class Build:
             self.cell.gripper_line(pick, speeds["approach_m_s"])
             self.cell.grip(width, self.config["grip_force_n"])
             self.cell.gripper_line(path["lift"], speeds["approach_m_s"])
-            self.cell.gripper_carry(path["over"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_carry(path["over"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(down, speeds["approach_m_s"])
             self.cell.open_to(width + self.config["open_beyond_m"])
             self.cell.gripper_line(path["clear"], speeds["approach_m_s"])
@@ -1042,7 +1045,7 @@ class Build:
             return {"blocked": None, "result": "rescan"}
         with self.log.step("carry", piece, waypoints=[waypoint("carry", path["carry"]), waypoint("over", path["over"])]):
             self.say(f"{piece}: carrying it over its slot")
-            self.cell.gripper_carry(path["carry"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_carry(path["carry"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(path["over"], speeds["approach_m_s"])
         gripper = self.cell.gripper_pose()
         hold["in_hand"] = np.linalg.inv(self.truth()[piece]) @ shifted(gripper, -gripper[:3, 2] * cell.pad_setback(width))
@@ -1433,7 +1436,7 @@ def write_corrections(path, readings, built, config, pack, seeds, skipped):
                      "command": f"python3 scripts/puzzle_build.py --port <port> --out <folder> --seed {seeds[0]} --mutate-stage --discard-changes "
                                 "--perception oracle --write-corrections <this file>",
                      "date": time.strftime("%Y-%m-%d"), "seeds": seeds, "layouts_without_a_reading": skipped,
-                     "pack": config["pack"], "base": config["base"], "cell_pack": assembly.cell_pack(built["cell_pack"])[0],
+                     "pack": config["pack"], "base": config["base"], "held_deg_s": config["speeds"]["held_deg_s"], "cell_pack": assembly.cell_pack(built["cell_pack"])[0],
                      "backend": built["backend"], "grip_force_n": config["grip_force_n"], "friction_in_the_solver": built["friction_in_the_solver"]},
         "entries": entries}
     Path(path).write_text(json.dumps(table, indent=1) + "\n")
