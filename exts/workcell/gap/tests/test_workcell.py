@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ("survey", "picture", "place_base", "lookahead", "approach", "close", "lift", "insert", "rescan", "release", "state")
+TOOLS = ("scan", "survey", "picture", "place_base", "lookahead", "approach", "close", "lift", "insert", "rescan", "release", "state")
 PLAN = {"base": "plate", "order": [{"piece": "bar"}, {"piece": "cap"}]}
 
 
@@ -69,17 +69,30 @@ def test_the_cross_check_reads_the_models_count():
     assert check.run(None, answer="Several.", found=5)["vlm_count"] == -1
 
 
+def test_the_router_takes_the_scans_next_step():
+    assert load(ROOT / "scripts/next_step.py").run(None, next="bar") == {"route": "bar"}
+
+
 def test_the_authored_graph_validates(graph, tmp_path):
     graph.author(PLAN, tmp_path / "graph")
     workflow = json.loads((tmp_path / "graph/workflow.json").read_text())
-    assert list(workflow["subgraphs"]) == ["locate", "count_parts", "place_base", "assemble_bar", "assemble_cap", "judge_assembly"]
-    assert workflow["subgraphs"]["assemble_cap"]["skill"] == "assembling-puzzle-pieces"
+    assert list(workflow["subgraphs"]) == ["scan", "count_parts", "place_base", "assemble_bar", "assemble_cap", "judge_assembly"]
+    assert workflow["subgraphs"]["scan"]["skill"] == "scanning-the-table" and workflow["subgraphs"]["assemble_cap"]["skill"] == "assembling-puzzle-pieces"
     routes = workflow["conditional_edges"]
+    assert ["START", "scan"] in [list(edge) for edge in workflow["edges"]]                                               # the scan is the first step
+    assert routes["scan"]["mapping"] == {"scanned": "next_step", "failed": "abort"}
+    assert routes["next_step"] == {"router_field": None, "mapping": {"plate": "count_parts", "bar": "assemble_bar", "cap": "assemble_cap",
+                                                                      "done": "judge_assembly"}}                     # on to whatever the table now needs
     assert routes["place_base"]["mapping"] == {"placed": "assemble_bar", "retry": "place_base", "failed": "abort"}       # a base that stopped short is slid once more
     assert workflow["subgraphs"]["place_base"]["conditional_edges"]["look"]["mapping"] == {"placed": "placed", "retry": "retry"}
     assert routes["assemble_bar"]["mapping"]["placed"] == "assemble_cap" and routes["assemble_bar"]["mapping"]["retry"] == "assemble_bar"
     assert routes["assemble_cap"]["mapping"]["placed"] == "judge_assembly" and routes["assemble_bar"]["mapping"]["aborted"] == "abort"
-    assert sorted(p.name for p in (tmp_path / "graph/scripts").glob("*.py")) == ["cross_check.py", "verify_grip.py", "verify_reach.py"]
+    for piece in ("bar", "cap"):                                                                                         # a failed pick or a changed table: scan again
+        assert {routes[f"assemble_{piece}"]["mapping"][exit] for exit in ("empty", "missed", "changed")} == {"scan"}
+        assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["look"]["mapping"]["changed"] == "changed"
+        assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["insert"] == {
+            "router_field": "result", "mapping": {"inserted": "look", "rescan": "changed"}}       # a piece put back for want of a sure base: scan again
+    assert sorted(p.name for p in (tmp_path / "graph/scripts").glob("*.py")) == ["cross_check.py", "next_step.py", "verify_grip.py", "verify_reach.py"]
     assert sorted(p.stem for p in (tmp_path / "graph/checkpoints").glob("*.py")) == ["assemble_bar", "assemble_cap", "place_base"]
     registries = [arg for registry in (ROOT, graph.stock_scripts().parents[2]) for arg in ("--skills", str(registry))]
     checked = subprocess.run([str(Path(sys.executable).parent / "gap"), "run", str(tmp_path / "graph"), "--validate-only", *registries],

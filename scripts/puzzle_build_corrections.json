@@ -1,0 +1,256 @@
+{
+ "description": "The puzzle build's table of in-hand corrections (--correction table): one entry per piece type, for the pieces the build's settings name (corrected_from_table); every other piece is placed by its grasp as defined. A piece does not sit in the closed gripper exactly as its grasp is defined on the CAD. in_hand is the gripper as a piece of the type sat in it over its slot, in the frame of the gripper as the grasp defines it (4 x 4, metres; +x the closing axis, +z out through the fingertips): the mean of the readings in each (xyz_mm is a reading's position part). shift_mm and shift_deg are its distance from the grasp as defined; spread_mm the readings' standard deviation along x, y and z. check: the median distance of a reading from the grasp as defined (uncorrected) and from the mean of the other layouts' readings (corrected); an entry earns its place when the second is the smaller. flipped: measured with the gripper half round from the grasp as defined; held the other way round, the shift is turned with the gripper. Simulation only: nothing here was measured on a real gripper or a real piece.",
+ "measured": {
+  "how": "One lookahead per corrected piece on each of several layouts, on Newton, in one measuring run of scripts/puzzle_build.py: after the survey and the base's slide, the piece's pick and insertion is rehearsed from the poses the run believes, with the pieces before it in the build order put in the base where the CAD has them. Over the slot the piece's pose and the gripper's are read from the simulator. A reading is kept when the rehearsal seated the piece. No piece is placed for real.",
+  "command": "python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes --perception oracle --write-corrections <this file>",
+  "date": "2026-11-17",
+  "seeds": [
+   11,
+   12,
+   13,
+   14,
+   15,
+   16
+  ],
+  "layouts_without_a_reading": [],
+  "pack": "puzzles/v1",
+  "base": "base3",
+  "held_deg_s": 20.0,
+  "cell_pack": "ur5e-workcell/v4",
+  "backend": "newton",
+  "grip_force_n": 40.0,
+  "friction_in_the_solver": {
+   "pieces": {
+    "base3": [
+     0.4
+    ],
+    "line_brown": [
+     0.4
+    ],
+    "line_red": [
+     0.4
+    ],
+    "fork_orange": [
+     0.4
+    ],
+    "fork_yellow": [
+     0.4
+    ]
+   },
+   "pads": [
+    0.7
+   ]
+  }
+ },
+ "entries": [
+  {
+   "pieces": [
+    "fork_orange",
+    "fork_yellow"
+   ],
+   "grasp": {
+    "point_m": [
+     0.0,
+     -0.0255,
+     0.006
+    ],
+    "closing_axis": [
+     1,
+     0,
+     0
+    ],
+    "approach_axis": [
+     0,
+     0,
+     -1
+    ],
+    "width_m": 0.021
+   },
+   "flipped": true,
+   "in_hand": [
+    [
+     0.999999706,
+     -5.015e-06,
+     -0.000767275,
+     -0.000100804
+    ],
+    [
+     8.524e-06,
+     0.99998954,
+     0.004573915,
+     7.9564e-05
+    ],
+    [
+     0.000767244,
+     -0.00457392,
+     0.999989245,
+     -0.00108539
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "shift_mm": 1.093,
+   "shift_deg": 0.266,
+   "readings": 12,
+   "spread_mm": [
+    0.0,
+    0.6,
+    0.68
+   ],
+   "check": {
+    "uncorrected_median_mm": 1.14,
+    "corrected_median_mm": 0.77,
+    "by_piece": {
+     "fork_orange": {
+      "readings": 6,
+      "uncorrected_median_mm": 1.22,
+      "corrected_median_mm": 0.76
+     },
+     "fork_yellow": {
+      "readings": 6,
+      "uncorrected_median_mm": 1.12,
+      "corrected_median_mm": 0.82
+     }
+    }
+   },
+   "each": [
+    {
+     "seed": 11,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.21,
+      -0.52
+     ],
+     "shift_deg": 0.196
+    },
+    {
+     "seed": 11,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.84,
+      -2.44
+     ],
+     "shift_deg": 0.085
+    },
+    {
+     "seed": 12,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.01,
+      -1.97
+     ],
+     "shift_deg": 0.548
+    },
+    {
+     "seed": 12,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.47,
+      -0.44
+     ],
+     "shift_deg": 0.231
+    },
+    {
+     "seed": 13,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -1.02,
+      -1.6
+     ],
+     "shift_deg": 0.294
+    },
+    {
+     "seed": 13,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.37,
+      -0.25
+     ],
+     "shift_deg": 0.136
+    },
+    {
+     "seed": 14,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.72,
+      -0.69
+     ],
+     "shift_deg": 0.357
+    },
+    {
+     "seed": 14,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -1.05,
+      -1.04
+     ],
+     "shift_deg": 0.075
+    },
+    {
+     "seed": 15,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.12,
+      -1.43
+     ],
+     "shift_deg": 0.562
+    },
+    {
+     "seed": 15,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      -0.25,
+      -0.93
+     ],
+     "shift_deg": 0.313
+    },
+    {
+     "seed": 16,
+     "piece": "fork_orange",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.43,
+      -0.45
+     ],
+     "shift_deg": 0.126
+    },
+    {
+     "seed": 16,
+     "piece": "fork_yellow",
+     "lookahead_verdict": "go",
+     "xyz_mm": [
+      -0.1,
+      0.13,
+      -1.26
+     ],
+     "shift_deg": 0.553
+    }
+   ]
+  }
+ ]
+}

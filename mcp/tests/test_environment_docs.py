@@ -23,6 +23,8 @@ SYSTEM_VARIABLES = frozenset({"DISPLAY", "ROS_DOMAIN_ID", "ROS_DISTRO", "OMNI_KI
 NOT_SETTINGS = {
     "TWINSMITH_SIM_SESSION_ID": "exported to a managed session's Kit, read by no code",
     "TWINSMITH_SIM_SESSION_DIR": "exported to a managed session's Kit, read by no code",
+    "TWINSMITH_REPO": "exported to the scan step's multi-view cycle (the puzzle project's), read by no code here",
+    "TWINSMITH_SCAN_REPO": "exported to the scan step's multi-view cycle (the puzzle project's), read by no code here",
 }
 SOURCE_DIRS = ("mcp/twinsmith", "mcp/templates", "exts", "scripts")
 SKIP_FILES = {"scripts/check_names.py", "scripts/check_private_paths.py", "scripts/check_portable_paths.py"}
