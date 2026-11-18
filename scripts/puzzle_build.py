@@ -785,9 +785,11 @@ class Build:
                           for at in (option["pick"], option["place"], shifted(option["place"], np.array(axis) * clear_m))]
             except cell.MoveFailed:
                 continue
-            out = float(sum(max(0.0, low - q, q - high) for q in turned[:2]) + max(0.0, turned[1] - turned[0] - rise))     # how far outside what arm allows
+            # How far outside what arm allows: out of the range first (the cell's own joint window lies just beyond it), then how much
+            # further up than a quarter turn (a little more cord than there is).
+            out = (float(sum(max(0.0, low - q, q - high) for q in turned[:2])), float(max(0.0, turned[1] - turned[0] - rise)))
             hold = {**option, "width_m": grasp["width_m"], "piece": piece, "way": way, "wrist_3_deg": [round(math.degrees(q), 1) for q in turned],
-                    "in_window": out == 0.0}
+                    "in_window": out == (0.0, 0.0)}
             if hold["in_window"]:                           # the camera's cord: a way that does not wind wrist 3 out of its window
                 return hold
             in_reach.append((out, way, hold))

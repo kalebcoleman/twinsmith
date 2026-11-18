@@ -140,11 +140,13 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
             turn = self.turns[way]                            # one angle for the pick and the place, or one for each
             return {"wrist_3_joint": math.radians(turn[int(pose[0, 3] - way >= 0.5)] if isinstance(turn, tuple) else turn)}
 
-    def taken(arm, avoid=()):
+    def with_range(arm, wrist_3_deg, avoid=()):
         cell = object.__new__(build.Build)
-        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": [-60.0, 110.0], "wrist_3_rise_deg": 90.0}}
+        cell.config = {"grasps": {"bar": TOY_GRASP}, "open_beyond_m": 0.016, "arm": {"wrist_3_deg": wrist_3_deg, "wrist_3_rise_deg": 90.0}}
         cell.pack, cell.cell, cell.avoid = None, arm, {"bar": set(avoid)}
-        return cell._grasp("bar", spot(0), spot(0.5), {}, {})
+        return cell
+
+    taken = lambda arm, avoid=(): with_range(arm, [-60.0, 110.0], avoid)._grasp("bar", spot(0), spot(0.5), {}, {})
 
     first = taken(Arm([20.0, 30.0, 40.0]))
     assert first["way"] == 0 and first["wrist_3_deg"] == [20.0, 20.0, 20.0]        # all inside: the order of the ways decides, as before
@@ -160,8 +162,10 @@ def test_the_grasp_taken_is_the_first_that_keeps_wrist_3_in_its_window(monkeypat
     assert rising["way"] == 1 and rising["wrist_3_deg"] == [-20.0, 69.0, 69.0] and rising["in_window"] is True
     assert taken(Arm([(-40.0, 69.0), (90.0, 0.0)]))["way"] == 1                    # turning down is as far as the window is wide
     assert taken(Arm([(-40.0, 69.0)]))["in_window"] is False
-    # The bar of benchmark table scatter/21: put in at -110.5 degrees it leaves the window by more than turned up 109 degrees to 69.5.
-    assert taken(Arm([(-39.2, -110.5), (-39.2, 69.5), (140.8, 69.5)]))["way"] == 1
+    # The bar of benchmark table scatter/21 (the range is -90 to 100 there): put in at -108.2 degrees it is out of the range, which
+    # is worse than turned up 108.7 degrees to 69.5 inside it, though the one is 18.2 degrees too far and the other 18.7.
+    wide = lambda turns: (lambda cell: cell._grasp("bar", spot(0), spot(0.5), {}, {}))(with_range(Arm(turns), [-90.0, 100.0]))
+    assert wide([(-39.2, -108.2), (-39.2, 69.5), (140.8, 69.5)])["way"] == 1
 
 
 def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_table_first():
