@@ -356,12 +356,12 @@ A piece does not sit in the closed gripper exactly as its grasp is defined on th
 and the arm hangs about 1 mm below its targets at the pick. Read over the slot in the builds of 2026-11-17, a fork sat
 1.5 to 6.5 mm from its grasp as defined (median 4.1 mm, 32 picks) and a bar 0.4 to 3.4 mm (median 1.6 mm, 41 picks); a
 slot leaves 1.0 to 1.4 mm a side. `--correction` says what the place does about it. Those builds carried a held
-piece at the empty hand's speed; since the held piece is carried slower (**The carry**, below) a fork sits 0.2 to
-2.1 mm from its grasp as defined (median 1.2 mm, 12 rehearsals).
+piece at the empty hand's speed; since the held piece is carried slower (**The carry**, below) a fork sits 0.5 to
+2.6 mm from its grasp as defined (median 1.1 mm, 12 rehearsals).
 
 | `--correction` | What it does | What it costs | What it does not do |
 |---|---|---|---|
-| `table` (the default) | Shifts a fork's place by one fixed amount, the mean of how forks sat in several rehearsals, read from `scripts/puzzle_build_corrections.json`. The bars have no entry and are placed by their grasp as defined. Nothing is simulated ahead: the lookahead step answers go at once | Nothing while building. The table is measured once, in a measuring run of about twenty minutes, and again when a grasp, the grip force, the speed a held piece is carried at, the pack or the solver's friction changes (a table measured with others is refused) | It does not know how this pick's fork sits, only how forks sit on average. And it cannot say abort: it rehearses nothing, so only the grasp check can refuse a pick. On seed 5 it drives the last fork into a jam that a lookahead at the old friction stopped short of |
+| `table` (the default) | Shifts a fork's place by one fixed amount, the mean of how forks sat in several rehearsals, read from `scripts/puzzle_build_corrections.json`. The bars have no entry and are placed by their grasp as defined. Nothing is simulated ahead: the lookahead step answers go at once | Nothing while building. The table is measured once, in a measuring run of about twenty minutes, and again when a grasp, the grip force, the speed a held piece is carried at, the pack or the solver's friction changes (a table measured with others is refused) | It does not know how this pick's fork sits, only how forks sit on average. And it cannot say abort: it rehearses nothing, so only the grasp check can refuse a pick |
 | `lookahead` | Rehearses every pick on Newton first, reads in the rehearsal how the piece sits in the hand, corrects the place by that, and says go or abort | 36 to 45 s of wall time a piece on a GPU shared with other simulators: 178 s of a 440 s build | With the pieces at the task file's friction it stops most builds at a bar (below). A rehearsal is no check on the real cell: over 120 trials of the look-ahead study it never said abort for a scan that was off or for physics that differed |
 | `none` | Places every piece by its grasp as defined | Nothing | A fork placed so seated 5 times of 9 |
 
@@ -377,10 +377,15 @@ piece at 45 degrees a second, and the two `table` rows above it used the tables 
 | `table`, a single reading for each fork (the table as first measured) | 0.4 | 23 | 5 | 251 to 272 s, and 370 s |
 | `table`, one averaged entry for the forks (the table in the repository) | 0.4 | 24 | 6 | 404 to 563 s, on a busier GPU |
 | `none` | 0.4 | 17 | 2 | 293 to 349 s |
+| `table`, a held piece carried at 20 degrees a second, the table measured at that speed | 0.4 | 23 | 5 | 381 to 493 s, two other simulators building |
 
 The first row is one batch; the second, third and fifth were built in turn; all at 1.0 to 1.5 ms a physics step. The
 averaged table was built some hours later with the GPU busier (1.4 to 2.2 ms a step), so its wall times say nothing
-about its speed: it does the same work as the row above it.
+about its speed: it does the same work as the row above it. The last row was built before the carry rose first
+(**Seed 5's last fork**, below): the piece it lost is that fork, and seed 5 built again with the rise seated all four.
+In its six builds the forks' places were 0.5 to 1.6 mm from how the forks really sat (0.7 to 4.0 mm in the row of
+the averaged table at 45 degrees a second), and a build took 7 to 18 simulated seconds more (171 to 187 s against 160
+to 169 s on the five layouts both finished). The six were not built again with the rise and the table measured after it.
 
 So the table at the task's friction does as well as the lookahead did at the old one, and a build is about 160 s shorter
 than a lookahead build of 400 to 440 s; where both finished at 0.4 in turn (seed 2) it was 266 s against 440 s. It is
@@ -428,13 +433,16 @@ as about six builds a way.
   colliding with nothing; runs recorded before the read-back left it out show `[0.4, 1.0]` for that reason.) A
   touching pair takes the larger coefficient, so the base on the bench went from 1.0 to 0.4 and is pushed far more
   easily. Every puzzle scene built on Newton changes with this, not only this script.
-- **Seed 5's last fork** jams at the first try every way, and this is what the default gives up. With `lookahead` at
-  the old friction the rehearsal jams, the verdict is abort, and the build stops with three seated and the fork
-  untouched. With `table` and `none` nothing says abort: the build tries it, the arm is stopped while lowering (5.4
-  to 5.9 degrees from its targets) and the fork ends 60 to 140 mm from its slot. Four times of five it then lay so
-  that it could not be picked again and the build stopped with three seated; once (the averaged table) it lay flat,
-  was picked again and seated. Why it jams there is not known. In a simulation that costs a fork thrown aside; on a
-  real cell it would be a collision that a rehearsal could have refused.
+- **Seed 5's last fork** did not seat in any build before the carry was changed, whatever the correction: the arm
+  was stopped while lowering it (5.4 to 5.9 degrees from its targets) and the fork ended 60 to 140 mm from its slot;
+  a `lookahead` at the old friction said abort and left it on the table. It was not a jam at the slot. That fork
+  lies beside the base, across it from its slot, and its carry was one swing of the arm that began 135 mm above the
+  table and turned the hand level on the way: the fork swung down under the hand as it passed over the base and hit
+  the first fork, standing 87 mm high in its slot. The base was knocked 25 mm and 6 degrees before the fork came
+  down, and the fork was then lowered onto the bars. Now a piece that the hand turns level goes straight up first, to
+  the height of the pose over its slot (`above` in the pick's path, about 3 simulated seconds), and swings there; the
+  same build then seated all four, the last fork 0.9 mm from the CAD. Nothing checks a held piece's swing against
+  what is built: the rise clears this puzzle's 87 mm, not any assembly.
 - **With SAM 3.1 looking** (`--perception sam3`, each look served by a SAM 3.1 worker that was already up, 3.6 s a
   look where the build's own cold job takes about 24 s; the table of single readings that came before the averaged
   one): seed 2, `lookahead` 4 of 4 in 646 s, `table` 4 of 4 in 341 s, `none` 4 of 4 in 319 s; seed 4, `lookahead`
@@ -448,11 +456,13 @@ as about six builds a way.
 **The table.** `scripts/puzzle_build_corrections.json` has one entry per piece type (pieces of one shape held by one
 grasp: the two forks are one type). An entry is `in_hand`, the gripper as a piece of the type sat in it over its
 slot, in the frame of the gripper as the grasp defines it, the mean of its readings; its distance from the grasp as
-defined; the readings themselves and their spread; and a check of whether it helps. The forks' entry is the mean of 12 readings on six layouts with a held piece carried at 20 degrees a second: 1.0 mm and
-0.1 degrees from the grasp as defined (a fork sits 1.0 mm further out along the fingers than the grasp defines and
-0.2 mm lower), with a spread of 0.5 and 0.5 mm from reading to reading; at 45 degrees a second it was 3.2 mm with a
-spread of 1.3 and 1.2 mm. The table records the speed and is refused at another. Its check: a reading is 1.2 mm from the grasp as defined and 0.5 mm from the mean of the
-other layouts' readings (medians; 1.1 and 0.5 mm for the first fork, 1.2 and 0.7 mm for the second). Measure it again with
+defined; the readings themselves and their spread; and a check of whether it helps. The forks' entry is the mean of 12 readings on six layouts with a held piece carried as a build carries it now (straight
+up, then the swing at 20 degrees a second): 1.1 mm and 0.3 degrees from the grasp as defined (a fork sits 1.1 mm
+further out along the fingers than the grasp defines), with a spread of 0.6 and 0.7 mm from reading to reading; with
+one swing at 45 degrees a second it was 3.2 mm with a spread of 1.3 and 1.2 mm. The table records the speed and is
+refused at another. Its check: a reading is 1.1 mm from the grasp as defined and 0.8 mm from the mean of the
+other layouts' readings (medians; 1.2 and 0.8 mm for the first fork, 1.1 and 0.8 mm for the second), where at 45 it
+was 3.3 and 1.4 mm: the slow carry does most of the work, the table the smaller part. Measure it again with
 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 11 --mutate-stage --discard-changes \
         --perception oracle --write-corrections <file>
@@ -660,8 +670,9 @@ above. In one of those earlier runs a fork ended 1.68 mm and 1.76 degrees from t
 said go: the twin starts from where the scan puts the pieces, 1.4 mm off for that fork, and is the same physics as the
 run. On a real robot it is as good as the scan and the measured friction, mass and clearances, and no better. The
 layouts are easy ones: pieces flat, 35 mm apart, the middle and the base's path free. Only the gripper is checked
-against the pieces before a move; the arm's links are not. Seed 5's last fork jams in about two runs of five; a fork is
-inserted with 1.0 to 1.4 mm of clearance a side after turning in the hand, and nothing here makes that reliable.
+against the pieces before a move; the arm's links and a held piece on its way are not (seed 5's last fork, above). A fork is
+inserted with 1.0 to 1.4 mm of clearance a side after turning in the hand; what keeps it within that is the slow
+carry and a table of means, on the layouts tried.
 Nothing here has seen a real camera or a real robot.
 
 Machine-readable data:
