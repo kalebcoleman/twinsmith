@@ -189,7 +189,10 @@ def report(out, label=None):
     """Write ``<out>/bridge_report.md`` from the rows of a benchmark folder (``row.json`` of every case, of ``label``
     when one is given) and what ``replay`` left beside each build. Returns the text."""
     out = Path(out).resolve()
-    rows = sorted((json.loads(path.read_text()) for path in out.glob("*/**/row.json")), key=lambda row: (row["label"], row["case"]))
+    found = ((path.parent, json.loads(path.read_text())) for path in out.glob("*/**/row.json"))
+    # A column's rows lie at <out>/<label>/<case>: rows kept beside them (a superseded head's, a trial's) are not the benchmark's.
+    rows = sorted(({**row, "folder": str(folder)} for folder, row in found if folder == out / row["label"] / row["case"]),
+                  key=lambda row: (row["label"], row["case"]))
     rows = [row for row in rows if label in (None, row["label"])]
     lines = ["# The puzzle builds through the GaP bridge, dry", "",
              "Every build of the benchmark replayed through the puzzle project's `ros2/gap_bridge` (`export`, then a dry `run`: the built-in mock "

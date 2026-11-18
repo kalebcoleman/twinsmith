@@ -97,6 +97,11 @@ def test_the_report_counts_goals_refused_by_gate_and_by_cause(tmp_path):
     built("base/b", "integ", 4, [goal("001_survey")])
     built("base/c", "integ", 3, said="REFUSED: 056 begins 11.80 deg from where 054 ends: the run's samples are not one path.\n")
     built("base/a", "main", 4, [goal("001_survey")])
+    built("superseded/integ_old/base/a", "integ", 4, [goal("001_survey", window)])      # a row kept beside the columns: not the benchmark's
+    aside = tmp_path / "integ/superseded/integ_old/base/a"
+    aside.rename(tmp_path / "kept_aside")
+    row = json.loads((tmp_path / "kept_aside/row.json").read_text())
+    (tmp_path / "kept_aside/row.json").write_text(json.dumps({**row, "case": "base/a"}))
     assert disturb.cause(window) == "wrist_3_joint outside the cell's joint limits" and disturb.cause(cord) == "camera cord over its spare loop"
     found = disturb.judged(tmp_path / "integ/base/a")
     assert (found["goals"], found["sent"], found["corrected"], found["corrected_refused"], found["no_plan"]) == (3, 1, 2, 1, None)
@@ -105,5 +110,6 @@ def test_the_report_counts_goals_refused_by_gate_and_by_cause(tmp_path):
     assert (tmp_path / "bridge_report.md").read_text() == text and "| base/a | main |" not in text
     assert "| base/a | integ | yes | 3 | 1 | 2 | gate 2: 2 | 2 (1) | wrist_3_joint outside the cell's joint limits (2); camera cord over its spare loop (1) |" in text
     assert "| base/c | integ | no | 0 | 0 | 0 | - | 0 (0) | REFUSED: 056 begins" in text
+    assert text.count("| base/a | integ |") == 1
     assert "| integ | 3 | 2 | 2 | 1 | 4 | 2 |" in text                      # builds, seated, seated and replayed, seated and clean, goals, refused
     assert "- wrist_3_joint outside the cell's joint limits: 2 goals" in text and "| base/a | main |" in disturb.report(tmp_path)
