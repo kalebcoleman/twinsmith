@@ -615,7 +615,7 @@ class Build:
                 self.cell.step(50)
                 before = self.truth()
                 try:
-                    self.cell.gripper_carry(hold["path"]["carry"], speed_deg_s=speeds["joint_deg_s"])
+                    self.cell.gripper_carry(hold["path"]["carry"], speed_deg_s=speeds["held_deg_s"])
                     self.cell.gripper_line(hold["path"]["over"], speeds["approach_m_s"])
                     self.cell.gripper_line(hold["path"]["place"], speeds["insert_m_s"], segment_m=0.005)
                     self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
@@ -643,7 +643,7 @@ class Build:
         with self.log.step("set down", piece, why=why, waypoints=[waypoint("lift", path["lift"]), waypoint("pick", path["pick"])]):
             self.say(f"{piece}: {why}; putting it back to scan the table")
             self.cell.gripper_line(shifted(self.cell.gripper_pose(), [0, 0, CARRY_M]), speeds["approach_m_s"])
-            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_carry(path["lift"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(shifted(path["pick"], [0, 0, 0.002]), speeds["approach_m_s"])
             self.cell.open_to(hold["width_m"] + self.config["open_beyond_m"])
             self.cell.gripper_line(path["hover"], speeds["approach_m_s"])
@@ -852,7 +852,7 @@ class Build:
             self.cell.gripper_line(pick, speeds["approach_m_s"])
             self.cell.grip(width, self.config["grip_force_n"])
             self.cell.gripper_line(path["lift"], speeds["approach_m_s"])
-            self.cell.gripper_carry(path["over"], speed_deg_s=speeds["joint_deg_s"])
+            self.cell.gripper_carry(path["over"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(down, speeds["approach_m_s"])
             self.cell.open_to(width + self.config["open_beyond_m"])
             self.cell.gripper_line(path["clear"], speeds["approach_m_s"])

@@ -211,7 +211,7 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
     def turned(turn_grasps, room=True, turning_in_window=True):
         cell = object.__new__(build.Build)
         cell.config = {"turn_grasps": turn_grasps, "arm": {"wrist_3_deg": [-60.0, 110.0]}, "open_beyond_m": 0.016, "grip_force_n": 40.0,
-                       "speeds": {"approach_m_s": 0.05, "joint_deg_s": 45.0}}
+                       "speeds": {"approach_m_s": 0.05, "joint_deg_s": 45.0, "held_deg_s": 20.0}}
         cell.pack, cell.cell, cell.estimate, cell.metrics, cell.said = pack, Arm(), {"bar": lying}, {"bar": {}}, []
         cell.say, cell._seat = cell.said.append, lambda piece: lying
         cell.log = step_log.StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
