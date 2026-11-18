@@ -407,8 +407,11 @@ class Build:
         if not self.ahead:
             self.metrics[piece]["attempts"] += 1
         pick, over = self._tcp(hold["pick"], width), self._tcp(shifted(hold["place"], hold["axis"] * hold["clear_m"]), width)
+        carry = shifted(over, [0, 0, CARRY_M])
         hold["path"] = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, LIFT_M]),
-                        "carry": shifted(over, [0, 0, CARRY_M]), "over": over, "place": self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width)}
+                        "carry": carry, "over": over, "place": self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width)}
+        if hold["place"][2, 2] > -0.7:                      # the hand turns level on the way to the slot, and the piece swings down under it:
+            hold["path"]["above"] = shifted(pick, [0, 0, max(LIFT_M, float(carry[2, 3] - pick[2, 3]))])     # it turns above what is built, not beside it
         self.log.note(grasp=self._grasp_plan(piece, hold), corrected_by=hold["corrected_by"], slot_axis=[round(float(v), 4) for v in hold["axis"]],
                       waypoints=[waypoint(name, at) for name, at in hold["path"].items()])
         self.say(f"{piece}: approaching")
@@ -464,8 +467,10 @@ class Build:
         """Carry the held piece over its slot, lower it along the slot axis, let go, back away and rise."""
         hold, speeds = self.held, self.config["speeds"]
         width, path = hold["width_m"], hold["path"]
-        with self.log.step("carry", piece, waypoints=[waypoint("carry", path["carry"]), waypoint("over", path["over"])]):
+        with self.log.step("carry", piece, waypoints=[waypoint(name, path[name]) for name in ("above", "carry", "over") if name in path]):
             self.say(f"{piece}: carrying it over its slot")
+            if "above" in path:
+                self.cell.gripper_line(path["above"], speeds["approach_m_s"])
             self.cell.gripper_carry(path["carry"], speed_deg_s=speeds["held_deg_s"])
             self.cell.gripper_line(path["over"], speeds["approach_m_s"])
         gripper = self.cell.gripper_pose()

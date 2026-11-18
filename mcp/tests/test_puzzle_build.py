@@ -106,6 +106,9 @@ def test_a_piece_in_the_fingers_is_carried_slower_than_an_empty_hand_moves():
     carried = []
 
     class Cell:                                                 # the carry over the slot is all this lets through
+        def gripper_line(self, pose, speed_m_s):
+            carried.append(("straight up", float(pose[2, 3])))
+
         def gripper_carry(self, pose, speed_deg_s):
             carried.append(speed_deg_s)
             raise build.cell.MoveFailed("far enough")
@@ -116,8 +119,15 @@ def test_a_piece_in_the_fingers_is_carried_slower_than_an_empty_hand_moves():
     made.held = {"width_m": 0.021, "path": {"carry": np.eye(4), "over": np.eye(4)}}
     made.say = lambda text: None
     with pytest.raises(build.cell.MoveFailed):
-        made.insert("fork_orange")
+        made.insert("line_red")
     assert carried == [CONFIG["speeds"]["held_deg_s"]]
+    # A piece the hand turns level on the way swings down under the hand: it goes straight up first, to turn above
+    # what is built (on one layout the second fork, turned beside the base, knocked the first and the base with it).
+    carried.clear()
+    made.held["path"]["above"] = build.shifted(np.eye(4), [0, 0, 0.27])
+    with pytest.raises(build.cell.MoveFailed):
+        made.insert("fork_orange")
+    assert carried == [("straight up", 0.27), CONFIG["speeds"]["held_deg_s"]]
 
 
 def test_pieces_of_one_shape_held_by_one_grasp_are_one_type():
