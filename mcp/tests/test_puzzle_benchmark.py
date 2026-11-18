@@ -271,3 +271,15 @@ def test_the_summary_gathers_every_row_and_writes_the_table(tmp_path, capsys):
     text = (tmp_path / "summary.md").read_text()
     assert "| base/far/61 | 1 of 4, 0.9 / 0.9 mm, 300 s, 0 rescans, 3 failed picks | 4 of 4, 0.8 / 1.1 mm, 300 s, 0 rescans, 0 failed picks |" in text
     assert "| integ seats more than main, and no layout is worse | yes |" in text and "rescan of line_red was refused" in text
+    assert "invalid physics state" not in text
+    # A build the simulator ended with values that are not numbers is kept aside and the case built once more: the
+    # tables count the second build, and the bar is also read with the first.
+    folder = a_build(tmp_path / "superseded/integ_invalid/base/far/61", {}, stopped="the simulator returned values that are not finite numbers")
+    moved = {**bench.row_of(folder, case, "integ", ran), "folder": str(tmp_path / "integ/base/far/61")}      # a moved row still names where it was built
+    (folder / "row.json").write_text(json.dumps(moved))
+    bench.summary(type("Args", (), {"out": tmp_path, "main": "main", "ours": "integ", "reference": None})())
+    text = (tmp_path / "summary.md").read_text()
+    assert [(row["label"], row["pieces_seated"]) for row in json.loads((tmp_path / "metrics.json").read_text())] == [("integ", 4), ("main", 1)]
+    assert "- base/far/61 (integ): first ended with 0 of 4 seated: the simulator returned values that are not finite numbers; built again." in text
+    as_built = text.split("### The bar with those builds counted as they first ended")[1]
+    assert "| integ seats more than main, and no layout is worse | NO |" in as_built

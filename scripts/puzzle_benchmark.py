@@ -430,9 +430,9 @@ def bar(rows, main, ours, reference=None):
 
 def summary(args):
     out = Path(args.out).resolve()
-    rows = [json.loads(path.read_text()) for path in out.glob("*/**/row.json")]
-    rows = sorted((row for row in rows if Path(row["folder"]) == out / row["label"] / row["case"]),          # a column's rows, not a trial's kept beside them
-                  key=lambda row: (row["case"], row["label"]))
+    rows = [(path, json.loads(path.read_text())) for path in out.glob("*/**/row.json")]
+    rows = sorted((row for path, row in rows if path.parent == out / row["label"] / row["case"]),     # a column's rows where the column left them:
+                  key=lambda row: (row["case"], row["label"]))                                            # not a trial's, nor a row moved aside
     (out / "metrics.json").write_text(json.dumps(rows, indent=1) + "\n")
     labels = [label for label in (args.main, args.ours, args.reference) if label and any(row["label"] == label for row in rows)]
     labels += sorted({row["label"] for row in rows} - set(labels))
@@ -465,6 +465,19 @@ def summary(args):
         lines += [f"| {item['item']} | {'not known' if item['passed'] is None else 'yes' if item['passed'] else 'NO'} | {item['detail']} |"
                   for item in bar(rows, args.main, args.ours, args.reference)]
         lines += ["| the repository's tests pass | not this file's to say | run them |"]
+    first = {(row["label"], row["case"]): row for row in (json.loads(path.read_text()) for path in sorted(out.glob("superseded/*_invalid/**/row.json")))}
+    if first:                                                # the simulator's fault, not the loop's: kept, built once more, and counted both ways
+        lines += ["", "## Built once more after an invalid physics state", "",
+                  "A build that the simulator ended with values that are not numbers is kept under `superseded/<label>_invalid/` and its case is "
+                  "built once more, for every label alike; a second such end stands as the case's row. The tables above count the second build.", ""]
+        lines += [f"- {case} ({label}): first ended with {row['pieces_seated']} of {row['pieces_total'] or '?'} seated: {row['stopped']}; "
+                  + ("built again." if any(other["label"] == label and other["case"] == case for other in rows) else "NOT built again yet.")
+                  for (label, case), row in first.items()]
+        if args.main and args.ours:
+            as_built = [first.get((row["label"], row["case"]), row) for row in rows]
+            lines += ["", f"### The bar with those builds counted as they first ended", "", "| Item | Passed | What the rows say |", "|---|---|---|"]
+            lines += [f"| {item['item']} | {'not known' if item['passed'] is None else 'yes' if item['passed'] else 'NO'} | {item['detail']} |"
+                      for item in bar(as_built, args.main, args.ours, args.reference)]
     stops = [row for row in rows if row["stopped"]]
     if stops:
         lines += ["", "## Builds that stopped", ""] + [f"- {row['case']} ({row['label']}): {row['stopped']}. `{row['folder']}`" for row in stops]
