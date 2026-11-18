@@ -163,6 +163,8 @@ class Build:
     one tool of the graph: it takes and returns plain data."""
 
     TURN_LIFT_M = 0.03                                      # how high a piece is lifted to be turned on the table
+    TURN_INWARD_M = (0.0, 0.04, 0.08, 0.12)                 # how much nearer the picture's middle a turned piece may be set down, tried in this order
+    TURN_DOWN_MIN_DEG = -30.0                               # the turning grip's wrist 3 where it lets go: lower, and the way back to the survey winds the cord
     TURN_MARGIN_DEG = 10.0                                  # a piece is turned to where its pick has this much to spare inside the limits
     TURN_LOOK_DEG = 3.0                                     # a look that reads a turned piece further than this from the gripper's turn is believed
 
@@ -867,41 +869,59 @@ class Build:
         (of 69 forks, those picked within 15 degrees of the place's wrist 3 sat up to 3.8 mm that way and one of
         them jammed; those picked 90 degrees from it sat 0.9 mm that way in the mean). Returns whether it was turned: False
         when the piece has no such grip, or no angle leaves room, reach, both grips inside the window and the
-        piece wholly in the survey's picture."""
+        piece wholly in the survey's picture; the step's log then says how the angles tried fell away
+        (``not_turned``). A piece that lies too near the picture's edge for that is set down up to
+        ``TURN_INWARD_M`` nearer its middle, carried there ``LIFT_M`` above the table."""
         grasp = self.config["turn_grasps"].get(piece)
         if grasp is None:
             return False
         now, back = self.estimate[piece], np.linalg.inv(self.cell.wrist_from_gripper)
         (low, high), rise, placed = self.config["arm"]["wrist_3_deg"], self.config["arm"]["wrist_3_rise_deg"], hold["wrist_3_deg"][1]
         about = (now @ np.array([*grasp["point_m"], 1.0]))[:3] * [1.0, 1.0, 0.0]     # the turn is about the gripper's own axis: it stays where it is
-        ways = []
-        for deg in range(-165, 181, 15):
-            spin = puzzle_scan.yaw_matrix(math.radians(deg))
-            spin = cell.pose(spin, about - spin @ about)
-            try:
-                wrist = math.degrees(self.cell.reconfigure(self._tcp(spin @ hold["pick"], hold["width_m"]) @ back)["wrist_3_joint"])
-            except cell.MoveFailed:
-                continue
-            if deg and low + self.TURN_MARGIN_DEG <= wrist <= high - self.TURN_MARGIN_DEG and placed - wrist <= rise - self.TURN_MARGIN_DEG:
-                ways.append((-abs(wrist - placed), abs(deg), deg, spin @ now))
-        for *_, deg, there in sorted(ways, key=lambda way: way[:3]):
+        # Where it may be set down: where it lies, or up to TURN_INWARD_M nearer the middle of the survey's picture when
+        # it lies too near the picture's edge to be turned there (a turned piece has to be wholly in the picture).
+        toward = np.array([*self.config["survey"]["look_at_m"][:2], 0.0]) - about
+        toward = toward / max(float(np.linalg.norm(toward)), 1e-9)
+        ways, why = [], {"angles_inside_the_limits": 0, "no_room": 0, "out_of_the_picture": 0, "no_grasp": 0, "a_grip_outside_the_limits": 0}
+        for inward in self.TURN_INWARD_M:
+            for deg in range(-165, 181, 15):
+                spin = puzzle_scan.yaw_matrix(math.radians(deg))
+                spin = cell.pose(spin, about - spin @ about + inward * toward)
+                try:
+                    wrist = math.degrees(self.cell.reconfigure(self._tcp(spin @ hold["pick"], hold["width_m"]) @ back)["wrist_3_joint"])
+                except cell.MoveFailed:
+                    continue
+                if (deg or inward) and low + self.TURN_MARGIN_DEG <= wrist <= high - self.TURN_MARGIN_DEG and placed - wrist <= rise - self.TURN_MARGIN_DEG:
+                    ways.append((inward, -abs(wrist - placed), abs(deg), deg, spin @ now))
+        why["angles_inside_the_limits"] = len(ways)
+        for inward, *_, deg, there in sorted(ways, key=lambda way: way[:4]):
+            lift = self.TURN_LIFT_M if not inward else LIFT_M   # carried over the table, it clears what lies there
             grown = assembly.footprint(self.pack, piece, there, MARGIN_M)
-            if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()) or not self._in_the_picture(piece, there):
+            if not all(assembly._apart(grown, assembly.footprint(self.pack, other, at)) for other, at in others.items()):
+                why["no_room"] += 1
+                continue
+            if not self._in_the_picture(piece, there):
+                why["out_of_the_picture"] += 1
                 continue
             try:
                 after = self._grasp(piece, there, self._seat(piece), others, others, axis, clear_m)
-                by = self._grasp(piece, now, there, others, others, clear_m=self.TURN_LIFT_M, grasp=grasp)
+                by = self._grasp(piece, now, there, others, others, clear_m=lift, grasp=grasp)
             except Refused:
+                why["no_grasp"] += 1
                 continue
-            if after["in_window"] and by["in_window"]:
+            # The turning grip's own wrist 3: inside the limits, and not set down so low that the way back up to the survey
+            # pose winds the cord (set down at -57 degrees, the look after it needed 21.4 cm of cord).
+            if after["in_window"] and by["in_window"] and by["wrist_3_deg"][1] >= self.TURN_DOWN_MIN_DEG:
                 break
+            why["a_grip_outside_the_limits"] += 1
         else:
+            self.log.note(not_turned=why)
             return False
         width, speeds = by["width_m"], self.config["speeds"]
         pick, down = self._tcp(by["pick"], width), self._tcp(shifted(by["place"], [0, 0, 0.002]), width)
-        path = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, self.TURN_LIFT_M]),
-                "over": shifted(down, [0, 0, self.TURN_LIFT_M]), "down": down, "clear": shifted(down, [0, 0, HOVER_M])}
-        with self.log.step("turn", piece, deg=deg, wrist_3_deg={"as_it_lay": hold["wrist_3_deg"], "turned": after["wrist_3_deg"], "turning": by["wrist_3_deg"]},
+        path = {"hover": shifted(pick, [0, 0, HOVER_M]), "pick": pick, "lift": shifted(pick, [0, 0, lift]),
+                "over": shifted(down, [0, 0, lift]), "down": down, "clear": shifted(down, [0, 0, HOVER_M])}
+        with self.log.step("turn", piece, deg=deg, inward_m=inward, wrist_3_deg={"as_it_lay": hold["wrist_3_deg"], "turned": after["wrist_3_deg"], "turning": by["wrist_3_deg"]},
                            grasp={key: grasp[key] for key in ("point_m", "closing_axis", "approach_axis", "width_m", "what")},
                            waypoints=[waypoint(name, at) for name, at in path.items()]) as row:
             self.say(f"{piece}: its pick would put wrist 3 at {hold['wrist_3_deg'][0]:.0f} degrees; turning it {deg} degrees on the table first")

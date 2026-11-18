@@ -48,9 +48,9 @@
  },
  "seated": {"position_m": 0.0015, "rotation_deg": 2.0},
  "turn_grasps": {
-  "what": "How a piece is gripped to be turned on the table when no way of holding it keeps wrist 3 where arm says. A fork is held one way round, and that grip half a turn round is no help (when the one is outside the range the other is inside, and a turn that brings the first inside takes the second out): it is turned by a grip a quarter turn from its own, along its middle, across the 69.9 mm from the end of the centre tab to the tip of the centre prong. A bar is turned by its own grip.",
-  "fork_orange": {"what": "Along the middle, tab end to centre prong tip.", "point_m": [0.0, 5e-05, 0.006], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
-  "fork_yellow": {"what": "As fork_orange.", "point_m": [0.0, 5e-05, 0.006], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
+  "what": "How a piece is gripped to be turned on the table when no way of holding it keeps wrist 3 where arm says. A fork is held one way round, and that grip half a turn round is no help (when the one is outside the range the other is inside, and a turn that brings the first inside takes the second out): it is turned by a grip a quarter turn from its own, along its middle, across the 69.9 mm from the end of the centre tab to the tip of the centre prong, the pads' middle 9 mm above the fork's own (at 6 mm the bridge's collision gate found a pad 0.3 mm from the table, its least). A bar is turned by its own grip.",
+  "fork_orange": {"what": "Along the middle, tab end to centre prong tip.", "point_m": [0.0, 5e-05, 0.009], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
+  "fork_yellow": {"what": "As fork_orange.", "point_m": [0.0, 5e-05, 0.009], "closing_axis": [0, 1, 0], "approach_axis": [0, 0, -1], "width_m": 0.0699},
   "line_brown": {"what": "Its own grip.", "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259},
   "line_red": {"what": "As line_brown.", "point_m": [0.0, 0.0, 0.0095], "closing_axis": [1, 0, 0], "approach_axis": [0, 0, -1], "width_m": 0.0259}
  },

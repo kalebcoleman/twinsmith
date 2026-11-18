@@ -228,24 +228,30 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
         cell.log = step_log.StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
 
         def grasp(piece, now, target, around_now, around_then, axis=(0, 0, 1), clear_m=0.0, grasp=None):
-            wrist = math.degrees(cell.cell.reconfigure(now)["wrist_3_joint"])
+            wrist, down = (math.degrees(cell.cell.reconfigure(at)["wrist_3_joint"]) for at in (now, target))
             inside = turning_in_window if grasp else -60 <= wrist <= 110
-            return {"pick": now, "place": target, "width_m": 0.024, "wrist_3_deg": [round(wrist, 1)], "in_window": inside}
+            if grasp:
+                cell.set_down = target                         # where the turning grip lets go of it
+            return {"pick": now, "place": target, "width_m": 0.024, "wrist_3_deg": [round(wrist, 1), round(down, 1), round(down, 1)], "in_window": inside}
 
         cell._grasp = grasp
         # Where the look finds it: slid 1.5 mm, and read ``misread`` degrees from the turn the open step asked for.
         cell.misread = 1.2
-        cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)), [lying[0, 3] + 0.0015, lying[1, 3], lying[2, 3]])
+        cell.lands = lambda: assembly.pose(scan.yaw_matrix(math.radians(cell.log.steps[-1]["plan"]["deg"] + cell.misread)),
+                                           [cell.set_down[0, 3] + 0.0015, cell.set_down[1, 3], lying[2, 3]])
         cell._look = lambda label: ({"bar": cell.lands()} if cell.misread is not None else {}, {})
         others = {} if room else {"plate": assembly.pose(np.eye(3), [0.2, -0.4, 0.0])}
         hold = {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0, 0.0, 0.0], "in_window": False}
-        return cell, cell._turn("bar", hold, others, np.array([0.0, 0.0, 1.0]), 0.03)
+        with cell.log.step("approach", "bar"):                 # a turn is made inside the approach's step
+            return cell, cell._turn("bar", hold, others, np.array([0.0, 0.0, 1.0]), 0.03)
+
+    turn_of = lambda cell: [step for step in cell.log.steps if step["kind"] == "turn"][-1]
 
     cell, done = turned({})
     assert done is False and cell.cell.did == []               # no grip to turn it by: it is picked as it lies
     across = dict(TOY_GRASP, closing_axis=[0, 1, 0], what="across")
     cell, done = turned({"bar": across})
-    step = cell.log.steps[0]
+    step = turn_of(cell)
     # The pick is taken as far from where wrist 3 stands at the place (0 here) as the window allows with 10 degrees to spare
     # (-50 to 100): 90 degrees, which from -150 is a turn of -120.
     assert done is True and step["kind"] == "turn" and step["plan"]["deg"] == -120 and cell.metrics["bar"]["turned_deg"] == -120
@@ -256,16 +262,29 @@ def test_a_piece_whose_pick_winds_wrist_3_out_of_its_window_is_turned_on_the_tab
     assert apart(yaw_of(cell.estimate["bar"]), step["plan"]["deg"]) < 1e-6 and step["result"] == dict(step["result"], off_deg=1.2, turn_taken_from="the gripper")
     cell.misread, cell.estimate["bar"] = 8.0, lying            # turned again, and found 8 degrees from the gripper's turn: the look is believed
     assert cell._turn("bar", {"pick": lying, "width_m": 0.024, "wrist_3_deg": [-150.0, 0.0, 0.0], "in_window": False}, {}, np.array([0.0, 0.0, 1.0]), 0.03)
-    again = cell.log.steps[-1]
+    again = turn_of(cell)
     assert apart(yaw_of(cell.estimate["bar"]), again["plan"]["deg"] + 8.0) < 1e-6 and again["result"]["turn_taken_from"] == "the look"
     assert "wrist 3 at -150 degrees" in cell.said[0]
-    assert turned({"bar": across}, room=False)[1] is False                       # another piece where it would lie
+    crowded, done = turned({"bar": across}, room=False)       # another piece where it would lie: set down clear of it, nearer the picture's middle
+    plate_at = assembly.pose(np.eye(3), [0.2, -0.4, 0.0])
+    assert done is True and turn_of(crowded)["plan"]["inward_m"] > 0
+    assert assembly._apart(assembly.footprint(pack, "bar", crowded.estimate["bar"], 0.019), assembly.footprint(pack, "plate", plate_at))
     # Near the far edge of the survey's picture a bar turned half round would reach out of it, and the look after the turn
     # would misread it: it is turned by an angle that keeps it in the picture, though the pick is then nearer the place's wrist 3.
     far, done = turned({"bar": across}, lying=assembly.pose(np.eye(3), [0.2, -0.625, lying[2, 3]]))
-    by = far.log.steps[0]["plan"]["deg"]
-    assert done is True and by != -120 and far._in_the_picture("bar", far.estimate["bar"])
+    assert done is True and far._in_the_picture("bar", far.estimate["bar"])
     assert not far._in_the_picture("bar", assembly.pose(scan.yaw_matrix(math.pi), [0.2, -0.625, lying[2, 3]]))
+    assert turn_of(far)["plan"]["wrist_3_deg"]["turning"][1] >= -30.0            # and the turning grip lets go where the way back to the survey is short
+    # In the picture's corner no angle keeps it in the picture where it lies: it is set down nearer the picture's middle.
+    corner, done = turned({"bar": across}, lying=assembly.pose(np.eye(3), [0.36, -0.64, lying[2, 3]]))
+    moved = turn_of(corner)["plan"]["inward_m"]
+    assert done is True and moved > 0 and corner._in_the_picture("bar", corner.estimate["bar"])
+    assert abs(float(np.linalg.norm(corner.estimate["bar"][:2, 3] - [0.36, -0.64])) - moved) < 0.002
+    # A piece that cannot be turned says how the angles tried fell away.
+    stuck, done = turned({"bar": across}, turning_in_window=False)
+    assert done is False and stuck.said == [] and stuck.cell.did == []           # nothing was moved for it
+    fell = stuck.log.steps[0]["plan"]["not_turned"]
+    assert fell["angles_inside_the_limits"] > 0 and fell["a_grip_outside_the_limits"] > 0 and fell["no_grasp"] == 0
     assert turned({"bar": across}, turning_in_window=False)[1] is False          # the turning grip itself out of the window
     cell.misread, cell.estimate["bar"] = None, lying           # turned once more, and gone from the look after it
     with pytest.raises(build.Refused, match="does not find it"):
