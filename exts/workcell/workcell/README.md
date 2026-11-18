@@ -520,20 +520,37 @@ degrees at the pick and the place (`wrist_3_deg`), and turns up by a quarter tur
 **The turn on the table.** A fork that lies so that its one grip is outside that range is turned where it lies before
 it is picked: gripped along its middle (tab end to centre prong tip, 69.9 mm; its own grip half a turn round is no help,
 since when the one is outside the range the other is inside and a turn that brings the first inside takes the second
-out), lifted 30 mm, turned by the angle that brings its own grip nearest the middle of the range, set down and looked
-at again. Where it lies is taken from that look (it slid 1.6 to 4.6 mm in the fingers); how it is turned is taken from
+out), lifted 30 mm, turned, set down and looked at again. Where it lies is taken from that look (it slid 1.6 to 4.6 mm in the fingers); how it is turned is taken from
 the gripper, whose fingers square it between its two flat ends (0.0 to 0.04 degrees from the truth in three turns,
 where the look read 0.1 to 1.5 degrees off), unless the look disagrees by more than 3 degrees. A bar is turned by its
-own grip. Measured so far, one build each: on seed 6 the turned fork (150 degrees, 20 simulated seconds and 37 s of
-wall time with its look) was seated 1.13 mm from the CAD, and the bridge sent every goal of the turn and of the fork's
-pick; of that build's 58 goals one was refused at the limits (the bar's carry that the quarter-turn rule is for). On
-seed 5 a bar turned by its own grip was seated (1.39 mm), and the turned fork jammed in its slot in four builds of
-four (turned 150 degrees in three, 180 in one), although it was picked where and how its grip is defined (0.2 mm,
-0.04 degrees): it sat 2.2 and 7.5 mm further along its tab in the fingers than its grip is defined, where the same
-fork picked as it lay sat 1.5 mm the other way and was seated in three builds of three. The fingers hold a fork by
-the top of its tab, and it slides in them by 0 to 7.5 mm from one pick to the next; the turn changes which pick it
-is, not how the fingers hold. So `arm.turn_on_table` is off as shipped: on, it trades seated forks for goals the
-bridge sends, and how many of each is for a benchmark column of its own to say.
+own grip. Of the angles that put its own grip's pick inside the limits with 10 degrees to spare, the one is taken at
+which wrist 3 stands furthest from where it stands at the place: a held fork creeps toward the end of its tab when the
+hand is swung level quickly, and that swing is quickest when wrist 3 has nothing to turn on the way (of 69 forks, the
+two that sat furthest that way, 3.2 and 3.8 mm, had been turned to 9 and 15 degrees from the place's wrist 3, and the
+second jammed). A turned piece has to lie wholly in the survey's picture, since the look after the turn reads it from
+there (a bar turned across the picture's far edge was read 11.5 mm off); one that lies too near the edge for that is set
+down up to 12 cm nearer the picture's middle. The turning grip lets go no lower than wrist 3 = -30 degrees: from -57 the
+way back up to the survey pose needed 21.4 cm of cord.
+
+**What the turn costs and gains**, on the 18 base cases of the frozen benchmark (`scripts/puzzle_benchmark.json`, SAM
+3.1, Newton, the table of corrections; column `integ` without it, `integ_turn` with it and nothing else changed):
+
+| | Turn off | Turn on |
+|---|---|---|
+| Pieces seated | 71 of 72 | 72 of 72 |
+| Median wall time of a build | 438 s | 473 s |
+| Bridge goals refused, in the builds that seated everything | 66 of 857 | 27 of 1045 |
+| Such builds with every goal sent | 2 of 17 | 7 of 18 |
+| Pieces turned | 0 | 20 |
+
+A turn takes 17 to 20 simulated seconds with its look. With the turn on the bridge still refused, all at its limits
+gate but four: pieces that were not turned because they lay too near the picture's edge (13 goals in 3 builds; the
+set-down further in came after that column and took four of those cases from 13 refused goals to 3, one build each);
+the turn's own approach in 5 builds (a pad 0.3 mm from the table at the collision gate with the turning grip 6 mm above
+the fork's middle, since raised to 9 mm; and the low set-down above); bars carried with 0.5 to 1.2 cm more cord than
+the spare loop although inside the rule (6 goals); and the base's own slide once (3 goals). The rule of `arm` is a
+stand-in: to have none refused the build would have to ask the bridge's own check for a move before it makes it.
+`arm.turn_on_table` is off as shipped; which column to ship is a choice of 35 seconds a build against those goals.
 
 #### Earlier measurements
 
