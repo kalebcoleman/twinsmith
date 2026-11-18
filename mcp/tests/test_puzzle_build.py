@@ -283,6 +283,55 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
     assert (report, views, cell.combined) == ({}, ["top"], [])                    # the simulator's own poses: no cycle and no doubt
 
 
+def test_a_symmetric_base_is_first_read_the_same_way_round_whichever_answer_the_matcher_gives():
+    half_turn = (scan.yaw_matrix(math.pi), np.zeros(3))
+    cell = object.__new__(build.Build)
+    cell.base, cell.order = "plate", [{"piece": "bar"}]
+    cell.pack = type("Pack", (), {"shape": lambda self, name: type("Shape", (), {"symmetries": [(np.eye(3), np.zeros(3)), half_turn]})()})()
+    cell.slots = {"bar": assembly.pose(np.eye(3), [0.0, 0.025, 0.012])}        # the first piece's slot, off the base's middle
+    one = assembly.pose(scan.yaw_matrix(0.3), [0.0, -0.46, 0.0])
+    other = one @ assembly.pose(*half_turn)
+    for read in (one, other):
+        taken = cell._first_reading(read)
+        assert np.allclose(taken, one) and (taken @ cell.slots["bar"])[1, 3] > (other @ cell.slots["bar"])[1, 3]
+
+
+def test_a_piece_that_goes_in_level_has_its_base_looked_at_before_it_is_picked_with_the_hand_empty():
+    step_log = sys.modules["step_log"]
+    pack = scan.Pack(TOY, {"plate": [*TOY_SLOTS["plate"], {"piece": "cap", "position_m": [0.0, 0.0, 0.029], "rpy_deg": [0.0, 0.0, 0.0]}]}, "toy/v1")
+    plate = assembly.pose(np.eye(3), [0.0, -0.46, pack.shape("plate").rests[0].drop])
+    slid = plate.copy()
+    slid[0, 3] += 0.004
+
+    def before_the_pick(verdicts, approach_axis=(1, 0, 0)):
+        cell = object.__new__(build.Build)
+        cell.pack, cell.base, cell.slots = pack, "plate", assembly.slot_poses(pack, "plate")
+        cell.config = {"grasps": {"cap": dict(TOY_GRASP, approach_axis=list(approach_axis))},
+                       "base_check": {"corrections": 2, "look": {"offset_m": [-0.1, 0.05], "height_m": 0.45, "roll_deg": -120.0}}}
+        cell.estimate, cell.base_goal, cell.placed = {"plate": plate, "bar": plate @ cell.slots["bar"], "cap": plate}, plate, ["bar"]
+        cell.base_log, cell.said, cell.moves, cell.put_back, cell.unsure = {"corrections": []}, [], [], "cap", "an old doubt"
+        cell.say, cell.log = cell.said.append, step_log.StepLog(lambda: {"sim_s": 0.0, "frame": 0, "sample": 0, "spent": {}})
+        cell.cell = type("Arm", (), {"camera_to": lambda self, eye: cell.moves.append("camera_to")})()
+        cell._shift_base = lambda piece, where: None
+        left = list(verdicts)
+        cell._base_check = lambda piece, where: {"verdict": left.pop(0), "pose": slid, "moved_mm": 4.0, "turned_deg": 0.0, "why": "too little of it in view"}
+        cell._look_first("cap")
+        return cell
+
+    cell = before_the_pick(["steady"])
+    assert cell.moves == ["camera_to"] and (cell.unsure, cell.put_back) == (None, None) and "before it is picked" in cell.said[0]
+    assert cell._look_check("cap") is True                     # nothing left in doubt: it may be carried in, and nothing moves for that
+    cell = before_the_pick(["moved", "steady"])                # a base found slid by a trusted fit is taken where it is, before anything is planned
+    assert np.array_equal(cell.estimate["plate"], slid) and np.allclose(cell.estimate["bar"], slid @ cell.slots["bar"]) and cell.unsure is None
+    assert cell.base_log["corrections"][0]["where"] == "look" and [step["kind"] for step in cell.log.steps] == ["look", "correct"]
+    cell = before_the_pick(["unsure"])                         # not trusted: kept, and the piece is put back when it is to be carried in
+    cell._set_down = lambda piece, why: cell.said.append(f"set down: {why}")
+    assert cell.unsure == "too little of it in view" and cell._look_check("cap") is False and cell.said[-1] == "set down: too little of it in view"
+    assert before_the_pick(["moved", "moved", "moved"]).unsure == "the base keeps moving"
+    cell = before_the_pick([], approach_axis=(0, 0, -1))       # a piece that goes in from above is checked at its hover, not here
+    assert cell.moves == [] and cell.unsure is None
+
+
 def test_a_piece_one_look_reads_just_outside_its_seat_is_read_again_by_the_scan_before_the_build_gives_up():
     step_log = sys.modules["step_log"]
     pack = scan.Pack(TOY, TOY_SLOTS, "toy/v1")

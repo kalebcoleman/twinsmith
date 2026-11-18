@@ -181,7 +181,7 @@ class Build:
         self.log, self.look_log, self.tries = StepLog(self.cell.clock), [], {}
         self.refusals = []                                  # what the graph was refused, in order: [{"tool", "piece", "why"}]
         self.started, self.scans, self.disturbed = time.time(), 0, False
-        self.base_log, self.shifted, self.put_back, self.checker = {"checks": [], "shifts": [], "corrections": []}, {}, None, None
+        self.base_log, self.shifted, self.put_back, self.checker, self.unsure = {"checks": [], "shifts": [], "corrections": []}, {}, None, None, None
 
     # ---- the world --------------------------------------------------------------------------------
     def truth(self):
@@ -387,6 +387,14 @@ class Build:
             raise Refused(f"the scan's cycle gave no estimate ({folder / 'cycle.log'}): {(done.stdout + done.stderr)[-300:]}")
         return json.loads((folder / "answer/estimate.json").read_text())
 
+    def _first_reading(self, at):
+        """The base's first reading, made the same every time: of the equal answers for a symmetric base (the matcher
+        gives now one, now the other, and with it the side each piece goes in from), the one whose first slot is
+        nearer the robot, which stands at y = 0; of two as near, the one further along -x."""
+        first = self.slots[self.order[0]["piece"]]
+        return max((at @ assembly.pose(turn, shift) for turn, shift in self.pack.shape(self.base).symmetries),
+                   key=lambda reading: (round(float((reading @ first)[1, 3]), 4), -round(float((reading @ first)[0, 3]), 4)))
+
     def _in_doubt(self, report):
         """The pieces a scan's report leaves in doubt that the build still has to act on: this puzzle's own, not yet
         placed. Another puzzle's pieces stay obstacles where they were seen, and a base with pieces in it is not
@@ -470,6 +478,8 @@ class Build:
             raise Refused(f"the scan did not find {missing}")
         if self.base in self.estimate:                      # a symmetric base read half a turn round would rename the slots: keep to the last reading
             seen[self.base] = assembly.nearest(self.pack, self.base, self.estimate[self.base], seen[self.base])
+        else:
+            seen[self.base] = self._first_reading(seen[self.base])
         far = lambda piece, a, b: (lambda metres, degrees: metres > self.SCAN_MOVED_M or degrees > self.SCAN_MOVED_DEG)(*assembly.pose_error(self.pack, piece, a, b))
         moved = sorted(piece for piece in seen if piece in self.estimate and far(piece, seen[piece], self.estimate[piece]))
         before, self.estimate = self.placed, dict(seen)
@@ -560,11 +570,12 @@ class Build:
     @stepped("base check")
     def _base_check(self, piece, where):
         """Is the base where the estimate has it? One depth picture and a fit of the base's CAD, with the pieces
-        seated in it, from its last pose (``puzzle_base_check``): no masks, no SAM pass. Changes nothing."""
+        seated in it, from its last pose (``puzzle_base_check``): no masks, no SAM pass. Changes nothing. ``piece``
+        is the one the check is made for: in the hand, and so not on the table, except at the ``look`` before its pick."""
         depth, camera, frame_ms, index = self._frame()
         settings = {key: value for key, value in self.config["base_check"].items() if key in puzzle_base_check.SETTINGS}
         points = puzzle_base_check.world_points(depth, camera, settings.get("stride", puzzle_base_check.SETTINGS["stride"]))
-        loose = {name: at for name, at in self.estimate.items() if name not in (self.base, piece, *self.placed)}
+        loose = {name: at for name, at in self.estimate.items() if name not in (self.base, *self.placed) and (name != piece or where == "look")}
         found = puzzle_base_check.check(points, self.pack, self.base, self.estimate[self.base], {name: self.slots[name] for name in self.placed}, loose, settings)
         truth = self.truth()[self.base]                     # to score the fit; the robot never reads it
         (self.checker / f"check_{index:05d}.json").write_text(json.dumps({
@@ -651,14 +662,14 @@ class Build:
         gripper and looks along it, so it does when the gripper points down there, and not when the gripper is level."""
         return bool(self.held["place"][2, 2] < -0.7)
 
-    def _vouch(self, piece, where):
-        """Check the base from where the camera is, before the piece goes on (``where``: ``look``, from above the
-        base before the carry; ``hover``, over the slot). Steady: True. Moved, and the fit trusted: the slots move
-        with it, what is left of the placement is simulated ahead, the hand comes over the slot's new place (at the
-        hover), and the base is checked again. Anything else: the piece is put back and the answer is False."""
+    def _vouch(self, piece):
+        """Check the base from over the slot, the piece in the hand, before it goes on. Steady: True. Moved, and the
+        fit trusted: the slots move with it, what is left of the placement is simulated ahead (when the build simulates
+        ahead), the hand comes over the slot's new place, and the base is checked again. Anything else: the piece
+        is put back and the answer is False."""
         for _ in range(self.config["base_check"]["corrections"] + 1):
             self._shift_base(piece, "before")
-            found = self._base_check(piece, where)
+            found = self._base_check(piece, "hover")
             noticed = {"sim_s": self.cell.steps / cell.PHYSICS_HZ, "wall": time.time()}
             if found["verdict"] == "steady":
                 return True
@@ -671,7 +682,7 @@ class Build:
                 try:                                        # the gripper has to fit at the slot's new place, as it had to at the old one
                     self._corrected_fits(piece, self.held)
                 except Misfit as misfit:
-                    row["result"] = {"piece": piece, "where": where, "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"], "misfit": str(misfit)}
+                    row["result"] = {"piece": piece, "where": "hover", "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"], "misfit": str(misfit)}
                     self._set_down(piece, f"the base moved and the gripper does not fit at the slot's new place ({misfit})")
                     return False
                 laid_out = time.perf_counter() - began
@@ -684,9 +695,8 @@ class Build:
                     self._set_down(piece, "the lookahead of the corrected placement said abort")
                     raise Refused(f"{piece}: the base moved and the lookahead of the corrected placement said abort")
                 self.say(f"{piece}: the base moved {found['moved_mm']:.1f} mm and {found['turned_deg']:.1f} degrees; its slots go with it")
-                if where == "hover":
-                    self.cell.gripper_line(self.held["path"]["over"], self.config["speeds"]["approach_m_s"])
-                row["result"] = record = {"piece": piece, "where": where, "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"],
+                self.cell.gripper_line(self.held["path"]["over"], self.config["speeds"]["approach_m_s"])
+                row["result"] = record = {"piece": piece, "where": "hover", "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"],
                                           "lay_out_ms": round(1000 * laid_out, 2), "lookahead_wall_s": round(simulated, 2), "lookahead": verdict["verdict"],
                                           "replan_sim_s": round(self.cell.steps / cell.PHYSICS_HZ - noticed["sim_s"], 3),
                                           "replan_wall_s": round(time.time() - noticed["wall"], 2)}
@@ -694,19 +704,48 @@ class Build:
         self._set_down(piece, "the base keeps moving")
         return False
 
-    def _look_check(self, piece):
-        """Before a piece is carried to its slot with the gripper level, where the camera will not see the base: look
-        at the base from above it, the piece in the hand, and check it there. A piece placed with the gripper pointing
-        down is checked at its hover instead."""
-        self.put_back = None
-        if self._sees_base():
-            return True
+    def _look_first(self, piece):
+        """Before a piece that goes in with the gripper level is picked: look at the base from above and check it, the
+        hand empty. Over its slot the camera, which rides on the gripper, will not see the base, and a look with the
+        piece in the hand swings it one more time, which is what makes a fork creep in the fingers (measured by the
+        placement work: 8.1 mm along the fingers with that look, 4.9 without). A base found moved by a fit that is
+        trusted is taken where it is, with its slots and seated pieces, before the grasp and the place are planned.
+        Anything else is kept as ``unsure`` and acted on when the piece is to be carried in: put back, and the table
+        scanned. A piece placed with the gripper pointing down is checked at its hover instead, and not here."""
+        self.put_back = self.unsure = None
+        if (self._seat(piece)[:3, :3] @ np.array(self.config["grasps"][piece]["approach_axis"], dtype=float))[2] < -0.7:
+            return
         look = self.config["base_check"]["look"]
         with self.log.step("look", piece, **look):
-            self.say(f"{piece}: a look at the base from above before it is carried in level")
+            self.say(f"{piece}: a look at the base from above before it is picked")
             over = self.estimate[self.base][:3, 3] * [1, 1, 0] + [*look["offset_m"], 0.0]
             self.cell.camera_to(self._view(over + [0.0, 0.0, look["height_m"]], over, look["roll_deg"]))
-        return self._vouch(piece, "look")
+        for _ in range(self.config["base_check"]["corrections"] + 1):
+            self._shift_base(piece, "before")
+            found = self._base_check(piece, "look")
+            if found["verdict"] == "steady":
+                return
+            if found["verdict"] != "moved":
+                self.unsure = found["why"]
+                return
+            with self.log.step("correct", piece, moved_mm=found["moved_mm"], turned_deg=found["turned_deg"]) as row:
+                self.estimate[self.base] = self.base_goal = np.array(found["pose"])
+                for name in self.placed:
+                    self.estimate[name] = self._seat(name)
+                self.say(f"{piece}: the base moved {found['moved_mm']:.1f} mm and {found['turned_deg']:.1f} degrees; its slots go with it")
+                row["result"] = record = {"piece": piece, "where": "look", "moved_mm": found["moved_mm"], "turned_deg": found["turned_deg"],
+                                          "lookahead": "go", "replan_sim_s": 0.0, "replan_wall_s": 0.0}
+                self.base_log["corrections"].append(record)
+        self.unsure = "the base keeps moving"
+
+    def _look_check(self, piece):
+        """Whether the piece in the hand may be carried to its slot. What the look before its pick left in doubt
+        (``_look_first``) ends here: the piece is put back and the answer is False. A piece placed with the gripper
+        pointing down is checked at its hover, with the piece in the hand, and passes here."""
+        if self.unsure:
+            self._set_down(piece, self.unsure)
+            return False
+        return True
 
     def _descend(self, piece):
         """Lower the piece into its slot. Simulating ahead, or with the gripper level (no view of the base): one
@@ -733,7 +772,7 @@ class Build:
                 with self.log.step("retreat", piece, waypoints=[waypoint("over", hold["path"]["over"])]):
                     self.say(f"{piece}: the base is not where it was; back up to the pre-place hover")
                     self.cell.gripper_line(hold["path"]["over"], speeds["approach_m_s"])
-                if not self._vouch(piece, "hover"):
+                if not self._vouch(piece):
                     return
                 break
 
@@ -920,6 +959,8 @@ class Build:
             raise Refused(f"{piece} needs {step['needs']} in first")
         if piece not in self.estimate:
             raise Refused(f"{piece} was not seen")
+        if not self.ahead:
+            self._look_first(piece)
         # Everything else the robot believes is on the table, at the pick and at the slot alike: the base, the pieces
         # it has placed (in their slots) and the loose ones where the last look saw them. A loose piece lying in
         # this piece's slot, or where the open gripper comes down, is in the way.
@@ -1023,7 +1064,7 @@ class Build:
                         place=self._tcp(shifted(hold["place"], hold["axis"] * 0.001), width))
             with self.log.step("correct", piece, waypoints=[waypoint("over", path["over"])]):
                 self.cell.gripper_line(path["over"], speeds["approach_m_s"])
-        if not self.ahead and self._sees_base() and not self._vouch(piece, "hover"):
+        if not self.ahead and self._sees_base() and not self._vouch(piece):
             return {"blocked": None, "result": "rescan"}
         with self.log.step("lower", piece, waypoints=[waypoint("place", path["place"])], speed_m_s=speeds["insert_m_s"]) as row:
             self.say(f"{piece}: inserting along the slot axis at {speeds['insert_m_s'] * 1000:g} mm/s")
