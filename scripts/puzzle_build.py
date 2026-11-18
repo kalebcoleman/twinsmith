@@ -223,11 +223,12 @@ class Build:
                 "friction_in_the_solver": friction}
 
     def friction(self):
-        """The friction coefficients Newton's own model holds for the pieces' colliding shapes and the fingertip pads
-        (not what the stage says): {"pieces": {piece: [coefficients]}, "pads": [coefficients]}."""
+        """The friction coefficients Newton's own model holds for the colliding shapes of this puzzle's pieces and the
+        fingertip pads (not what the stage says): {"pieces": {piece: [coefficients]}, "pads": [coefficients]}. Another
+        puzzle's pieces on the table are not handled, and a table of corrections does not know them."""
         pads = [f"{finger}/fingertip" for finger in self.cell.fingers]
-        found = self.cell.friction([*self.paths.values(), *pads])
-        return {"pieces": {name: found[path] for name, path in self.paths.items()}, "pads": sorted({value for pad in pads for value in found[pad]})}
+        found = self.cell.friction([*(self.paths[name] for name in self.names), *pads])
+        return {"pieces": {name: found[self.paths[name]] for name in self.names}, "pads": sorted({value for pad in pads for value in found[pad]})}
 
     def say(self, caption):
         self.doing = self.cell.caption = caption

@@ -315,6 +315,17 @@ def test_the_scan_looks_from_the_sides_only_when_the_view_from_above_leaves_a_pi
     assert (report, views, cell.combined) == ({}, ["top"], [])                    # the simulator's own poses: no cycle and no doubt
 
 
+def test_the_friction_a_table_of_corrections_is_checked_against_is_of_this_puzzles_pieces_only():
+    cell = object.__new__(build.Build)
+    cell.names = ["plate", "bar"]
+    cell.paths = {name: f"/World/Puzzle/{name}" for name in ("plate", "bar", "peg")}       # a piece of another puzzle lies on the table too
+    asked = []
+    cell.cell = type("Sim", (), {"fingers": ["/left", "/right"],
+                                 "friction": lambda self, paths: asked.extend(paths) or {path: [0.4] for path in paths}})()
+    assert cell.friction() == {"pieces": {"plate": [0.4], "bar": [0.4]}, "pads": [0.4]}
+    assert "/World/Puzzle/peg" not in asked
+
+
 def test_a_symmetric_base_is_first_read_the_same_way_round_whichever_answer_the_matcher_gives():
     half_turn = (scan.yaw_matrix(math.pi), np.zeros(3))
     cell = object.__new__(build.Build)
