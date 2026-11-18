@@ -467,9 +467,10 @@ def summary(args):
         lines += ["| the repository's tests pass | not this file's to say | run them |"]
     first = {(row["label"], row["case"]): row for row in (json.loads(path.read_text()) for path in sorted(out.glob("superseded/*_invalid/**/row.json")))}
     if first:                                                # the simulator's fault, not the loop's: kept, built once more, and counted both ways
-        lines += ["", "## Built once more after an invalid physics state", "",
-                  "A build that the simulator ended with values that are not numbers is kept under `superseded/<label>_invalid/` and its case is "
-                  "built once more, for every label alike; a second such end stands as the case's row. The tables above count the second build.", ""]
+        lines += ["", "## Built once more after the simulator failed", "",
+                  "A build that the simulator ended (values that are not numbers; or a call that never returned, with a fatal error of the "
+                  "renderer in the simulator's log at that time and no metrics written) is kept under `superseded/<label>_invalid/` and its case "
+                  "is built once more, for every label alike; a second such end stands as the case's row. The tables above count the second build.", ""]
         lines += [f"- {case} ({label}): first ended with {row['pieces_seated']} of {row['pieces_total'] or '?'} seated: {row['stopped']}; "
                   + ("built again." if any(other["label"] == label and other["case"] == case for other in rows) else "NOT built again yet.")
                   for (label, case), row in first.items()]
