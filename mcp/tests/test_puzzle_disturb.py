@@ -111,5 +111,5 @@ def test_the_report_counts_goals_refused_by_gate_and_by_cause(tmp_path):
     assert "| base/a | integ | yes | 3 | 1 | 2 | gate 2: 2 | 2 (1) | wrist_3_joint outside the cell's joint limits (2); camera cord over its spare loop (1) |" in text
     assert "| base/c | integ | no | 0 | 0 | 0 | - | 0 (0) | REFUSED: 056 begins" in text
     assert text.count("| base/a | integ |") == 1
-    assert "| integ | 3 | 2 | 2 | 1 | 4 | 2 |" in text                      # builds, seated, seated and replayed, seated and clean, goals, refused
+    assert "| integ | 3 | 2 | 2 | 1 | 4 | 2 |" in text                      # builds, seated, seated and replayed, seated and clean; goals and refused of the seated builds
     assert "- wrist_3_joint outside the cell's joint limits: 2 goals" in text and "| base/a | main |" in disturb.report(tmp_path)

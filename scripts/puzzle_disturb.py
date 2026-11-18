@@ -208,12 +208,12 @@ def report(out, label=None):
         why = collections.Counter(reason for goal in found["refused"] for reason in goal["causes"])
         replayed = seated and found["no_plan"] is None
         totals[row["label"]].update(builds=1, seated=int(seated), seated_replayed=int(replayed), seated_clean=int(replayed and not found["refused"]),
-                                    goals=found["goals"], refused=len(found["refused"]))
+                                    goals=found["goals"] * replayed, refused=len(found["refused"]) * replayed)
         causes[row["label"]].update(why)
         lines.append(f"| {row['case']} | {row['label']} | {'yes' if seated else 'no'} | {found['goals']} | {found['sent']} | {len(found['refused'])} | "
                      + (", ".join(f"gate {gate}: {count}" for gate, count in sorted(gates.items())) or "-") + f" | {found['corrected']} ({found['corrected_refused']}) | "
                      + (found["no_plan"] or "; ".join(f"{reason} ({count})" for reason, count in why.most_common()) or "-") + " |")
-    lines += ["", "## Totals", "", "| Label | Builds | Seated | Seated and replayed | Seated with no goal refused | Goals | Refused |", "|---|--:|--:|--:|--:|--:|--:|"]
+    lines += ["", "## Totals", "", "| Label | Builds | Seated | Seated and replayed | Seated with no goal refused | Goals of the seated builds | Refused of them |", "|---|--:|--:|--:|--:|--:|--:|"]
     lines += [f"| {name} | {total['builds']} | {total['seated']} | {total['seated_replayed']} | {total['seated_clean']} | {total['goals']} | {total['refused']} |"
               for name, total in totals.items()]
     for name, counted in causes.items():
