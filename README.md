@@ -1,10 +1,15 @@
 # twinsmith
 
-A tool for building and driving robot simulations and digital twins from an AI agent: you describe what you want, and
-the agent builds the scene, moves the robot, looks through its cameras and reads its sensors. It works with
-NVIDIA Isaac Sim and Isaac Lab today, and adds ROS 2, folders of verified assets called asset packs, a lab work cell,
-and a bridge to RoboSimStudio. It speaks [MCP](https://modelcontextprotocol.io), so Claude Code, Codex, OpenCode
-and other MCP clients can use it.
+twinsmith is the builder for robot digital twins. An AI agent uses it to make a simulated copy of a real robot cell and to
+keep that copy close to the real one. It builds scenes in NVIDIA Isaac Sim and Isaac Lab, with Newton physics by default.
+It brings in assets: your own packs, or NVIDIA's robots and rooms. It fits the twin to real recordings with
+RoboSimStudio and MuJoCo system identification. It also authors, checks and runs Graph-as-Policy (GaP) skill graphs in
+simulation. It speaks [MCP](https://modelcontextprotocol.io), so Claude Code, Codex, OpenCode and other MCP clients can
+use it.
+
+twinsmith holds only the general machinery. A particular task lives in its project's own repository, along with that
+task's measured settings, benchmarks and results. The project pins a twinsmith commit and points twinsmith at its files
+(see [Using twinsmith from a project](#using-twinsmith-from-a-project)). No twinsmith tool can reach a real robot.
 
 [![CI](https://github.com/kalebcoleman/twinsmith/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/kalebcoleman/twinsmith/actions/workflows/ci.yml)
 [![Source version 0.3.0](docs/media/badges/version.svg)](mcp/pyproject.toml)
@@ -12,8 +17,38 @@ and other MCP clients can use it.
 [![Host Python 3.10+, Sim Python 3.12](docs/media/badges/python.svg)](docs/LINUX-SETUP.md#which-environment-does-what)
 [![License and asset notices](docs/media/badges/license.svg)](docs/VENDORING.md)
 
-[Quick start](#quick-start) · [Tool groups](#tool-groups) · [Examples](docs/EXAMPLES.md) · [How it works](docs/ARCHITECTURE.md) ·
+[What it builds](#what-it-builds) · [Quick start](#quick-start) · [Tool groups](#tool-groups) · [Examples](docs/EXAMPLES.md) · [How it works](docs/ARCHITECTURE.md) ·
 [Documentation index](docs/README.md) · [For agents](AGENTS.md)
+
+## What it builds
+
+| Area | What is here | Where | Not here yet |
+|---|---|---|---|
+| Digital twins (Isaac Sim, Isaac Lab, Newton) | Scenes, NVIDIA robots by name, import of USD, URDF, xacro, SDF, MJCF and meshes, physics, sensors and cameras, ROS 2 inside the simulator, Isaac Lab training jobs. One calibrated work cell (UR5e on a rail, RG2, wrist camera), built from a config file and an asset pack | `sim`, `workcell__*`, `isaaclab__*`; [Scene tools](docs/TOOLS-SCENE.md), [Work cell](exts/workcell/workcell/README.md) | The work cell code assumes a UR5e. A different cell needs its own config and pack, plus code changes wherever the UR5e is hard-coded |
+| Assets | Your own packs in the asset root (`TWINSMITH_ASSET_ROOT`, by default `<workspace>/assets`), each one checked against its `pack.yaml`. Packs are pulled from and pushed to your own Hugging Face repositories, pinned to a commit. NVIDIA's robots and rooms come from the Isaac Sim assets server. Mesh prep: inspect, decimate, convex hulls, render and collision split, and validation for Newton | `assets__*`, `twinsmith assets`; [Asset packs](docs/ASSET-PACKS.md), [Importing assets](docs/ASSET-IMPORT.md) | No search or download from public libraries (Objaverse, Sketchfab, Hugging Face datasets or NVIDIA SimReady). For those, download the file yourself, then `assets__import_path` or `twinsmith assets adopt` |
+| Real2Sim (RoboSimStudio, sysid) | A RoboSimStudio scene from a template (tee, box, Jenga, tower), checked against a reference clip, with push-path tuning and rollouts. MuJoCo system identification from joint trajectories. SAM 3.1 video masks | `robosim`, `sysid`, `sam3`; [RoboSimStudio](docs/ROBOSIM.md), [sysid](docs/SYSID.md) | No mass or friction fitting in RoboSimStudio, and no scene made from an asset pack or a scan. Fitted values are not written back into the twin |
+| Planning (GaP) and evaluation (VABAR) | GaP's skill catalog, graph checks without a GPU, graph generation (paid model, owner-allowed), and runs of a graph on GaP's own simulated suites. A tool bundle that lets a graph drive the work cell, in `exts/workcell/gap/tools/workcell`. VABAR benchmark runs | `gap`, `vabar`; [Planning and evaluation](docs/PLANNING-EVAL.md) | `gap(action="run")` runs only GaP's simulated suites, not the work cell. The work cell runs through a script. GaP's self-learning loop isn't wrapped yet |
+| Parts and hardware | PCB checks, fab files, renders, and a CAD part turned into a twin asset (KiCad, FreeCAD, Blender and SolidCraft run beside twinsmith) | `hardware`; [Hardware](docs/HARDWARE.md) | |
+
+## Using twinsmith from a project
+
+A project repository (a task, a thesis experiment, a lab demo) uses twinsmith as a tool, and twinsmith knows nothing
+about the project:
+
+1. **Pin it.** Name the twinsmith commit the project was run with. Each machine runs the server from a checkout at that
+   commit (see [Linux setup](docs/LINUX-SETUP.md)).
+2. **Keep the project's files in the project.** Task files are loaded with
+   `workcell__cell(action="quick_start", task="<absolute path to task.json>")`, and a copy of the cell config with
+   `config_path=`. GaP graphs and skills, run settings, benchmarks, measured corrections and results stay in the project
+   too.
+3. **Name assets by pack, not by path.** The project names `<pack id>/<version>`. The packs live in the asset root, and
+   private ones are pinned in `~/.config/twinsmith/pack-sources.toml` and fetched with `twinsmith assets pull`.
+4. **Drive the simulator from scripts by path.** A project script that needs more than the MCP tools can import
+   twinsmith's host helpers from the pinned checkout (for example `scripts/workcell_session.py`'s `Session` for the work
+   cell) and pass in its own config files.
+5. **Keep the real robot in the project.** ROS drivers, the bridge to a real arm, and its safety gates are the
+   project's code. Give the simulated arm the same joint limits that the real one is held to. A plan made in the twin
+   is then one the real cell accepts.
 
 ## Quick start
 
@@ -149,7 +184,8 @@ argument is in [TOOLS-ARGUMENTS.md](docs/TOOLS-ARGUMENTS.md), generated from the
 | Train a policy with Isaac Lab | [Isaac Lab tools](docs/TOOLS-ISAACLAB.md) |
 | Use ROS 2, RViz 2 or Nav2 | [ROS 2 and RViz 2](docs/ROS2-RVIZ.md) |
 | Run the lab's UR5e work cell | [Work cell](exts/workcell/workcell/README.md) · [work-cell tools](docs/TOOLS-WORKCELL.md) |
-| Use RoboSimStudio | [RoboSimStudio](docs/ROBOSIM.md) |
+| Use RoboSimStudio or fit a model to recordings | [RoboSimStudio](docs/ROBOSIM.md) · [sysid](docs/SYSID.md) |
+| Author, check or run a GaP skill graph | [Planning and evaluation](docs/PLANNING-EVAL.md) |
 | Run LEGO bricks (BrickSim) | [BrickSim](docs/BRICKSIM.md) |
 | Check a machine or read the test matrix | [Verification](docs/VERIFICATION.md) · [Compatibility](docs/COMPATIBILITY.md) |
 | Write my own tools | [Tool authoring](mcp/docs/tool-authoring.md) |

@@ -4,7 +4,7 @@ One specification per upcoming pull request. Each is written to be handed to a f
 problem, the design, the files, the tests and the checks that say it is done. The phases they serve are in the
 [roadmap](../ROADMAP.md); the layout they build is in [How it works](../ARCHITECTURE.md#target-layout-planned).
 
-Plans 01 to 05 have merged (#112, #120, #115, #116, #118). Only `05-hardware-pipeline.md` is still here. A new plan goes in this folder as a new file.
+Plans 01 to 05 have merged (#112, #120, #115, #116, #118) and, as the rules below say, were deleted; the hardware pipeline that plan 05 specified is documented in [HARDWARE.md](../HARDWARE.md). No plan is open. A new plan goes in this folder as a new file.
 
 **Hosts.** Every live, GPU or wrapped-tool step in these plans runs on the ASU PC, which stays on. No step may require the
 home PC. The ASU PC's GPU is shared with Jenga games: check for a running game first, never disturb one, and use the GPU
