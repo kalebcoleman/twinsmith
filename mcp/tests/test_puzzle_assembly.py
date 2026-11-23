@@ -1,7 +1,6 @@
-"""CPU-only checks of the puzzle build's planner (scripts/puzzle_assembly.py) and arm kinematics, on a small made-up pack."""
+"""CPU-only checks of the assembly planner (scripts/puzzle_assembly.py) and arm kinematics, on a small made-up pack."""
 
 import importlib.util
-import json
 import math
 import sys
 from pathlib import Path
@@ -160,35 +159,26 @@ def test_only_the_pack_the_keep_out_boxes_were_measured_on_is_qualified():
     assert assembly.cell_pack(None) == ("None/None", False)                   # a build that names no pack is not qualified
 
 
-def test_the_gripper_hides_nothing_of_the_base_in_the_middle_and_no_piece_is_scattered_behind_it(pack):
-    config = json.loads((ROOT / "scripts/puzzle_build.json").read_text())
-    survey = config["survey"]
-    hidden = assembly.hidden_on_table(survey["look_at_m"], survey["height_m"])
+def test_the_gripper_hides_nothing_of_a_base_in_the_middle_and_no_piece_is_scattered_behind_it(pack):
+    # A survey as a build might stand it: straight down from 0.75 m, the point looked at to the left of and on the robot's
+    # side of the middle of the table. (A project's own settings are checked in that project.)
+    look_at, height, middle = [-0.125, -0.37, 0.0], 0.75, np.array([0.0, -0.46])
+    hidden = assembly.hidden_on_table(look_at, height)
     assert len(hidden) == len(assembly.GRIPPER_IN_VIEW)
     # the fingertips end at the point looked at; everything hidden is on the robot's side of it (+y) and astride it in x
-    assert all(low[1] >= survey["look_at_m"][1] - 0.01 and low[0] < survey["look_at_m"][0] < high[0] for low, high in hidden)
-    # the demo's base (161 mm square, the largest in the puzzles pack) in the middle is clear of all of it
-    middle, half = np.array(config["base_target"]["position_m"]), 0.0805
+    assert all(low[1] >= look_at[1] - 0.01 and low[0] < look_at[0] < high[0] for low, high in hidden)
+    # a base 161 mm square (the largest in the puzzles pack) in the middle is clear of all of it
+    half = 0.0805
     square = np.array([middle + [sx * half, sy * half] for sx, sy in ((1, 1), (1, -1), (-1, -1), (-1, 1))])
     for low, high in hidden:
         assert assembly._apart(square, np.array([low, [high[0], low[1]], high, [low[0], high[1]]]))
     # a layout keeps every piece out of what is hidden
-    target = lying(pack, "plate", [0.0, -0.46], 90.0)
+    target = lying(pack, "plate", middle, 90.0)
     for seed in range(6):
         layout = assembly.scatter(pack, "plate", target, np.random.default_rng(seed), blind=hidden)
         for name, at in layout.items():
             for low, high in hidden:
                 assert assembly._apart(assembly.footprint(pack, name, at), np.array([low, [high[0], low[1]], high, [low[0], high[1]]]))
-
-
-def test_the_demo_grips_within_the_rg2_specification():
-    config = json.loads((ROOT / "scripts/puzzle_build.json").read_text())
-    low, high = session.RG2_FORCE_N
-    assert low <= config["grip_force_n"] <= high
-    for name, grasp in config["grasps"].items():
-        assert 0.0 < grasp["width_m"] + config["open_beyond_m"] <= session.RG2_STROKE_M, name
-        closing, approach = np.array(grasp["closing_axis"]), np.array(grasp["approach_axis"])
-        assert closing @ approach == 0 and np.linalg.norm(closing) == np.linalg.norm(approach) == 1, name
 
 
 @pytest.fixture(scope="module")

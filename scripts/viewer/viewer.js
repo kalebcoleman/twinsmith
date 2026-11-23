@@ -114,7 +114,7 @@ const Viewer = {
       endTry() { app.queue = []; app.state.tryName = null; if (app.future) app.future.stop(); },
       refresh() { for (const panel of app.panels) panel.update(app.state); },
     };
-    document.getElementById("title").textContent = `Puzzle build, ${run.title}`;
+    document.getElementById("title").textContent = `Build, ${run.title}`;
     const badge = document.getElementById("badge");
     badge.textContent = `${run.summary.completed ? "completed" : "not completed"} · ${fix(run.summary.simulated_seconds, 0)} s simulated · ${fix(run.summary.wall_seconds / 60, 0)} min wall · perception: ${run.summary.perception}`;
     badge.className = run.summary.completed ? "ok" : "bad";

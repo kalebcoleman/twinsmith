@@ -8,7 +8,7 @@ option selects SAM 3. The tool is in the `real2sim` toolset, which is off by def
 (`toolsets(action="enable", names=["real2sim"])`).
 
 **It reads files only.** It does not open a camera, subscribe to a ROS topic or read a bag. A recorder writes the clip
-folder described below; [`scripts/jenga_robot_loop_kit.py`](../scripts/jenga_robot_loop_kit.py) is one, for any
+folder described below; the Jenga project's `jenga_robot_loop_kit.py` (in `jenga-rl`) is one, for any
 simulated camera: the work cell's wrist D415 or [a second camera](#a-second-camera-and-its-calibration). A real camera's
 bag has to be exported to the same folder first; no exporter is provided.
 
@@ -159,8 +159,8 @@ saw. A box that no view saw is not in the list: nothing is filled in.
 ## A second camera and its calibration
 
 Nothing in the tool is specific to one camera. A clip is colour, depth, `fx`, `fy`, `cx`, `cy`, a depth scale and a pose
-in the world, and `fuse` merges runs whatever camera made them. The Jenga scripts read further cameras from
-[`scripts/jenga_cameras.json`](../scripts/jenga_cameras.json): each entry is that same description plus the image size,
+in the world, and `fuse` merges runs whatever camera made them. The Jenga project's scripts read further cameras from
+its `jenga_cameras.json` (in `jenga-rl`): each entry is that same description plus the image size,
 for a camera that stands still, and is **off unless enabled** (`"enabled": true`, or `--enable-camera <name>` for one
 run). The file's example is `tripod`, an RGB-D camera on a tripod beside the table at table level that sees the table,
 the tower and the robot; its numbers are not a product's. It is not part of the `ur5e-workcell` pack or of
@@ -249,13 +249,13 @@ recorded clips of those runs were then put through SAM 3.1 ([the comparison](#sa
 - **Recorded RGB-D clip with a camera pose.** The work cell's simulated wrist D415 (1280 x 720), 0.45 m from the face of
   an 18-layer tower of 72 x 24 x 14 mm blocks: with SAM 3 all 36 visible blocks (27 ends, 9 sides), each with a pose,
   the centres a median 0.93 mm (largest 1.19 mm) from the simulator's; with SAM 3.1 on the same clip 35 of the 36. The
-  numbers are in the [work cell's page](../exts/workcell/workcell/README.md#one-jenga-turn-look-predict-push-look-again).
+  numbers are in the Jenga project (`jenga-rl`; [where it went](../exts/workcell/workcell/README.md#jenga-turns)).
   The simulated blocks had to be drawn with visible edges first: the pack's block is a plain one-colour box, and a
   tower of them is returned as one object.
 - **Several views and a second camera.** Four wrist views and a fixed camera with other intrinsics and a millimetre
   depth unit, fused: all 53 blocks of a tower one block short, with either model, about a millimetre from the
   simulator's, with the wrongly read faces of single views left out
-  ([the numbers](../exts/workcell/workcell/README.md#a-persons-turn-watch-look-again-from-all-sides-rebuild-the-twin)).
+  (the numbers are in the Jenga project, `jenga-rl`).
 - Host tests (`test_sam3.py`): the checks above, the wrapper around a fake launcher, the zone test, the fusion and the
   pose arithmetic on synthetic faces. They do not run the model.
 

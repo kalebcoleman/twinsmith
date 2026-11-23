@@ -1,4 +1,5 @@
-"""workcell tool bundle: each tool asks a running ``scripts/puzzle_build.py`` to do it on the simulated work cell."""
+"""workcell tool bundle: each tool asks a running build host (a project's driver beside the simulator bridge) to do it
+on the simulated work cell."""
 
 import json
 import os
@@ -18,7 +19,7 @@ def ask(name: str, **inputs: Any) -> dict:
     if _link is None:
         port = os.environ.get("WORKCELL_SKILLS_PORT")
         if not port:
-            raise RuntimeError("WORKCELL_SKILLS_PORT is not set: run the graph through scripts/puzzle_build.py")
+            raise RuntimeError("WORKCELL_SKILLS_PORT is not set: run the graph through the build host that serves these tools")
         _link = socket.create_connection(("127.0.0.1", int(port))).makefile("rw")
     _link.write(json.dumps({"tool": name, "inputs": inputs}) + "\n")
     _link.flush()
@@ -104,7 +105,7 @@ def scan() -> Scan:
     return {key: found[key] for key in Scan.__annotations__}
 
 
-@tool(name="workcell.survey", summary="Find every piece of the puzzle on the table (wrist camera, SAM 3.1, scan to scene).",
+@tool(name="workcell.survey", summary="Find every piece of the assembly on the table (wrist camera, SAM 3.1, scan to scene).",
       tags=("perception", "sim_step"))
 def survey() -> Survey:
     return ask("survey")
@@ -118,7 +119,7 @@ def picture(label: str) -> Picture:
     return {"image": np.asarray(Image.open(path).convert("RGB")), "path": path}
 
 
-@tool(name="workcell.place_base", summary="Grip the puzzle base by its centre island and slide it to the middle of the table.",
+@tool(name="workcell.place_base", summary="Grip the assembly's base by a feature its settings name and slide it to the middle of the table.",
       tags=("sim_step",))
 def place_base(piece: str) -> Slid:
     return ask("place_base", piece=piece)

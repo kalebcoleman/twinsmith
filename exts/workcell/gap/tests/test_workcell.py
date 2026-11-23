@@ -1,9 +1,8 @@
-"""Unit tests for the workcell tool bundle and the puzzle graph (CPU-only: no simulator, no model)."""
+"""Unit tests for the workcell tool bundle and the work-cell graph connector (CPU-only: no simulator, no model)."""
 
 import importlib.util
 import json
 import socket
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -13,7 +12,6 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOLS = ("scan", "survey", "picture", "place_base", "lookahead", "approach", "close", "lift", "insert", "rescan", "release", "state")
-PLAN = {"base": "plate", "order": [{"piece": "bar"}, {"piece": "cap"}]}
 
 
 def load(path):
@@ -24,8 +22,8 @@ def load(path):
 
 
 @pytest.fixture(scope="module")
-def graph():
-    return load(ROOT / "puzzle_graph.py")
+def connector():
+    return load(ROOT / "workcell_graph.py")
 
 
 def test_every_tool_is_registered_with_a_typed_signature(tool_registry):
@@ -73,43 +71,16 @@ def test_the_router_takes_the_scans_next_step():
     assert load(ROOT / "scripts/next_step.py").run(None, next="bar") == {"route": "bar"}
 
 
-def test_the_authored_graph_validates(graph, tmp_path):
-    graph.author(PLAN, tmp_path / "graph")
-    workflow = json.loads((tmp_path / "graph/workflow.json").read_text())
-    assert list(workflow["subgraphs"]) == ["scan", "count_parts", "place_base", "assemble_bar", "assemble_cap", "judge_assembly"]
-    assert workflow["subgraphs"]["scan"]["skill"] == "scanning-the-table" and workflow["subgraphs"]["assemble_cap"]["skill"] == "assembling-puzzle-pieces"
-    routes = workflow["conditional_edges"]
-    assert ["START", "scan"] in [list(edge) for edge in workflow["edges"]]                                               # the scan is the first step
-    assert routes["scan"]["mapping"] == {"scanned": "next_step", "failed": "abort"}
-    assert routes["next_step"] == {"router_field": None, "mapping": {"plate": "count_parts", "bar": "assemble_bar", "cap": "assemble_cap",
-                                                                      "done": "judge_assembly"}}                     # on to whatever the table now needs
-    assert routes["place_base"]["mapping"] == {"placed": "assemble_bar", "retry": "place_base", "failed": "abort"}       # a base that stopped short is slid once more
-    assert workflow["subgraphs"]["place_base"]["conditional_edges"]["look"]["mapping"] == {"placed": "placed", "retry": "retry"}
-    assert routes["assemble_bar"]["mapping"]["placed"] == "assemble_cap" and routes["assemble_bar"]["mapping"]["retry"] == "assemble_bar"
-    assert routes["assemble_cap"]["mapping"]["placed"] == "judge_assembly" and routes["assemble_bar"]["mapping"]["aborted"] == "abort"
-    for piece in ("bar", "cap"):                                                                                         # a failed pick or a changed table: scan again
-        assert {routes[f"assemble_{piece}"]["mapping"][exit] for exit in ("empty", "missed", "changed")} == {"scan"}
-        assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["look"]["mapping"]["changed"] == "changed"
-        assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["insert"] == {
-            "router_field": "result", "mapping": {"inserted": "look", "rescan": "changed"}}       # a piece put back for want of a sure base: scan again
-    assert sorted(p.name for p in (tmp_path / "graph/scripts").glob("*.py")) == ["cross_check.py", "next_step.py", "verify_grip.py", "verify_reach.py"]
-    assert sorted(p.stem for p in (tmp_path / "graph/checkpoints").glob("*.py")) == ["assemble_bar", "assemble_cap", "place_base"]
-    registries = [arg for registry in (ROOT, graph.stock_scripts().parents[2]) for arg in ("--skills", str(registry))]
-    checked = subprocess.run([str(Path(sys.executable).parent / "gap"), "run", str(tmp_path / "graph"), "--validate-only", *registries],
-                             capture_output=True, text=True, env={"WORKCELL_SKILLS_PORT": "1", "PATH": "/usr/bin:/bin"})
-    assert checked.returncode == 0 and "0 errors" in checked.stdout, checked.stdout + checked.stderr
-
-
-def test_a_checkpoint_measures_a_piece_against_its_slot(graph, tmp_path):
-    graph.author(PLAN, tmp_path / "graph")
-    seated = load(tmp_path / "graph/checkpoints/assemble_bar.py").CHECKPOINTS[0]
+def test_the_connector_reads_the_robot_and_the_truth_through_the_cells_state(connector):
     at = np.eye(4)
     at[:3, 3] = [0.1, -0.46, 0.03]
-    off = at.copy()
-    off[0, 3] += 0.004
-    cell = graph.Cell()
-    for bar, passes in ((at, True), (off, False)):
-        cell.state = lambda bar=bar: {"bodies": {"bar": bar.tolist()}, "goals": {"slot_bar": at.tolist()}}
-        assert seated.predicate(cell.world_snapshot()) is passes
-    assert seated.name == "bar_seated" and seated.subgraph == "assemble_bar"
+    cell = connector.Cell()
+    pose = {"position": {"x": 0.1, "y": -0.46, "z": 0.2}, "orientation": {"w": 1.0, "x": 0.0, "y": 0.0, "z": 0.0}}
+    cell.state = lambda: {"ee_pose": pose, "gripper": {"position": 0.5}, "bodies": {"bar": at.tolist()}, "goals": {"slot_bar": at.tolist()}}
+    assert cell.get_ee_pose() == pose and cell.get_gripper() == {"position": 0.5}
+    assert cell.describe_gripper()["span_m"] == connector.RG2_STROKE_M
+    world = cell.world_snapshot()
+    assert world.body("bar").distance_to(world.body("slot_bar")) == 0.0
+    assert np.allclose(world.body("bar").position, [0.1, -0.46, 0.03])
     assert set(cell.tool_registry.runtime_tools()) >= {"robot.get_ee_pose", "robot.get_gripper", "robot.describe_gripper"}
+    assert sorted(p.name for p in connector.SCRIPTS.glob("*.py")) == ["cross_check.py", "next_step.py"]

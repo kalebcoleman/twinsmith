@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Build the step viewer of a puzzle build: a static page that replays what was planned and what was done.
+"""Build the step viewer of a work-cell assembly build: a static page that replays what was planned and what was done.
 
-    python3 scripts/puzzle_viewer.py <run folder>          # the --out folder of scripts/puzzle_build.py
+    python3 scripts/puzzle_viewer.py <run folder>          # the --out folder of a build host (a project's driver of the cell)
 
 It reads the run's own records (``run_log.json``, ``metrics.json``, ``graph/workflow.json``, ``trace/dag_trace.json``,
 the film's frames) and writes ``<run folder>/viewer``: ``index.html`` with the page's script and style (copied from
@@ -236,7 +236,7 @@ def build(run, ffmpeg=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("run", type=Path, help="the --out folder of a finished scripts/puzzle_build.py run")
+    parser.add_argument("run", type=Path, help="the --out folder of a finished build: run_log.json, metrics.json, graph/, trace/")
     print(build(parser.parse_args().run))
 
 
