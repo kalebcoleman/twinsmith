@@ -173,7 +173,7 @@ class Build:
     def __init__(self, args, config, pack):
         self.args, self.config, self.pack = args, config, pack
         self.base, self.out = config["base"], Path(args.out).resolve()
-        self.cell = cell.Session(args.port, self.out)
+        self.cell = cell.Session(args.port, self.out, joint_windows=args.joint_windows or cell.CELL_CONFIG)
         self.order = assembly.build_order(pack, self.base)
         self.slots = assembly.slot_poses(pack, self.base)
         self.names = [self.base, *self.slots]
@@ -1343,6 +1343,7 @@ class Build:
             "what": "The run as the viewer reads it (scripts/puzzle_viewer.py). Times are simulated seconds unless named wall.",
             "steps": self.log.steps, "looks": self.look_log, "tries": self.tries, "samples": self.cell.samples, "grips": self.cell.grips,
             "film": {key: film[key] for key in ("fps", "zero_s", "cameras", "captions")}, "sample_columns": ["seconds", "rail_m", *cell.ARM, "pad_gap_m"],
+            "joint_windows": self.cell.joint_windows_source,
             "wall_start": started, "wall_s": round(time.time() - started, 1)}, default=lambda value: value.item()) + "\n")
 
     def why_stopped(self, graph):
@@ -1506,6 +1507,10 @@ def arguments(argv=None):
     ``metrics.json`` says where and why) and 2 for a command line that is refused."""
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--port", type=int, required=True, help="the simulator bridge to use; its stage is replaced")
+    parser.add_argument("--joint-windows", "--cable-limits", dest="joint_windows", type=Path,
+                        help="keep the arm's targets (initial pose, IK, drive) inside these joint windows: a limits file "
+                             "(gap_bridge.cable_limits/1 or /2) or a cell config with robot.joint_windows_deg. Default: the base "
+                             "cell's robot.joint_windows_deg. Not a collision check")
     parser.add_argument("--out", type=Path, required=True, help="folder for metrics.json, the video and the pictures")
     parser.add_argument("--seed", type=int, default=1, help="the random layout")
     parser.add_argument("--config", type=Path, default=CONFIG)

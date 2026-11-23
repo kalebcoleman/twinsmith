@@ -15,6 +15,7 @@ robot. The Kit side is ``workcell_session_kit.py``. Conventions:
 
 import collections
 import contextlib
+import hashlib
 import json
 import math
 import shutil
@@ -31,6 +32,7 @@ from twinsmith.client import BridgeClient, BridgeError  # noqa: E402
 from workcell_rail_acceptance import ARM_M, ZERO_RAD, finger_for_gap, pad_gap, trapezoid  # noqa: E402
 
 KIT = Path(__file__).with_name("workcell_session_kit.py")
+CELL_CONFIG = ROOT / "exts/workcell/config/lab_hardware.json"     # the base cell, as the bridge builds it by default
 ARM = ("shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint")
 PHYSICS_HZ = 500
 SAMPLE_STEPS = 25                               # physics steps between joint samples: 50 ms
@@ -151,8 +153,117 @@ def pad_setback(gap_m):
     return ARM_M * (math.cos(ZERO_RAD + finger_for_gap(0.0)) - math.cos(ZERO_RAD + finger_for_gap(gap_m)))
 
 
+JOINT_WINDOW_SCHEMAS = ("gap_bridge.cable_limits/1", "gap_bridge.cable_limits/2")
+JOINT_EXTENT_DEG = (360, 360, 180, 360, 360, 360)   # the UR5e's own joint ranges; no window may reach past them
+
+
+def _degree_windows(window, what):
+    """``window`` ({"min": [6], "max": [6]}, degrees, ARM order) as two lists of floats, or ValueError naming ``what``."""
+    if not (isinstance(window, dict) and all(isinstance(window.get(side), list) and len(window[side]) == 6 and all(
+            type(value) in (float, int) and math.isfinite(value) for value in window[side]) for side in ("min", "max"))):
+        raise ValueError(f"{what}: expected six finite degree windows, min and max, in controller order")
+    if not all(-extent <= low < high <= extent for low, high, extent in zip(window["min"], window["max"], JOINT_EXTENT_DEG)):
+        raise ValueError(f"{what}: each window must be ordered (min < max) and inside the joint's range")
+    return {"min": [float(value) for value in window["min"]], "max": [float(value) for value in window["max"]]}
+
+
+def read_joint_windows(path):
+    """Joint windows from a file: ({"min": [6], "max": [6]} in degrees, ARM order, or None for no windows;
+    {"path", "sha256", "schema"}). The file is one of:
+
+    * a limits file, ``gap_bridge.cable_limits/1`` (windows already inset) or ``/2`` (raw ranges with a per-joint
+      ``measurements.<joint>.margin_deg``, inset here). This is the format a project's ROS bridge gates on, so the
+      simulated arm can plan inside the same windows the real one is held to;
+    * a cell config (``exts/workcell/config/lab_hardware.json`` or a pack's copy) whose ``robot.joint_windows_deg``
+      value is null (no windows), ``{"min": [6], "max": [6]}`` in degrees, or ``{"limits_file": path}`` (relative to
+      the config's folder)."""
+    path = Path(path).expanduser().resolve()
+    data = path.read_bytes()
+    found = json.loads(data)
+    source = {"path": str(path), "sha256": hashlib.sha256(data).hexdigest(), "schema": found.get("schema")}
+    if isinstance(found.get("robot"), dict):
+        record = found["robot"].get("joint_windows_deg")
+        if record is None:
+            return None, source
+        value = record.get("value") if isinstance(record, dict) else record
+        if value is None:
+            return None, source
+        if isinstance(value, dict) and set(value) == {"limits_file"}:
+            limits = Path(value["limits_file"]).expanduser()
+            windows, inner = read_joint_windows(limits if limits.is_absolute() else path.parent / limits)
+            return windows, {**inner, "via": str(path)}
+        return _degree_windows(value, f"{path}: robot.joint_windows_deg"), {**source, "schema": "inline"}
+    schema = found.get("schema")
+    if schema not in JOINT_WINDOW_SCHEMAS:
+        raise ValueError(f"{path}: not a limits file (schema must be one of {', '.join(JOINT_WINDOW_SCHEMAS)}) or a cell config")
+    if found.get("joint_names") != list(ARM) or found.get("units", {}).get("angles") != "deg" or type(found.get("measured")) is not bool:
+        raise ValueError(f"{path}: expected joint_names in controller order {list(ARM)}, angles in degrees and measured true or false")
+    window = found.get("joint_windows_deg")
+    raw = _degree_windows(window, str(path))
+    if schema.endswith("/1"):
+        margin = found.get("inset_margin_deg")
+        if type(margin) not in (int, float) or not math.isfinite(margin) or margin < 0:
+            raise ValueError(f"{path}: inset_margin_deg must be a finite number >= 0")
+        return raw, source
+    entries = window.get("measurements")
+    if not isinstance(entries, dict) or set(entries) != set(ARM):
+        raise ValueError(f"{path}: joint_windows_deg.measurements must name each of the six joints")
+    margins = []
+    for joint in ARM:
+        entry = entries[joint]
+        margin = entry.get("margin_deg") if isinstance(entry, dict) else None
+        if type(margin) not in (int, float) or not math.isfinite(margin) or margin < 0:
+            raise ValueError(f"{path}: measurements.{joint}.margin_deg must be a finite number >= 0")
+        margins.append(margin)
+    inset = {"min": [low + margin for low, margin in zip(raw["min"], margins)],
+             "max": [high - margin for high, margin in zip(raw["max"], margins)]}
+    if not all(low < high for low, high in zip(inset["min"], inset["max"])):
+        raise ValueError(f"{path}: a joint window is empty after its margin")
+    return inset, source
+
+
 class Session:
-    def __init__(self, port, out, host="127.0.0.1"):
+    joint_windows = None                # {joint: (low rad, high rad)} the arm's targets must stay inside, or None
+    joint_windows_source = None         # where they came from: {"path", "sha256", "schema"}
+
+    def set_joint_windows(self, source):
+        """Keep every arm target inside joint windows: the initial pose, IK and reconfigure solutions, and each row
+        driven. ``source`` is a limits file, a cell config whose ``robot.joint_windows_deg`` names windows or a limits
+        file, or None to drop them (see ``read_joint_windows``). They bound targets only: no collision check, and the
+        simulated joints' own limits are unchanged."""
+        if source is None:
+            self.joint_windows = self.joint_windows_source = None
+            return
+        windows, self.joint_windows_source = read_joint_windows(source)
+        self.joint_windows = None if windows is None else {
+            joint: (math.radians(low), math.radians(high)) for joint, low, high in zip(ARM, windows["min"], windows["max"])}
+
+    set_cable_limits = set_joint_windows
+
+    def allowed_targets(self, row):
+        """Whether the joints in ``row`` ({joint: radians}) are all inside the joint windows (always, without any)."""
+        return self.joint_windows is None or all(
+            low <= row[joint] <= high for joint, (low, high) in self.joint_windows.items() if joint in row)
+
+    def inside_windows(self, joints, near):
+        """``joints`` (six, in ARM order) with each turned by whole turns to the equivalent inside its window that is
+        nearest ``near`` ({joint: radians}); None when a joint has no equivalent inside. A window is one interval, so a
+        path between two targets inside it stays inside."""
+        if self.joint_windows is None:
+            return list(joints)
+        fitted = []
+        for joint, q in zip(ARM, joints):
+            low, high = self.joint_windows[joint]
+            options = [q + 2 * math.pi * k for k in range(-3, 4) if low <= q + 2 * math.pi * k <= high]
+            if not options:
+                return None
+            fitted.append(min(options, key=lambda value: abs(value - near[joint])))
+        return fitted
+
+    def __init__(self, port, out, host="127.0.0.1", joint_windows=CELL_CONFIG):
+        """``joint_windows``: a limits file or cell config for ``set_joint_windows``; by default the base cell's
+        ``robot.joint_windows_deg`` (null there, so no windows), None for none."""
+        self.set_joint_windows(joint_windows)
         self.out = Path(out).resolve()
         self.out.mkdir(parents=True, exist_ok=True)
         self.bridge = BridgeClient(host=host, port=port)
@@ -200,6 +311,8 @@ class Session:
     def drive(self, rows, steps):
         """Give the robot joint targets row by row ([{joint: radians}]) and advance physics ``steps`` after each, in
         one call to Kit per 100 rows. The joints are sampled every SAMPLE_STEPS on the way."""
+        if self.joint_windows and not all(self.allowed_targets(row) for row in rows):
+            raise MoveFailed("trajectory outside the joint windows; nothing sent")
         watched = [self.dofs[joint] for joint in ("rail_joint", *ARM, "finger_joint")]
         for start in range(0, len(rows), 100):
             part = [{self.dofs[joint]: value for joint, value in row.items()} for row in rows[start:start + 100]]
@@ -231,6 +344,9 @@ class Session:
     def build(self, task, start_deg, open_gap_m, discard_changes=False, settle_steps=1500):
         """Build the cell with a task (a name or an absolute task file) on Newton, start physics with the arm at
         ``start_deg`` and the gripper open, and let the scene settle. Returns quick_start's answer."""
+        home = dict(zip(ARM, map(math.radians, start_deg), strict=True))
+        if not self.allowed_targets(home):
+            raise MoveFailed("initial pose outside the joint windows; scene unchanged")
         before = self.bridge.call("sim.stage.info", {})
         if not before.get("stopped"):
             self.bridge.call("sim.timeline", {"session_id": before["session_id"], "stage_id": before["stage_id"], "action": "stop"})
@@ -241,7 +357,6 @@ class Session:
         for action in ("play", "pause"):
             self.call("sim.timeline", {"action": action})
         self.dofs = {name: index for index, name in enumerate(self.call("sim.joints.state", {"path": self.root})["names"])}
-        home = {joint: math.radians(value) for joint, value in zip(ARM, start_deg)}
         self.posture = [home[joint] for joint in ARM]
         self.call("sim.joints.teleport", {"path": self.root, "positions": home})
         self.commanded = dict(home)
@@ -326,6 +441,9 @@ class Session:
         for joints in ur_ik(np.linalg.inv(self.world_from_base) @ world_from_wrist):
             joints = [q + 2 * math.pi * round((near[joint] - q) / (2 * math.pi)) for joint, q in zip(ARM, joints)]
             joints = [q - math.copysign(2 * math.pi, q) if abs(q) > 2 * math.pi else q for q in joints]
+            joints = self.inside_windows(joints, near)
+            if joints is None:
+                continue
             far = max(abs(q - near[joint]) for joint, q in zip(ARM, joints))
             if best is None or far < best[0]:
                 best = (far, joints)
@@ -376,15 +494,18 @@ class Session:
         that follows it through turn after turn runs into its limit; this returns the arm to one family of
         configurations and unwinds it, so it is the one to ask before a large move."""
         turn = lambda angle: (angle + math.pi) % (2 * math.pi) - math.pi
+        posture = dict(zip(ARM, self.posture))
         found = []
         for joints in ur_ik(np.linalg.inv(self.world_from_base) @ world_from_wrist):
             heights = [(self.world_from_base @ link)[2, 3] for link in ur_fk(joints)[1:5]]
-            if all(height >= floor for height, floor in zip(heights, CLEAR_OF_TABLE_M)):
-                found.append(joints)
+            near = self.inside_windows([home + turn(q - home) for q, home in zip(joints, self.posture)], posture)
+            if near is not None and all(height >= floor for height, floor in zip(heights, CLEAR_OF_TABLE_M)):
+                found.append(near)
         if not found:
-            raise MoveFailed(f"the arm cannot reach {np.round(world_from_wrist[:3, 3], 3).tolist()} with its elbow and wrist clear of the table")
-        best = min(found, key=lambda joints: max(abs(turn(q - home)) for q, home in zip(joints[:5], self.posture)))
-        return {joint: home + turn(q - home) for joint, q, home in zip(ARM, best, self.posture)}
+            within = " and inside the joint windows" if self.joint_windows else ""
+            raise MoveFailed(f"the arm cannot reach {np.round(world_from_wrist[:3, 3], 3).tolist()} with its elbow and wrist clear of the table{within}")
+        best = min(found, key=lambda joints: max(abs(q - home) for q, home in zip(joints[:5], self.posture)))
+        return dict(zip(ARM, best))
 
     def carry(self, world_from_wrist, speed_deg_s=45.0):
         """Take wrist_3_link to a world pose that may be far from, or turned far from, the one it has: one joint-space
