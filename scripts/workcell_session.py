@@ -51,6 +51,20 @@ class MoveFailed(Exception):
     """The arm cannot reach a pose, or stopped short of its targets."""
 
 
+class PhysicsStateInvalid(Exception):
+    """The simulator returned values that are not finite numbers: the solver's state is no longer physics. Nothing
+    read after this means anything until the scene is built again, so it is not to be retried or carried on from."""
+
+
+def finite(values, what):
+    """``values`` (numbers, nested or not) when every one is a finite number; else PhysicsStateInvalid naming ``what``.
+    The bridge sends a value that is not finite as text, which arithmetic further on would meet as a TypeError."""
+    flat = np.asarray(values, dtype=object).ravel()
+    if not all(isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) for value in flat):
+        raise PhysicsStateInvalid(f"the simulator returned values that are not finite numbers for {what}; its scene has to be built again")
+    return values
+
+
 def quat_matrix(w, x, y, z):
     return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
                      [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
@@ -170,6 +184,8 @@ class Session:
         with self.timed("bridge_s"):
             reply = self.bridge.call(name, {**self.ids, **(arguments or {})} if name.startswith("sim.") else (arguments or {}), timeout=timeout)
         if isinstance(reply, dict) and reply.get("status") == "error":
+            if reply.get("code") == "PHYSICS_STATE_INVALID":    # the bridge's own tools refuse to return such values
+                raise PhysicsStateInvalid(reply.get("message", "the simulator reported an invalid physics state"))
             raise BridgeError(reply.get("message", "error"), reply)
         return reply
 
@@ -213,6 +229,7 @@ class Session:
             self.steps += len(part) * steps
             self.spent.update(physics_s=done["physics_s"], render_s=done["render_s"])
             for count, *positions in done["samples"]:
+                finite(positions, f"the joint positions at physics step {count} ({count / PHYSICS_HZ:.2f} s)")
                 rail, *arm, finger = (positions[index] for index in watched)
                 self.samples.append([round(count / PHYSICS_HZ, 3), round(rail, 5), *(round(q, 5) for q in arm), round(pad_gap(finger), 5)])
             if self.film:
@@ -220,10 +237,16 @@ class Session:
 
     def joints(self):
         state = self.call("sim.joints.state", {"path": self.root})
-        return dict(zip(state["names"], state["positions"]))
+        return dict(zip(state["names"], finite(state["positions"], f"the joint positions at physics step {self.steps}")))
+
+    def friction(self, prefixes):
+        """The friction coefficients the solver's own model holds (Newton), not what the stage says: {prefix: the
+        sorted coefficients of the shapes under that prim path that collide}."""
+        return self.kit(f"result = solver_friction({list(prefixes)!r})")
 
     def poses(self, bodies=(), attached=None):
-        return {path: np.array(m) for path, m in self.kit(f"result = poses({list(bodies)!r}, {attached or {}!r})").items()}
+        found = self.kit(f"result = poses({list(bodies)!r}, {attached or {}!r})")
+        return {path: np.array(finite(m, f"the pose of {path} at physics step {self.steps}"), dtype=float) for path, m in found.items()}
 
     # ---- the scene --------------------------------------------------------------------------------
     def build(self, task, start_deg, open_gap_m, discard_changes=False, settle_steps=1500):

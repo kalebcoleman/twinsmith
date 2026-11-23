@@ -197,6 +197,14 @@ def test_puzzle_pieces_are_built_as_bodies_with_the_pack_colliders_and_mass_from
     assert UsdPhysics.MassAPI(line).GetMassAttr().Get() == pytest.approx(0.0259 * 0.0259 * 0.140 * 1240.0, rel=1e-5)
     material, _ = UsdShade.MaterialBindingAPI(line).ComputeBoundMaterial(materialPurpose="physics")
     assert UsdPhysics.MaterialAPI(material.GetPrim()).GetStaticFrictionAttr().Get() == pytest.approx(0.4)
+    # Newton reads a collider's own binding and not one inherited from the body: every collision box of every piece
+    # carries the task's material itself, or the solver runs it at its default 1.0 and not at the task's 0.4.
+    colliders = [prim for piece in pieces for prim in Usd.PrimRange(stage.GetPrimAtPath(f"/World/Puzzle/{piece}"), Usd.TraverseInstanceProxies())
+                 if prim.HasAPI(UsdPhysics.CollisionAPI)]
+    assert len(colliders) == sum(piece["colliders"] for piece in pieces.values())
+    for collider in colliders:
+        own = UsdShade.MaterialBindingAPI(collider).GetDirectBinding(materialPurpose="physics").GetMaterial()
+        assert own and own.GetPath() == material.GetPath(), collider.GetPath()
     # The fork stands in the base: its colliders span 0 to 70 mm above the base's centre plane, 21 mm thick along y.
     box = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["guide"]).ComputeWorldBound(stage.GetPrimAtPath("/World/Puzzle/fork_yellow")).ComputeAlignedRange()
     assert tuple(box.GetSize()) == pytest.approx((0.1092, 0.021, 0.070), abs=1e-6) and box.GetMin()[2] == pytest.approx(0.0175, abs=1e-6)

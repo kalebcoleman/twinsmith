@@ -12,7 +12,7 @@ gap:
   exit_conditions:
     placed: The rescan saw the piece seated in its slot.
     retry: The rescan saw the piece loose and lying flat again; the same subgraph may run once more.
-    changed: The rescan found another piece, or the base, elsewhere than the estimate had it; the table is scanned again before the build goes on.
+    changed: The rescan found another piece, or the base, elsewhere than the estimate had it, or the insertion could not vouch for the base and put the piece back; the table is scanned again before the build goes on.
     aborted: The lookahead on Newton said the insertion would not seat the piece or would move others.
     missed: The hand stopped too far from the grasp pose to have the piece between the pads.
     empty: The jaws closed on nothing; the table is scanned again and the piece tried from where it now lies.
@@ -40,5 +40,5 @@ and `verify_grip` after the close (did the jaws stop on something?). Both read t
 
 `START -> lookahead (workcell.lookahead)`; on `verdict: go` -> `approach (workcell.approach) -> ee
 (robot.get_ee_pose) -> reach (verify_reach script)`; on `route: reached` -> `close (workcell.close) -> grip
-(verify_grip script)`; on `route: held` or `unknown` -> `lift (workcell.lift) -> insert (workcell.insert) -> look
-(workcell.rescan)`; `result: placed` -> `placed`, `retry` -> `retry`, `changed` -> `changed`. `on_error: failed`.
+(verify_grip script)`; on `route: held` or `unknown` -> `lift (workcell.lift) -> insert (workcell.insert)`; on
+`result: inserted` -> `look (workcell.rescan)`, on `rescan` -> `changed`; `result: placed` -> `placed`, `retry` -> `retry`, `changed` -> `changed`. `on_error: failed`.

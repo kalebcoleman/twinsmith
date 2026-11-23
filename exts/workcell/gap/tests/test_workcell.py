@@ -90,6 +90,8 @@ def test_the_authored_graph_validates(graph, tmp_path):
     for piece in ("bar", "cap"):                                                                                         # a failed pick or a changed table: scan again
         assert {routes[f"assemble_{piece}"]["mapping"][exit] for exit in ("empty", "missed", "changed")} == {"scan"}
         assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["look"]["mapping"]["changed"] == "changed"
+        assert workflow["subgraphs"][f"assemble_{piece}"]["conditional_edges"]["insert"] == {
+            "router_field": "result", "mapping": {"inserted": "look", "rescan": "changed"}}       # a piece put back for want of a sure base: scan again
     assert sorted(p.name for p in (tmp_path / "graph/scripts").glob("*.py")) == ["cross_check.py", "next_step.py", "verify_grip.py", "verify_reach.py"]
     assert sorted(p.stem for p in (tmp_path / "graph/checkpoints").glob("*.py")) == ["assemble_bar", "assemble_cap", "place_base"]
     registries = [arg for registry in (ROOT, graph.stock_scripts().parents[2]) for arg in ("--skills", str(registry))]

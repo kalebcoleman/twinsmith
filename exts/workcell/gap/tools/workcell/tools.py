@@ -77,6 +77,7 @@ class Lifted(TypedDict):
 
 class Inserted(TypedDict):
     blocked: str | None
+    result: str
 
 
 class Rescan(TypedDict):
@@ -145,7 +146,8 @@ def lift(piece: str) -> Lifted:
     return ask("lift", piece=piece)
 
 
-@tool(name="workcell.insert", summary="Carry the held piece over its slot, lower it along the slot axis, let go and back away.",
+@tool(name="workcell.insert", summary="Carry the held piece over its slot, check the base, lower it along the slot axis (the base "
+      "checked on the way), let go and back away; or put the piece back when the base cannot be vouched for.",
       tags=("sim_step",))
 def insert(piece: str) -> Inserted:
     return ask("insert", piece=piece)

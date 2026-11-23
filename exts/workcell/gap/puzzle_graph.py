@@ -60,7 +60,8 @@ def stock_scripts():
 
 
 def assemble(piece):
-    """One piece: simulate ahead, grasp with the stock reach and grip checks between the motions, insert, look."""
+    """One piece: simulate ahead, grasp with the stock reach and grip checks between the motions, insert, look. The
+    insertion watches the base: when it cannot vouch for it the piece comes back to the table and the scan is next."""
     sg = Subgraph(name=f"assemble_{piece}", skill="assembling-puzzle-pieces")
     for name in ("lookahead", "approach", "close", "lift", "insert"):
         sg.add_node(name, type="tool", tool=f"workcell.{name}", inputs={"piece": piece})
@@ -75,11 +76,12 @@ def assemble(piece):
         sg.add_exit(outcome)
         sg.add_edge(outcome, "END")
     sg.set_on_error("failed")
-    for a, b in (("START", "lookahead"), ("approach", "ee"), ("ee", "reach"), ("close", "grip"), ("lift", "insert"), ("insert", "look")):
+    for a, b in (("START", "lookahead"), ("approach", "ee"), ("ee", "reach"), ("close", "grip"), ("lift", "insert")):
         sg.add_edge(a, b)
     sg.add_conditional_edges("lookahead", {"go": "approach", "abort": "aborted"}, router_field="verdict")
     sg.add_conditional_edges("reach", {"reached": "close", "missed": "missed"}, router_field="route")
     sg.add_conditional_edges("grip", {"held": "lift", "unknown": "lift", "empty": "empty"}, router_field="route")
+    sg.add_conditional_edges("insert", {"inserted": "look", "rescan": "changed"}, router_field="result")
     sg.add_conditional_edges("look", {"placed": "placed", "retry": "retry", "changed": "changed"}, router_field="result")
     return sg
 
