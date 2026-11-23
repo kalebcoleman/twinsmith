@@ -98,7 +98,7 @@ WORKFLOW = {
 
 
 def make_run(folder, wall=1000.0):
-    """A run folder as scripts/puzzle_build.py leaves it, for a toy build: a survey, a lookahead of two tries, a lift
+    """A run folder as a work-cell build host leaves it, for a toy build: a survey, a lookahead of two tries, a lift
     and a second look. Wall time is made up: every step takes five times its simulated time and a second passes
     between steps; the graph's inner nodes start and end with their steps, and as in a real trace nothing times a
     subgraph as a whole. Returns the folder."""

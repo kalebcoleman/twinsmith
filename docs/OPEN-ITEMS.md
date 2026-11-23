@@ -88,7 +88,7 @@ Still open:
 - [ ] The puzzle's bars and the slot walls. A bar's grasp leaves the pads 0.5 mm above the slot's 7 mm walls, and the
   arm hangs about 1 mm below its targets at a pick, so a place corrected for how a bar sits in the hand puts the pads
   on the walls and the base is pushed when the gripper opens. The bars are therefore placed uncorrected
-  ([the build's three ways](../exts/workcell/workcell/README.md#correcting-the-place-three-ways)). Raise the grasp
+  (the build's three ways, in the puzzle project's `sim/puzzle_build/README.md`). Raise the grasp
   point, or hold the arm at its targets, before a bar's place is corrected again.
 - [ ] The puzzle build's settings were tuned with the pieces at 1.0: the base's slide (`BASE_SLIDES`, `BASE_NEAR_M`),
   the lookahead's 3 mm rule for "another piece moved". At 0.4 the base slides on the bench far more easily. The slide
@@ -168,7 +168,7 @@ matched the clip within the tool's tolerance. What it does not do yet:
 ## Playing Jenga with the robot
 
 One robot turn and one person's turn run in simulation
-([the results](../exts/workcell/workcell/README.md#one-jenga-turn-look-predict-push-look-again)). What a game still needs:
+(the scripts and results are in the Jenga project, `jenga-rl`; [where they went](../exts/workcell/workcell/README.md#jenga-turns)). What a game still needs:
 
 - [ ] A pusher that touches one block. One RG2 fingertip is 11.4 mm high in a 14 mm slot and, in the cell, dragged the
   block under the pushed one and the tower above with it. A thin poker on a finger, or drawing the block out from the

@@ -45,9 +45,13 @@ def _bundled_ffmpeg():
         return None
 
 
-def _ffmpeg_exe():
-    """ffmpeg on PATH, else the bundled one, else None. A PC without a system ffmpeg still trims clips."""
+def ffmpeg_exe():
+    """ffmpeg on PATH, else the bundled one, else None. A PC without a system ffmpeg still trims clips. Public: a
+    project's own driver (a build host that films its run) uses it too."""
     return shutil.which("ffmpeg") or _bundled_ffmpeg()
+
+
+_ffmpeg_exe = ffmpeg_exe        # the old private name, for callers written before it was public
 
 
 NO_BRIDGE = ("robosim needs no Isaac Sim or Kit bridge: it runs RoboSimStudio in its own Python environment. "
