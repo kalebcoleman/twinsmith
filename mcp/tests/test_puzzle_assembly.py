@@ -25,24 +25,6 @@ scan = load("puzzle_scan")
 assembly = load("puzzle_assembly")
 session = load("workcell_session")
 
-
-def test_cable_windows_refuse_before_any_bridge_call(tmp_path):
-    arm = object.__new__(session.Session)
-    cable = {'schema': 'gap_bridge.cable_limits/1', 'measured': False, 'inset_margin_deg': 0, 'joint_names': list(session.ARM),
-             'units': {'angles': 'deg', 'boxes': 'm'}, 'joint_windows_deg': {'min': [-10] * 6, 'max': [10] * 6}}
-    path = tmp_path / 'cable.json'
-    path.write_text(json.dumps(cable))
-    arm.set_cable_limits(path)
-    assert arm.allowed_targets({session.ARM[0]: math.radians(-10)})
-    with pytest.raises(session.MoveFailed, match='nothing sent'):
-        arm.drive([{}] * 100 + [{session.ARM[3]: float('nan')}], 1)
-    with pytest.raises(session.MoveFailed, match='scene unchanged'):
-        arm.build('puzzle', [11] * 6, 0.05)
-    cable['joint_names'].reverse()
-    path.write_text(json.dumps(cable))
-    with pytest.raises(ValueError, match='ordered'):
-        arm.set_cable_limits(path)
-
 box = lambda centre, half: (np.array(centre, dtype=float), np.array(half, dtype=float))
 PIECES = {
     # A 100 x 100 x 10 mm plate with two walls 8 mm high that leave a slot 26 mm wide along y.

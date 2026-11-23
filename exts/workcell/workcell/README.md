@@ -270,9 +270,9 @@ piece. It talks to one simulator bridge on this machine and cannot reach a real 
     python3 scripts/puzzle_build.py --port <port> --out <folder> --seed 1 --mutate-stage --discard-changes \
         --allow-concurrent-gpu --table-camera --colours <colours.json> --scan-cycle <mv_cycle.sh>
 
-For joint-constrained rehearsal add `--cable-limits <absolute-path-to-cable_limits.json>`, using the same file as
-the ROS bridge. The six controller-order degree windows already include the operator's inset. They filter IK and
-drive targets, not collisions or measured tracking drift. Omitting the option preserves the unconstrained benchmark.
+For joint-constrained rehearsal add `--joint-windows <limits file or cell config>` (alias `--cable-limits`); see
+[Joint windows](#joint-windows-where-the-cables-let-the-arm-turn). Omitting it uses the base cell's setting, which is
+no windows, so the unconstrained benchmark is unchanged.
 
 It replaces the bridge's stage and starts SAM 3.1 jobs on the simulator's GPU, which is what the three consent flags
 say. `--perception oracle` reads the simulator's own poses in place of the camera, to tell a handling failure from a
@@ -762,6 +762,25 @@ path is stored in the configuration, and there is no old-store path fallback.
 `documentation.bom_csv.value` is `../workcell/bom.csv`, resolved relative to the
 configuration directory. Preserve that layout when copying a configuration, or overwrite
 this field with the appropriate BOM path; it is not relative to the process working directory.
+
+### Joint windows: where the cables let the arm turn
+
+`robot.joint_windows_deg` bounds where each arm joint may be sent, for a real cell whose cables go tight before the
+joints reach their stops. The base cell sets it to `null` (no windows). A project's copy of the config sets either
+`{"min": [6], "max": [6]}` (degrees, controller order) or `{"limits_file": "<path>"}`, relative to the config's folder
+or absolute. A limits file is the one the project's ROS bridge gates the real arm on:
+
+| Schema | Windows used |
+| --- | --- |
+| `gap_bridge.cable_limits/1` | `joint_windows_deg.min`/`max` as written: the inset is already applied (`inset_margin_deg` is a record) |
+| `gap_bridge.cable_limits/2` | the raw ranges `joint_windows_deg.min`/`max`, each moved in by its `measurements.<joint>.margin_deg` |
+
+`scripts/workcell_session.py` (`Session(..., joint_windows=...)`, `Session.set_joint_windows`, both also taking a
+limits file directly) then refuses an initial pose outside them, keeps only IK and `reconfigure` solutions inside them
+(turning a joint by whole turns to its in-window equivalent), and refuses a driven path that leaves them before
+anything is sent. Any script or GaP graph that drives the cell through `Session` inherits that. `run_log.json` records
+the file's path and sha256 under `joint_windows`. The windows bound targets only: they are no collision check, and the
+simulated joints' own limits are left alone, since a cable is not a mechanical stop.
 
 ## BOM IDs and quantities
 
