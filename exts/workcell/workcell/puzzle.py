@@ -110,8 +110,9 @@ def build(stage, assets, config):
         piece.update(volume_m3=volume, mass_kg=volume * settings["density_kg_m3"], colliders=len(colliders))
         UsdPhysics.RigidBodyAPI.Apply(root.GetPrim())
         UsdPhysics.MassAPI.Apply(root.GetPrim()).CreateMassAttr().Set(piece["mass_kg"])
-        UsdShade.MaterialBindingAPI.Apply(root.GetPrim()).Bind(
-            material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics")
+        for prim in [root.GetPrim(), *colliders]:           # Newton reads a collider's own binding, not one inherited from the body
+            UsdShade.MaterialBindingAPI.Apply(prim).Bind(
+                material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics")
         parts.append({"prim_path": piece["prim_path"], "asset_id": piece["asset_id"], "bom_id": piece["asset_id"]})
     report.update(parts=parts, piece_count=len(parts), density_kg_m3=settings["density_kg_m3"],
                   static_friction=settings["static_friction"], dynamic_friction=settings["dynamic_friction"],
