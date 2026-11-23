@@ -385,6 +385,11 @@
       "status": "unconfirmed",
       "source": "Presentation pose; not a measured lab home pose."
     },
+    "joint_windows_deg": {
+      "value": null,
+      "status": "confirmed",
+      "source": "No windows in the base cell: the arm's targets are bounded by its joint limits only. A project sets {\"limits_file\": \"<path, relative to this file or absolute>\"} (gap_bridge.cable_limits/1 or /2, the file its ROS bridge gates on) or {\"min\": [6], \"max\": [6]} in degrees, controller order, in its copy of this config; scripts/workcell_session.py keeps the initial pose, IK solutions and driven targets inside them. A window bounds where cables let a joint turn; it is not a mechanical stop, so the simulated joint limits are left alone."
+    },
     "placement": {
       "value": {
         "position_m": [
